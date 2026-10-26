@@ -35,13 +35,24 @@ timeout = 300
 json_mode = true
 temperature = 0.2
 
+# act 执行器：用 DSH 的 headless 模式。
+#
+# 为什么不是 `dsh.cmd`：agenttree 用 subprocess(shell=False) 调 worker，
+#   而 Windows 的 CreateProcess 只认 .exe，不认 .cmd/.bat —— 直接写 dsh.cmd
+#   会 FileNotFoundError。所以用 `node <bin.js>` 绕过，node 是 .exe。
+#
+# 为什么不是 opencode：那个 exe 已经不可用（免费额度耗尽，probe 报 FAIL）。
+#
+# 为什么能在 worktree 里跑：QQbot 的 .env 被 gitignore，worktree 里没有，
+#   所以不会触发 DSH 那条「.env 不许设 DEEPSEEK_BASE_URL」的检查。
 [[workers]]
-name = "opencode"
+name = "dsh"
 kind = "cli"
 cmd = [
-  "C:\\Users\\Lenovo\\AppData\\Local\\Programs\\@opencodedesktop\\resources\\opencode-cli.exe",
-  "run", "--standalone", "--auto", "--format", "json",
-  "-m", "opencode/deepseek-v4.1-flash-free", "{spec}",
+  "node",
+  "C:\\Users\\Lenovo\\AppData\\Local\\npm-global\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js",
+  "--profile", "headless",
+  "{spec}",
 ]
 concurrency = 1
 timeout = 1200
@@ -49,7 +60,7 @@ timeout = 1200
 [route]
 plan  = ["brain-llm"]
 think = ["brain-llm"]
-act   = ["brain-llm"]
+act   = ["dsh"]
 
 [git]
 # 必须和当前分支一致，否则 run 会切走
