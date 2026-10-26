@@ -36,6 +36,14 @@ export interface PersonFact {
    * 实测模型打分区分度极低（24 条经验全给 8 分），二选一反而判断得准。
    */
   tier?: FactTier
+  /**
+   * 只在召回时用：这条是很久没提、置信度掉到 0.2 以下的，
+   * 靠话题相关性才被捞回来的。
+   *
+   * **不写盘**（formatFact 不输出它）。依据是 Bjork 的「新失用理论」：
+   * 遗忘是取不出来，不是痕迹消失，所以内容该留着。
+   */
+  faint?: boolean
 }
 
 const LABEL: Record<Visibility, string> = { public: '公开', private: '私密', unsure: '待确认' }

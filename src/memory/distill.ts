@@ -6,7 +6,7 @@ import { appendOpen, loadOpen } from '../people/open.ts'
 import { loadPerson, personOfAccount } from '../people/store.ts'
 import { appendFacts, isDeleted, loadFacts, touchFact, type Visibility } from './facts.ts'
 import { similarity } from './recall.ts'
-import { appendInsights, nextEpisodeId, saveEpisode } from './store.ts'
+import { appendInsights, loadEpisodes, nextEpisodeId, saveEpisode } from './store.ts'
 import { appendLife, loadSelf, saveSelf } from '../self/store.ts'
 import { refreshProfile } from '../persona/profile.ts'
 import { learnJargon } from '../learn/jargon.ts'
@@ -19,7 +19,14 @@ function dateOf(ts: number): string {
 import type { Episode, Insight, RawTurn, Scope } from './types.ts'
 
 interface DistillOutput {
-  episodes?: Array<{ title?: string; body?: string; importance?: number; emotion?: string }>
+  episodes?: Array<{
+    title?: string
+    body?: string
+    importance?: number
+    emotion?: string
+    /** 相关的已有 episode id，模型挑的；不存在的会被过滤掉 */
+    related?: string[]
+  }>
   facts?: Array<{
     text?: string
     confidence?: number
@@ -34,24 +41,30 @@ interface DistillOutput {
 }
 
 /** 把 rules.yaml 里"值得记/不值得记"拼进提示词，让配置真的影响整理 */
-function systemPrompt(rules: Rules, knownFacts: string[] = []): string {
+function systemPrompt(rules: Rules, knownFacts: string[] = [], knownEpisodes: Array<{ id: string; title: string }> = []): string {
   const 值得 = rules.记忆.值得记.length ? rules.记忆.值得记 : ['对方的个人信息', '情绪强烈的事', '约定']
   const 不值得 = rules.记忆.不值得记.length ? rules.记忆.不值得记 : ['寒暄', '重复内容', '语气词']
   const known = knownFacts.length
     ? `\n\n# 我已经记得的事（不要重复记；如果这次听到的更准确，写成对原文的补充，不要另起一条）\n${knownFacts.map((f) => `- ${f}`).join('\n')}`
     : ''
+  // 已有经历只给 id + 标题：让模型能填 related，又不至于把正文全塞进 prompt
+  const eps = knownEpisodes.length
+    ? `\n\n# 我已经有的经历（可以用来填 related）\n${knownEpisodes
+        .map((e) => `- ${e.id}：${e.title}`)
+        .join('\n')}`
+    : ''
   return `${SYSTEM_BASE}
 
 这个人的主人希望：
 - 值得记：${值得.join('、')}
-- 不值得记：${不值得.join('、')}${known}`
+- 不值得记：${不值得.join('、')}${known}${eps}`
 }
 
 const SYSTEM_BASE = `你在整理一段聊天记录，把它变成长期记忆。只输出 JSON，不要代码块，不要解释。
 
 输出格式：
 {
-  "episodes": [{"title": "一句话概括", "body": "发生了什么 + 我当时怎么想", "importance": 1, "emotion": "当时的主要情绪"}],
+  "episodes": [{"title": "一句话概括", "body": "发生了什么 + 我当时怎么想", "importance": 1, "emotion": "当时的主要情绪", "related": ["相关的已有 episode id"]}],
   "facts": [{"text": "稳定的事实", "confidence": 0.9, "source": "他说过的原话，尽量短", "visibility": "public|private|unsure", "tier": "major|normal"}],
   "open": [{"text": "还没做的事，或我想跟对方确认的事", "kind": "todo"}],
   "insights": [{"text": "我对他或对这段关系的一个看法", "evidence": ["依据"]}],
@@ -62,6 +75,7 @@ const SYSTEM_BASE = `你在整理一段聊天记录，把它变成长期记忆�
 规则：
 - 先在心里挑出今天最值得记的 3 件事，只写这几件，不要平均用力。
 - episode 是"一段经历"，不是流水账。写具体场景，不要写"今天聊了很多"。
+- related 可选：如果这条和下面列出的已有经历是同一件事的延续、或同一类事，把它们的 id 填进来（最多 3 个）；没有就不填。
 - 只记值得记的：对方的个人信息、情绪强烈的事、约定、我自己想明白的事。
 - 寒暄、重复、没有信息的话不要记。
 - facts 只写稳定的、以后还会用到的事实。
@@ -176,7 +190,18 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
   try {
     res = await chat(
       [
-        { role: 'system', content: systemPrompt(opts.rules, knownFacts) },
+        {
+      role: 'system',
+      content: systemPrompt(
+        opts.rules,
+        knownFacts,
+        // 只给 id 和标题，不给正文——省 token，也够模型判断相关性
+        loadEpisodes()
+          .filter((e) => e.scope === opts.scope)
+          .slice(-20)
+          .map((e) => ({ id: e.id, title: e.title })),
+      ),
+    },
         { role: 'user', content: `聊天记录：\n${transcript}` },
       ],
       { ...opts.llm, maxTokens: 1400, temperature: 0.3 },
@@ -197,6 +222,9 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
   const lastTs = opts.turns[opts.turns.length - 1]?.ts ?? Date.now()
   const date = dateOf(lastTs)
 
+  // 已有 episode：给新的一条建链接用，也用来校验模型给的 related 是否存在
+  const existingEpisodes = loadEpisodes().filter((x) => x.scope === opts.scope)
+
   for (const e of data.episodes ?? []) {
     const title = (e.title ?? '').trim()
     if (!title) continue
@@ -209,6 +237,13 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
       emotion: e.emotion?.trim() || undefined,
       title,
       body: (e.body ?? '').trim(),
+    }
+    // 和已有 episode 建链接（Hintzman 多痕迹模型：相似的不合并，靠链接表达关系）。
+    // 模型可能给了 id，也可能没给——给了就校验一下别指到不存在的。
+    if (existingEpisodes.length && e.related?.length) {
+      const valid = new Set(existingEpisodes.map((x) => x.id))
+      const ids = e.related.filter((id) => valid.has(id) && id !== ep.id).slice(0, 3)
+      if (ids.length) ep.related = ids
     }
     saveEpisode(ep)
     result.episodes++

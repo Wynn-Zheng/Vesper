@@ -72,6 +72,18 @@ function parseFrontmatter(text: string): Record<string, string> {
   return meta
 }
 
+/** 解析 "related: [a, b, c]" 里的 id 列表 */
+function parseIdList(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined
+  const m = /\[([^\]]*)\]/.exec(raw)
+  const body = m ? m[1]! : raw
+  const ids = body
+    .split(/[,，\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return ids.length ? ids : undefined
+}
+
 export function saveEpisode(ep: Episode): string {
   const dir = ensure(episodeDir(ep.scope))
   const file = join(dir, `${ep.id}.md`)
@@ -82,6 +94,9 @@ export function saveEpisode(ep: Episode): string {
     `importance: ${ep.importance}`,
     ...(ep.emotion ? [`emotion: ${ep.emotion}`] : []),
     ...(ep.lastRecalled ? [`lastRecalled: ${ep.lastRecalled}`] : []),
+    // 只在有链接时才写这一行，避免空数组污染 frontmatter
+    ...(ep.related?.length ? [`related: [${ep.related.join(', ')}]`] : []),
+    ...(ep.recallCount ? [`recallCount: ${ep.recallCount}`] : []),
     `title: ${ep.title}`,
     '---',
     '',
@@ -124,6 +139,8 @@ export function loadEpisodes(): Episode[] {
         title: meta['title']!,
         body: (meta['__body'] ?? '').trim(),
         lastRecalled: meta['lastRecalled'] ? Number(meta['lastRecalled']) : undefined,
+        recallCount: meta['recallCount'] ? Number(meta['recallCount']) : undefined,
+        related: parseIdList(meta['related']),
       })
     }
   }

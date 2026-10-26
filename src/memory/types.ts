@@ -29,6 +29,16 @@ export interface Episode {
   /** 上次被想起来的时间戳；没想起来过就是 0 */
   lastRecalled?: number
   /**
+   * 相关的其他 episode 的 id（同 scope 内）。
+   *
+   * 依据 Hintzman (1986) 的多痕迹模型：相似经历**不合并**，各自留痕，
+   * 靠链接表达关系。参考 A-MEM (arXiv:2502.12110) 的 "establishing links
+   * where meaningful similarities exist"。
+   *
+   * 注意：只存 id，不存内容——id 在 scope 目录内唯一。
+   */
+  related?: string[]
+  /**
    * 被想起来过几次。
    *
    * 这个不只是统计——它会让衰减变慢（见 recall.ts 的 recencyOf）。

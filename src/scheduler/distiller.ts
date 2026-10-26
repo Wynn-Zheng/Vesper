@@ -4,7 +4,8 @@ import { loadRules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { distill } from '../memory/distill.ts'
-import { memoryRoot, recentRaw } from '../memory/store.ts'
+import { pickForDistill } from '../memory/filter.ts'
+import { loadEpisodes, memoryRoot, recentRaw } from '../memory/store.ts'
 import { personIdOf, personOfAccount } from '../people/store.ts'
 import type { RawTurn, Scope } from '../memory/types.ts'
 import { writeAtomic } from '../store/fs.ts'
@@ -96,8 +97,20 @@ async function tick(opts: DistillerOptions): Promise<void> {
       ? personOfAccount('qq', scope.slice('private:'.length))
       : personIdOf('qq', 'group')
 
-    info(`开始自动整理：${scope}，${list.length} 条`)
-    const r = await distill({ personId, scope, turns: list, llm: opts.llm, rules })
+    // 只把"值得提炼"的喂给模型（Kumaran 2016：重播是有选择的，
+    // 优先挑意外的、有奖励的，不是把流水账原样重放）。
+    // 但要保留原始条数用于"今天有多少话"的判断——筛选只影响喂什么，不影响该不该整理。
+    const existingEps = loadEpisodes()
+      .filter((e) => e.scope === scope)
+      .map((e) => `${e.title} ${e.body}`)
+    const picked = pickForDistill(list, existingEps)
+
+    if (picked.length < list.length) {
+      info(`整理前筛掉 ${list.length - picked.length} 条废话`, { scope, 留下: picked.length })
+    }
+
+    info(`开始自动整理：${scope}，${picked.length} 条`)
+    const r = await distill({ personId, scope, turns: picked, llm: opts.llm, rules })
     if (r.episodes || r.facts || r.open || r.insights) {
       info('整理结果', { person: personId, scope, ...r })
     }

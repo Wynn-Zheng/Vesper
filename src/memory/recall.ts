@@ -3,7 +3,7 @@ import { loadFacts, effectiveConfidence } from './facts.ts'
 import { loadEpisodes, loadInsights, recentRaw, saveEpisode } from './store.ts'
 import { loadOpen, type OpenItem } from '../people/open.ts'
 
-import { similarity } from '../core/text.ts'
+import { sharedBigrams, similarity } from '../core/text.ts'
 
 export { similarity }
 
@@ -201,15 +201,44 @@ export function recall(opts: RecallOptions): Recalled {
   // 按"有效置信度"排：越久没被提到的越靠后，太旧的不注入
   // 群聊里只注入公开的：私事在公共场合没有该出现的理由
   const isPrivateScope = scope.startsWith('private:')
-  const facts = allFacts
+  const scoredFacts = allFacts
     // 「重要」的事衰减慢（139 天半衰期），「平常」按正常节奏（35 天）。
     // 老数据没有 tier → 当 normal，和以前行为一致。
     .map((f) => ({ f, eff: effectiveConfidence(f, now, f.tier === 'major' ? 0.005 : 0.023) }))
-    .filter((x) => x.eff >= 0.2)
     .filter((x) => isPrivateScope || x.f.visibility === 'public')
+
+  // 能正常调出来的
+  const strong = scoredFacts
+    .filter((x) => x.eff >= 0.2)
     .sort((a, b) => b.eff - a.eff)
     .slice(0, 8)
     .map((x) => x.f)
+
+  // 很久没提、置信度已经掉到 0.2 以下的——
+  // **不删，只是默认调不出来**（Bjork 的「新失用理论」：遗忘是提取失败，不是痕迹消失）。
+  // 但如果这次的话题和它高度相关，仍然能捞出来，让"提到老事还能想起来"成立。
+  //
+  // 判据用「共同 bigram 数 >= 2」而不是相似度，实测数据：
+  //   「你那只猫豆豆还好吗」vs「他养过一只猫叫豆豆」  sim 0.143 / 共同 2  ← 相关
+  //   「四级考得怎么样」  vs「他养过一只猫叫豆豆」  sim 0.000 / 共同 0  ← 无关
+  //   「你还在学英语吗」  vs「他在学英语，也在学计算机」sim 0.231 / 共同 3  ← 相关
+  // bigram Jaccard 对短句天然偏低，用相似度当门槛会全部漏掉。
+  const faint = query.trim()
+    ? scoredFacts
+        .filter((x) => x.eff < 0.2)
+        .map((x) => ({ f: x.f, shared: sharedBigrams(query, x.f.text) }))
+        .filter((x) => x.shared >= 2)
+        .sort((a, b) => b.shared - a.shared)
+        .slice(0, 2)
+        .map((x) => x.f)
+    : []
+
+  // 合并去重（faint 可能和 strong 重叠，虽然理论上不会）
+  const strongTexts = new Set(strong.map((f) => f.text))
+  const facts = [...strong, ...faint.filter((f) => !strongTexts.has(f.text))]
+  // 给捞回来的老事实打个标记，渲染时说明"很久没提了"
+  const faintTexts = new Set(faint.map((f) => f.text))
+  for (const f of facts) if (faintTexts.has(f.text)) f.faint = true
 
   const episodes = loadEpisodes().filter((e) => visible(e.scope, scope))
   const insights = loadInsights().filter((i) => visible(i.scope, scope))
@@ -264,7 +293,23 @@ export function recall(opts: RecallOptions): Recalled {
       merged.push(e)
     }
   }
-  const finalEps = merged.slice(0, Math.max(limit, 3))
+
+  // 顺着 related 带出一层——但不能喧宾夺主：
+  // 只在名额没满时补，最多补 2 条，而且必须是同 scope 里真实存在的。
+  // 这就是 Hintzman 多痕迹模型里"相似的不合并、靠链接串起来"的用法。
+  const linked: Episode[] = []
+  if (merged.length < Math.max(limit, 3)) {
+    const linkedIds = new Set(merged.flatMap((e) => e.related ?? []))
+    for (const e of episodes) {
+      if (linked.length >= 2) break
+      if (!linkedIds.has(e.id)) continue
+      if (seen.has(episodeKey(e))) continue
+      seen.add(episodeKey(e))
+      linked.push(e)
+    }
+  }
+
+  const finalEps = [...merged, ...linked].slice(0, Math.max(limit, 3))
 
   markRecalled(finalEps, now)
 
@@ -292,7 +337,10 @@ export function renderRecalled(r: Recalled): string {
     parts.push('【关于他，我记得】')
     for (const f of r.facts) {
       const tag = f.visibility === 'public' ? '' : f.visibility === 'private' ? '（私事，对着别人别说）' : '（还没确认能不能说）'
-      parts.push(`- ${f.text}${tag}${f.source ? `（他当时说：${f.source}）` : ''}`)
+      // faint = 很久没提、靠话题才捞回来的。标一下，
+      // 但别让它因此张口就说"你很久没跟我提这个了"（那很怪）。
+      const faintTag = f.faint ? '（很久没提了，我可能记得不全）' : ''
+      parts.push(`- ${f.text}${tag}${faintTag}${f.source ? `（他当时说：${f.source}）` : ''}`)
     }
   }
 
