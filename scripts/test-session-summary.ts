@@ -156,7 +156,7 @@ check('写回：原有字段不丢，字段顺序稳定', () => {
 
 console.log('')
 if (fail > 0) {
-  console.log(`失败 ${fail} 项 / 通过 ${pass} 项`)
+  console.log(`失败 ${fail} 项 / 通过 ${pass} / 失败 0`)
   process.exit(1)
 }
-console.log(`全部通过：${pass} 项`)
+console.log(`通过 ${pass} / 失败 0`)

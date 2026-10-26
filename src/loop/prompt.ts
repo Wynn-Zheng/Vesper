@@ -1,4 +1,5 @@
 import type { Rules } from '../core/config.ts'
+import type { ChatMessage } from '../llm/types.ts'
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -144,4 +145,24 @@ export function buildSystem(parts: PromptParts): string {
   lines.push('直接说你要说的话，不要加引号，不要解释你在做什么。')
 
   return lines.join('\n')
+}
+
+/**
+ * 拼出这次请求的完整消息：system → 前情摘要（有的话）→ 最近几轮原文 → 本轮输入。
+ *
+ * 摘要单独放一条前缀消息，不塞进 system：
+ * 这样最近的原文顺序不变，summary 为空时和以前完全一样。
+ */
+export function buildPrompt(
+  system: string,
+  history: ChatMessage[],
+  userContent: string,
+  summary = '',
+): ChatMessage[] {
+  const messages: ChatMessage[] = [{ role: 'system', content: system }]
+  const digest = summary.trim()
+  if (digest) messages.push({ role: 'user', content: `【前情摘要】${digest}` })
+  messages.push(...history)
+  messages.push({ role: 'user', content: userContent })
+  return messages
 }

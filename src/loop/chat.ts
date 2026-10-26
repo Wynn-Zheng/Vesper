@@ -1,14 +1,19 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { Incoming } from '../core/types.ts'
+import { sendImage } from '../channel/send.ts'
+import { pickEmoji } from '../emoji/pick.ts'
+import { createEmojiStore, type EmojiStore } from '../emoji/store.ts'
 import { chat } from '../llm/deepseek.ts'
 import { describeImages, renderImages } from '../llm/vision.ts'
-import type { LlmOptions, ToolSpec } from '../llm/types.ts'
+import type { ChatMessage, LlmOptions, ToolSpec } from '../llm/types.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
 import { recall, renderRecalled, similarity } from '../memory/recall.ts'
 import { markMentioned, unmentionedIssues } from '../self/observe.ts'
 import { personOfMessage, scopeOf } from '../memory/scope.ts'
-import { loadMood } from '../persona/mood.ts'
+import { decayedMood, loadMood } from '../persona/mood.ts'
 import { loadProfile } from '../persona/profile.ts'
 import { renderGroupContext } from '../people/group.ts'
 import { explainJargon, renderJargon } from '../learn/jargon.ts'
@@ -16,8 +21,9 @@ import { relevantPlays, renderPlays } from '../learn/plays.ts'
 import { buildRelationBlock } from '../relation/format.ts'
 import { loadRelation } from '../relation/store.ts'
 import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
-import { buildSystem } from './prompt.ts'
-import { getTurns, historyMessages, pushTurn, sessionKey } from './session.ts'
+import { compressHistory, shouldCompress } from './compress.ts'
+import { buildPrompt, buildSystem } from './prompt.ts'
+import { getSession, getTurns, historyMessages, pushTurn, sessionKey, setSummary } from './session.ts'
 
 export interface GenerateOptions {
   rules: Rules
@@ -75,9 +81,99 @@ export function formatUserText(scope: string, speaker: string | undefined, text:
 /** 单条输入的上限：防止有人粘贴一整篇文章把上下文撑爆 */
 const MAX_INPUT_CHARS = 2000
 
+/** 和 emoji/store.ts 的默认根目录保持一致 */
+const EMOJI_ROOT = join('persona', 'emoji')
+
+/** 表情包库按 libraryCap 复用，规则热重载改了上限才重建 */
+let emojiStore: EmojiStore | null = null
+let emojiStoreCap = -1
+
+function getEmojiStore(cap: number): EmojiStore {
+  if (!emojiStore || emojiStoreCap !== cap) {
+    emojiStore = createEmojiStore(EMOJI_ROOT, { libraryCap: cap })
+    emojiStoreCap = cap
+  }
+  return emojiStore
+}
+
+/** score/judge 目前都不带情绪字段，用 persona 的当前心情；没有就当 neutral */
+function currentEmotion(): string {
+  return decayedMood(loadMood())?.emotion.trim() || 'neutral'
+}
+
+/**
+ * 历史超过阈值时压一次。失败只记 warn，旧摘要和本轮回复都不受影响。
+ * 每轮最多调一次 compressHistory，不会递归触发。
+ */
+async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<void> {
+  const threshold = opts.rules.context.summaryThreshold
+  const keepRecent = opts.rules.context.keepRecent
+
+  try {
+    const session = getSession(key)
+    const history: ChatMessage[] = session.turns.map((t) => ({ role: t.role, content: t.content }))
+    if (!shouldCompress(history, threshold, keepRecent)) return
+
+    const result = await compressHistory(history, {
+      threshold,
+      keepRecent,
+      prevSummary: session.summary,
+      callLLM: async (prompt) => {
+        const res = await chat([{ role: 'user', content: prompt }], {
+          ...opts.llm,
+          temperature: 0.3,
+          maxTokens: 400,
+        })
+        return res.text
+      },
+    })
+
+    if (!result.compressed) {
+      info('历史压缩未成功，保持旧摘要', { 会话: key })
+      return
+    }
+
+    // oldest 就是这次被压掉的那截；recent 原样留作新的历史
+    const oldestCount = Math.max(0, history.length - result.recent.length)
+    const keep = Math.min(result.recent.length, session.turns.length)
+    session.turns = session.turns.slice(session.turns.length - keep)
+    setSummary(session, result.summary, oldestCount)
+    info('历史已压缩', { 会话: key, 压掉: oldestCount, 保留: keep })
+  } catch (err) {
+    warnAt('历史压缩失败，本轮照常回复', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+/** 回复后按当前情绪挑一张表情包发出去；失败不影响文字回复 */
+async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
+  const limit = Math.max(0, Math.floor(rules.emoji.maxPerReply))
+  if (!rules.emoji.enabled || limit === 0) return
+
+  try {
+    // 没有索引说明库还不存在。先判断再建 store，避免顺手写一个空索引到 persona/。
+    if (!existsSync(join(EMOJI_ROOT, 'index.json'))) return
+
+    const store = getEmojiStore(rules.emoji.libraryCap)
+    const item = pickEmoji(await store.list(), currentEmotion())
+    if (!item) return
+
+    await sendImage(m.from, join(EMOJI_ROOT, item.file))
+    await store.touch(item.id)
+    info('发了表情包', { file: item.file })
+  } catch (err) {
+    warnAt('表情包发送失败，不影响文字回复', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
 /** 一次完整回合：system(人格+关系+画像+记忆) + 历史 + 本轮 → 模型 → 记入会话 */
 export async function generateReply(m: Incoming, opts: GenerateOptions): Promise<string> {
   const key = sessionKey(m.from)
+  // 先把会话从磁盘读进来：历史原文和滚动摘要都挂在同一个对象上
+  const session = getSession(key)
   const scope = scopeOf(m.from)
   const personId = personOfMessage(m)
   const text = m.text.length > MAX_INPUT_CHARS ? `${m.text.slice(0, MAX_INPUT_CHARS)}…（后面太长了，没看完）` : m.text
@@ -133,11 +229,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     }
   }
 
-  const messages = [
-    { role: 'system' as const, content: system },
-    ...historyMessages(key),
-    { role: 'user' as const, content: userContent },
-  ]
+  // 摘要非空时，它会在历史原文前多一条【前情摘要】；为空时与以前完全一样
+  const messages = buildPrompt(system, historyMessages(key), userContent, session.summary)
 
   const specs = opts.tools ? toSpecs(opts.tools) : []
   const res = await chat(messages, specs.length ? { ...opts.llm, tools: specs } : opts.llm)
@@ -151,6 +244,11 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
 
   pushTurn(key, { role: 'user', content: userContent, at: m.at })
   pushTurn(key, { role: 'assistant', content: res.text, at: Date.now() })
+
+  // 历史压成滚动摘要，避免 session 无限增长；失败不挡这一轮
+  await compressIfNeeded(key, opts)
+  // 文字回复已经生成，按情绪补一张表情包；失败只 warn
+  await maybeSendEmoji(m, opts.rules)
 
   if (res.usage) info('token 用量', res.usage)
   if (recalled.facts.length || recalled.episodes.length) {

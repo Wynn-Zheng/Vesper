@@ -32,6 +32,10 @@ const STEPS: Step[] = [
   { name: '资源增长', cmd: 'node --env-file-if-exists=.env scripts/test-growth.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '新功能', cmd: 'node --env-file-if-exists=.env scripts/test-features.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '看图', cmd: 'node --env-file-if-exists=.env scripts/test-vision.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '历史压缩', cmd: 'node scripts/test-compress.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '会话摘要', cmd: 'node scripts/test-session-summary.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '表情包', cmd: 'node scripts/test-emoji.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '表情包通道', cmd: 'node scripts/test-emoji-channel.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
