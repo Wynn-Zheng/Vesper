@@ -9,6 +9,8 @@ import { personIdOf, personOfAccount } from '../people/store.ts'
 import type { RawTurn, Scope } from '../memory/types.ts'
 import { writeAtomic } from '../store/fs.ts'
 
+import { refreshCodeMap } from '../self/codemap.ts'
+
 interface State {
   /** 每个会话各自的整理游标：A 聊完不该把 B 的进度也推掉 */
   scopes: Record<string, number>
@@ -119,6 +121,37 @@ export function startDistiller(opts: DistillerOptions): () => void {
   // 启动后延迟 1 分钟再第一次跑，避免和启动日志抢
   const first = setTimeout(run, 60_000)
   const timer = setInterval(run, interval)
+
+  return () => {
+    stopped = true
+    clearTimeout(first)
+    clearInterval(timer)
+  }
+}
+
+/**
+ * 代码地图每天刷一次。
+ *
+ * 为什么不用"每次改代码就刷"：它读的是缓存，慢一点没关系；
+ * 但每次请求都扫一遍 60 多个文件太浪费。
+ * 用户说"你重新扫一遍"时会强制刷新，不用等定时。
+ */
+export function startCodeMapRefresher(intervalMs = 24 * 3600_000): () => void {
+  let stopped = false
+
+  const run = () => {
+    if (stopped) return
+    try {
+
+      refreshCodeMap(false)
+    } catch {
+      /* 刷不了就算了，下次再说 */
+    }
+  }
+
+  // 启动后 2 分钟跑第一次（错开别的定时器）
+  const first = setTimeout(run, 120_000)
+  const timer = setInterval(run, intervalMs)
 
   return () => {
     stopped = true

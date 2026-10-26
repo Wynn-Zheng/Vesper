@@ -294,6 +294,13 @@ async function runAction(
 
 // 标记/取消精选：表达学习里"这句值得学吗"是人工判断的，
     // 不能只靠模型自评（实测 24 条全是 8 分，里面有追问的坏例子）。
+// 重扫代码地图：用户说"你重新扫一遍"时点这个，或者它自己调 rescan_code 工具
+    case 'rescanCode': {
+      const { refreshCodeMap, loadCodeMapBrief } = await import('../self/codemap.ts')
+      const r = refreshCodeMap(true)
+      return { rebuilt: r.rebuilt, modules: r.modules, brief: loadCodeMapBrief() }
+    }
+
     case 'togglePlay': {
       const scene = String(payload['scene'] ?? '').trim()
       const checked = payload['checked'] === true

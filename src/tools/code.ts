@@ -109,4 +109,28 @@ export const findCallersTool: Tool = {
 }
 
 /** 全部读代码相关的工具 */
-export const codeTools: Tool[] = [readCodeTool, readAroundTool, searchCodeTool, findCallersTool]
+
+/**
+ * 重新扫一遍自己的结构。
+ *
+ * 什么时候用：用户说"你重新扫一遍""你是不是又变了"。
+ * 平时不用——地图在每次代码改动后会自动更新，进 prompt 的是最新版。
+ */
+export const rescanCodeTool: Tool = {
+  name: 'rescan_code',
+  description:
+    '重新扫一遍自己的源码结构，更新"我长什么样"那份地图。' +
+    '只在用户明确要求（"你重新扫一遍""看看你现在什么结构"）时用，平时不用调。',
+  parameters: {
+    type: 'object',
+    properties: {},
+  },
+  async run() {
+    const { refreshCodeMap, loadCodeMapBrief } = await import('../self/codemap.ts')
+    const r = refreshCodeMap(true)
+    return `扫完了：${r.modules} 块。
+${loadCodeMapBrief()}`
+  },
+}
+
+export const codeTools: Tool[] = [readCodeTool, readAroundTool, searchCodeTool, findCallersTool, rescanCodeTool]

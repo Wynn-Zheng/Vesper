@@ -21,6 +21,7 @@ import { relevantPlays, renderPlays } from '../learn/plays.ts'
 import { buildRelationBlock } from '../relation/format.ts'
 import { loadRelation } from '../relation/store.ts'
 import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
+import { loadCodeMapBrief } from '../self/codemap.ts'
 import { compressHistory, shouldCompress } from './compress.ts'
 import { buildPrompt, buildSystem } from './prompt.ts'
 import { getSession, getTurns, historyMessages, pushTurn, sessionKey, setSummary } from './session.ts'
@@ -201,6 +202,7 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   const system = buildSystem({
     rules: opts.rules,
     self: buildSelfBlock(opts.rules, new Date(), personId, m.from.name),
+    codeMap: loadCodeMapBrief(),
     personName: m.senderName ?? m.from.name,
     profile: loadProfile(personId),
     relation: [buildRelationBlock(opts.rules, loadRelation(personId), loadMood()), groupBlock]

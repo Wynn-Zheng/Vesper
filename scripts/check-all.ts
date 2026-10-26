@@ -56,6 +56,7 @@ const STEPS: Step[] = [
   { name: '体验改进', cmd: 'node scripts/test-experience.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '记忆去重', cmd: 'node scripts/test-dedup.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '代码工具', cmd: 'node scripts/test-tools.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '代码地图', cmd: 'node scripts/test-codemap.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'

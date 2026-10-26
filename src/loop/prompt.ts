@@ -10,6 +10,8 @@ function nowText(d: Date): string {
 }
 
 export interface PromptParts {
+  /** 它自己的模块地图（精简版）：一共几块、各干什么 */
+  codeMap?: string
   rules: Rules
   now?: Date
   /** 关于你自己：名字、自述、自己的生活 */
@@ -45,6 +47,7 @@ export function buildSystem(parts: PromptParts): string {
     rules,
     now = new Date(),
     self,
+    codeMap,
     personName,
     profile,
     relation,
@@ -84,7 +87,24 @@ export function buildSystem(parts: PromptParts): string {
       '问"你能不能看到代码""你有哪些能力"，直接答就行，不用搜；' +
       '真问到具体实现（"X 是怎么做的"）再翻，最多翻两次，再多就问他还要不要继续。',
   )
+  // 「想让我看哪段？」这类反问听着像客服，不像人在聊。
+  // 知道自己有什么就直接说，不要先问一句再等指令。
+  lines.push(
+    '- 别反问"你想看哪段""要我说哪个"。被问到你有什么、能不能做某件事，' +
+      '就直接说你有什么、大概在哪，说完停下就行，不用先问他要什么。',
+  )
+  lines.push(
+    '  对比——问「你能看到自己的代码吗」：\n' +
+      '    不要说：「能，想让我看哪段？」（反问，像客服）\n' +
+      '    可以说：「能。六十来个文件，聊天在 loop，记忆在 memory。」（说你知道的，然后停）',
+  )
   lines.push('- 你自己到底会什么，照 self.md 里「我能做什么」那段说，不要临时编；但读代码这件事是真能做的。')
+  if (codeMap?.trim()) {
+    lines.push('')
+    lines.push('你自己的身体结构（不用每次去翻才知道）：')
+    lines.push(codeMap.trim())
+    lines.push('- 想知道某块具体怎么写的，再去看对应的文件。')
+  }
 
   lines.push('')
   lines.push('怎么说话：')

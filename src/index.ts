@@ -2,6 +2,7 @@ import { OnebotTransport } from './channel/onebot.ts'
 import { boot } from './boot.ts'
 import { ToolRegistry } from './tools/registry.ts'
 import { codeTools } from './tools/code.ts'
+import { refreshCodeMap } from './self/codemap.ts'
 import { startConsole } from './console/server.ts'
 import { loadRules } from './core/config.ts'
 import { info, initLog, pruneLogs, warnAt, errorAt } from './core/log.ts'
@@ -93,6 +94,12 @@ if (apiKey) {
   const llmRef = llm
   setTimeout(() => {
     startDistiller({ llm: llmRef })
+    // 代码地图：启动时先确保有一份，之后每天刷
+    try {
+      refreshCodeMap(false)
+    } catch {
+      /* 没有就算了，用到时会现场扫 */
+    }
     info('自动整理已启动（每 30 分钟检查一次）')
   }, 30_000)
 
