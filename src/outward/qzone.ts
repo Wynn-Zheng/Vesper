@@ -296,7 +296,12 @@ export async function composeDraft(
     )
     const content = res.text.trim().replace(/^["'「」]+|["'「」]+$/g, '').slice(0, 300)
     if (content.length < 6) return { ok: false, reason: '没想出什么想发的' }
-    await saveDraft(content, { reason: '自己想发的' })
+    // saveDraft 返回 false = 和已有草稿太像，没攒。
+    // 这时候不能报"想出来了"，不然点了没反应还以为是成功了。
+    const saved = await saveDraft(content, { reason: '自己想发的' })
+    if (!saved) {
+      return { ok: false, content, reason: '想出来的和已有的草稿太像，没攒（换个角度再试一次）' }
+    }
     return { ok: true, content }
   } catch (err) {
     return { ok: false, reason: String(err).slice(0, 80) }

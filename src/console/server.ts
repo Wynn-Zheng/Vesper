@@ -379,8 +379,11 @@ async function runAction(
       const { composeDraft } = await import('../outward/qzone.ts')
       const rules = opts.getRules()
       const r = await composeDraft(opts.llm, rules)
-      if (!r.ok) throw new Error(r.reason ?? '没想出什么')
-      return { drafted: r.content }
+      // 没攒上不算"请求失败"，如实带回去让前端显示原因就行。
+      // 抛 500 的话前端只说"失败"，看不到"太像了"这种具体说明。
+      return r.ok
+        ? { drafted: r.content, reason: '' }
+        : { drafted: '', reason: r.reason ?? '没想出什么', tried: r.content ?? '' }
     }
 
     case 'groupMembers': {
