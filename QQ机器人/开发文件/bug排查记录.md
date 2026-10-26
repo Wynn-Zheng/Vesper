@@ -72,3 +72,43 @@
 2. **`.gitignore` 的 `persona/` 把 `src/persona/` 也忽略了**：`src/persona/{mood,profile,version}.ts` 从来没进过 git，主仓库里是未跟踪文件，worktree 里直接没有 → 冒烟 / 数据体检报 `ERR_MODULE_NOT_FOUND`。建议改成 `/persona/`，并把 `src/persona/` 提交。
 3. **`test-deep` 依赖 `persona/will.json` 里已有 `at`**：新 worktree 的默认 `will.json` 是 `at: 0`，`Boolean(w.at)` 直接判失败。测试该断言 `typeof w.at === 'number'`，而不是依赖已有数据。
 4. **live 检查连的是主仓库的服务**：控制台在 7788 跑着，worktree 里的「API 边界 / 并发」实际打的是主仓库代码，结果只能参考，不能当作本 worktree 的验证。
+## 第 2-9 轮汇总（2026-10-26）
+
+| 轮 | 范围 | 找到的 bug | 体检脚本 | 项数 |
+|---|---|---|---|---|
+| 1 | 表情包 + 看图 | store 按实例排队不够（要按目录）、detect 没先判 image、size=0 被当合法 | test-emoji-bugs / test-vision-bugs | 19 + 19 |
+| 2 | store + memory | writeAtomic 失败残留 .tmp、appendJsonl 半行、serialize 只支持同步、facts 解析太脆 | test-store-bugs / test-memory-bugs | 23 + 47 |
+| 3 | loop + self | 摘要截断切半个 emoji、坏 JSONL 的 null/数组/裸字符串能 parse 成功但读字段炸 | test-loop-bugs / test-self-bugs | 43 + 34 |
+| 4 | scheduler + channel | rand 配置写反会越界、纯标点片段单独成条、硬切切半个 emoji | test-sched-bugs / test-chan-bugs | 58 + 115 |
+| 5 | core + people | 限流 max<=0 语义改了要同步测试、config 深合并、access 优先级 | test-core-bugs / test-people-bugs | 98 + 96 |
+| 6 | relation + learn + persona | **.gitignore 的 persona/ 把 src/persona/ 源码也忽略了**、关系值 NaN/Infinity 兜底、锚点上限 | test-relation-bugs | 25 |
+| 7 | llm + outward + diagnose | humanDuration(3599) 显示「1 小时 0 分」、readSlice 把负行号静默夹成 1 | test-llm-bugs / test-outward-bugs / test-diagnose-bugs | 12 + 19 + 29 |
+| 8 | console + 主流程 | **无新 bug**（36 项全过） | test-console-bugs | 36 |
+| 9 | 端到端 + 配置组合 + 真实数据 | **无新 bug**（41 项全过） | test-integration-bugs | 41 |
+
+### 最严重的发现
+
+**第 6 轮：`.gitignore` 的 `persona/` 规则把 `src/persona/` 源码目录也忽略了。**
+
+```
+git check-ignore -v src/persona/mood.ts
+.gitignore:5:persona/    src/persona/mood.ts
+```
+
+后果：`src/persona/{mood,profile,version}.ts` 三个源文件从来没进过 git。
+clone 这个仓库会缺三个文件，代码直接跑不起来。
+
+修法：规则改成 `/persona/` 和 `/data/`（只忽略根目录）。
+
+### 过程中的坑
+
+1. **agenttree 的 brain 拆解两次跑偏**（"表情包+看图"猜成"压缩+控制台"，第二次变成"只出报告不修"）。最后改成自己写任务树 `plan --import`。
+2. **import 格式要试**：顶层不能包 `tree`，要平铺；根节点也要 `acceptance`；有子节点的要 `coverage`。
+3. **worktree 里没有 `node_modules`**：判据里写 `node node_modules/typescript/bin/tsc` 一定失败。
+4. **opencode 免费额度在第 7 轮用完**（Free usage limit reached），之后 act 全 blocked，只能手写。
+5. **判据带中文路径会失败**：git 输出的是八进制转义（`\346\234\272...`），字符串比对不上。
+6. **opencode 会顺手改 scope 外的文件**（`check-all.ts`、`.gitignore`、`test/units.test.ts`）——有好有坏，要逐个判断。
+
+### 现在的检查规模
+
+`npm run check-all` 35 项，其中 15 个是这轮新增的模块体检脚本（合计约 600 个断言）。

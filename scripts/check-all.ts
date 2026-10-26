@@ -51,6 +51,7 @@ const STEPS: Step[] = [
   { name: '外部能力', cmd: 'node scripts/test-outward-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '诊断工具', cmd: 'node scripts/test-diagnose-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '控制台与主流程', cmd: 'node --env-file-if-exists=.env scripts/test-console-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '端到端一致性', cmd: 'node --env-file-if-exists=.env scripts/test-integration-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
