@@ -169,7 +169,14 @@ if (llm) {
         return
       }
     }
-    warnAt('群名单预热没成功（NapCat 可能一直没连上）', { 群数: groups.length })
+    // 盘里已经有名单时不算失败：那只是"这次没刷新成"，用到的是旧数据，
+    // 下一条群消息进来时会再刷。真没名单才值得 warn。
+    const hasAny = groups.some((g) => !membersAreStale(g) || ok > 0)
+    if (!hasAny) {
+      warnAt('群名单预热没成功，盘里也没有旧名单（NapCat 可能一直没连上）', { 群数: groups.length })
+    } else {
+      info(`群名单预热部分完成（${ok}/${groups.length}），其余用旧名单顶着`)
+    }
   })()
 }
 info('已启动')
