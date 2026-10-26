@@ -35,16 +35,32 @@ timeout = 300
 json_mode = true
 temperature = 0.2
 
-# act 执行器：用 DSH 的 headless 模式。
+# act 执行器：**opencode 优先，不行再用 dsh headless**。
 #
-# 为什么不是 `dsh.cmd`：agenttree 用 subprocess(shell=False) 调 worker，
-#   而 Windows 的 CreateProcess 只认 .exe，不认 .cmd/.bat —— 直接写 dsh.cmd
-#   会 FileNotFoundError。所以用 `node <bin.js>` 绕过，node 是 .exe。
+# 为什么不直接写 route.act = ["opencode", "dsh"]：
+#   agenttree 的 worker_for() 只检查「配置里有没有这个 worker」，
+#   不检查「这个 worker 还能不能用」——只要配了就直接用，不会 fallback。
+#   所以用一个包装脚本 scripts/act-fallback.mjs 在进程内部做回退。
 #
-# 为什么不是 opencode：那个 exe 已经不可用（免费额度耗尽，probe 报 FAIL）。
+# opencode 现在挂的原因（2026-10-26 实测）：
+#   {"type":"provider.quota","message":"Free usage limit reached...","status":429}
+# 是免费额度用完，不是 exe 坏了。订阅或额度恢复后它又能用，所以保留。
 #
-# 为什么能在 worktree 里跑：QQbot 的 .env 被 gitignore，worktree 里没有，
-#   所以不会触发 DSH 那条「.env 不许设 DEEPSEEK_BASE_URL」的检查。
+# 为什么用 node 而不是 dsh.cmd：
+#   agenttree 用 subprocess(shell=False) 调 worker，Windows 的 CreateProcess
+#   只认 .exe，不认 .cmd/.bat。node 是 .exe，所以用它当入口。
+#
+# 为什么要注释掉 .env 里的 DEEPSEEK_BASE_URL：
+#   dsh 拒绝 .env 里设这个变量（只认启动环境）。代码里有默认值，
+#   注释掉不影响 bot，也能让 probe 在项目根目录跑通。
+[[workers]]
+name = "act"
+kind = "cli"
+cmd = ["node", "scripts/act-fallback.mjs", "{spec}"]
+concurrency = 1
+timeout = 1200
+
+# 保留 dsh 的定义，方便单独 probe（ACT_FORCE=dsh 时也走它）
 [[workers]]
 name = "dsh"
 kind = "cli"
@@ -57,10 +73,15 @@ cmd = [
 concurrency = 1
 timeout = 1200
 
+# 注意：**不单独定义 opencode worker**。
+# 它现在由 act-fallback.mjs 内部调用（先试 opencode，失败了再换 dsh）。
+# 如果在这里也定义，probe 会因为它额度用完而报 FAIL，让整个 probe 退出码变 1，
+# 看起来像配置错了 —— 实际上 act 通道是好的。
+
 [route]
 plan  = ["brain-llm"]
 think = ["brain-llm"]
-act   = ["dsh"]
+act   = ["act"]
 
 [git]
 # 必须和当前分支一致，否则 run 会切走
