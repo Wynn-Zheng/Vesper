@@ -16,14 +16,37 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  * - 401/400/422 视为配置错误，直接抛，不浪费配额
  * - 网络错误、429、5xx 重试 2 次
  */
+
+/**
+ * 把内部消息转成 API 要的形状。
+ *
+ * 内部用 camelCase（toolCallId / toolCalls），API 要 snake_case（tool_call_id / tool_calls）。
+ * 之前直接 JSON.stringify 发出去，接上工具后第一次调用就 422：
+ *   messages[5]: missing field `tool_call_id`
+ */
+function toWire(m: ChatMessage): Record<string, unknown> {
+  const out: Record<string, unknown> = { role: m.role, content: m.content }
+  if (m.toolCallId) out['tool_call_id'] = m.toolCallId
+  if (m.toolCalls?.length) {
+    out['tool_calls'] = m.toolCalls.map((c) => ({
+      id: c.id,
+      type: 'function',
+      function: { name: c.name, arguments: JSON.stringify(c.args ?? {}) },
+    }))
+    // assistant 带 tool_calls 时 content 不能是空字符串以外的怪东西
+    if (!m.content) out['content'] = null
+  }
+  return out
+}
+
 export async function chat(messages: ChatMessage[], opts: LlmOptions): Promise<LlmResult> {
   const body = JSON.stringify({
     model: opts.model,
-    messages,
+    messages: messages.map(toWire),
     temperature: opts.temperature ?? 1.0,
     max_tokens: opts.maxTokens ?? 300,
     stream: false,
-    // 现在不会传 tools（没注册任何工具），字段留着以后用
+    // 有工具才传；tool_choice=auto 让它自己决定要不要翻代码
     ...(opts.tools?.length ? { tools: opts.tools, tool_choice: 'auto' } : {}),
   })
 
@@ -69,7 +92,7 @@ export async function chat(messages: ChatMessage[], opts: LlmOptions): Promise<L
       const msg = data.choices?.[0]?.message
       const text = msg?.content?.trim() ?? ''
 
-      // 模型要求调工具：现在没有工具，走到这里说明配置有问题，但结构先留着
+      // 模型要求调工具：参数是 JSON 字符串，坏了就当空对象（让工具自己报错，别在这崩）
       const toolCalls = (msg?.tool_calls ?? [])
         .map((c) => {
           let args: Record<string, unknown> = {}

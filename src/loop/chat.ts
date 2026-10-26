@@ -239,13 +239,80 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   const messages = buildPrompt(system, historyMessages(key), userContent, session.summary)
 
   const specs = opts.tools ? toSpecs(opts.tools) : []
-  const res = await chat(messages, specs.length ? { ...opts.llm, tools: specs } : opts.llm)
+  const llmOpts = specs.length ? { ...opts.llm, tools: specs } : opts.llm
 
-  // 工具循环的接口点：
-  // 以后模型要求调工具时，在这里执行、把结果作为 role='tool' 的消息塞回 messages、
-  // 再调一次 chat()，直到它给出正文。现在没有工具，这个分支永远进不来。
-  if (res.toolCalls?.length) {
-    warnAt('模型要求调工具，但工具循环还没实现', { 工具: res.toolCalls.map((c) => c.name).join(',') })
+  // 工具循环：
+  //   调模型 → 没有 tool_calls 就收工
+  //          → 有就执行，把结果按 toolCallId 塞回去，再调一次
+  //
+  // 三道停止条件（缺一个都会挂住）：
+  //   1. 模型自己不要工具了
+  //   2. 同一个调用重复 3 次（防死循环）
+  //   3. 轮数上限（最后一轮不再执行工具——结果送不回模型，只会白花钱）
+  let res = await chat(messages, llmOpts)
+  const repeatCount = new Map<string, number>()
+  const MAX_ROUNDS = 4
+  let rounds = 0
+
+  while (res.toolCalls?.length) {
+    rounds += 1
+
+    if (rounds > MAX_ROUNDS) {
+      // 到上限了：不再执行工具，而是**撤掉工具**再调一次，逼它用已经翻到的信息回答。
+      // 直接 break 会得到空回复——模型这一轮只吐了 tool_calls、没有正文。
+      warnAt('工具循环到上限，改成让它直接作答', {
+        轮数: rounds,
+        工具: res.toolCalls.map((c) => c.name).join(','),
+      })
+      try {
+        const forced = await chat(
+          [...messages, { role: 'user', content: '（别再查了，就用你刚才翻到的东西回答。）' }],
+          opts.llm,
+        )
+        if (forced.text.trim()) res = forced
+      } catch {
+        /* 连强制作答都失败，就保留原来的空正文，让它下一轮重来 */
+      }
+      break
+    }
+
+    let doomed = false
+    for (const c of res.toolCalls) {
+      const fp = `${c.name}:${JSON.stringify(c.args ?? {})}`
+      const n = (repeatCount.get(fp) ?? 0) + 1
+      repeatCount.set(fp, n)
+      if (n >= 3) doomed = true
+    }
+    if (doomed) {
+      warnAt('同一个工具调用重复太多次，停止', { 工具: res.toolCalls.map((c) => c.name).join(',') })
+      break
+    }
+
+    // 先追加 assistant 那条（带 tool_calls），再追加结果
+    messages.push({
+      role: 'assistant',
+      content: res.text || '',
+      toolCalls: res.toolCalls,
+    })
+
+    const ctx = { personId, scope, now: new Date() }
+    for (const c of res.toolCalls) {
+      let content: string
+      try {
+        const tool = opts.tools?.get(c.name)
+        if (!tool) throw new Error(`没有这个工具：${c.name}`)
+        content = await tool.run(c.args ?? {}, ctx)
+      } catch (err) {
+        // 工具失败要作为结果返回给模型，让它自己换方式或解释清楚，
+        // 不是把整轮对话搞崩。
+        content = JSON.stringify({ error: String(err).slice(0, 200) })
+      }
+      // 单条结果截断：工具可能返回整段代码，全塞回去会撑爆上下文
+      messages.push({ role: 'tool', content: content.slice(0, 4000), toolCallId: c.id })
+    }
+
+    info('用了工具', { 工具: res.toolCalls.map((c) => c.name).join(','), 轮: rounds })
+    res = await chat(messages, llmOpts)
   }
 
   pushTurn(key, { role: 'user', content: userContent, at: m.at })

@@ -1,5 +1,7 @@
 import { OnebotTransport } from './channel/onebot.ts'
 import { boot } from './boot.ts'
+import { ToolRegistry } from './tools/registry.ts'
+import { codeTools } from './tools/code.ts'
 import { startConsole } from './console/server.ts'
 import { loadRules } from './core/config.ts'
 import { info, initLog, pruneLogs, warnAt, errorAt } from './core/log.ts'
@@ -80,8 +82,12 @@ if (apiKey) {
     baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',
     model: process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat',
   }
+  // 它能读自己的代码了：这 4 个工具只读、只碰 src/ 下的 .ts
+  const registry = new ToolRegistry()
+  for (const tool of codeTools) registry.register(tool)
+
   info(`模型已就绪：${llm.model}`)
-  boot(transport, { getRules, reply: (m, r) => generateReply(m, { rules: r, llm: llm! }), llm })
+  boot(transport, { getRules, reply: (m, r) => generateReply(m, { rules: r, llm: llm!, tools: registry }), llm })
 
   // 定时器错开启动：六个都在同一秒触发的话，distiller 和 proactive 会同时调模型
   const llmRef = llm
