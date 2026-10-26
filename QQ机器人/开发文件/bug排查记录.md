@@ -31,3 +31,44 @@
 2. **import 格式要试**：顶层不能包 `tree`，要平铺；根节点也要 `acceptance`；有子节点的要 `coverage`。
 3. **worktree 里没有 `node_modules`**：判据里写 `node node_modules/typescript/bin/tsc` 一定失败。要么去掉，要么用 `node xxx.ts` 直接跑。
 4. **opencode 会顺手改 scope 外的文件**：两个节点都改了 `scripts/check-all.ts`（其实是对的，但 `diff-scope` 拦了）。要么把该文件加进 allow，要么在 spec 里明确禁止。
+
+## 第 2 轮：存储层 + 记忆层（2026-10-26）
+
+用 agenttree 拆 3 个节点跑（#15 存储层 / #16 记忆层 / #17 登记回归）。
+
+### 找到并修掉的缺陷
+
+| # | 位置 | 问题 | 修法 |
+|---|---|---|---|
+| 1 | `src/store/serialize.ts` | `serialized` 只处理同步 `fn`：异步的读改写返回 Promise 后没被跟踪，后来者以为队列空了，直接和它交错 | `fn` 允许返回 Promise；返回 thenable 才占队列，同步 `fn` 仍当场执行完 |
+| 2 | `src/store/serialize.ts` | `drainWrites` 只等一份快照就 `chains.clear()`：等待期间新挂上来的任务会被从 map 抹掉却没等 | 循环等到 map 真空，只清这一轮等过的队尾 |
+| 3 | `src/store/serialize.ts` | 前一个任务失败可能让后续任务被跳过，或把 rejected 链传下去 | 用 `runSafely` 吞掉单个任务的同步抛错 / Promise reject，两个分支都接 |
+| 4 | `src/store/fs.ts` | `writeAtomic` 写一半失败或 rename 失败时，`.tmp` 会留在数据目录里越积越多 | catch 里 `unlinkSync(tmp)` 再抛 |
+| 5 | `src/store/fs.ts` | 上次崩在写一半会留下没有换行的半行，`appendJsonl` 直接往后接会把新行粘在坏行上，两条一起废 | 追加前检查文件末尾是不是 `\n`，不是就先补一个 |
+| 6 | `src/memory/facts.ts` | 单行坏数据（缺日期、置信不是数字、可见性写错）会被整行丢掉；文件读失败（被占用 / 变成目录）会炸掉整条链路 | 拆出 `parseFactLine`；坏行跳过，可见性未知按「私密」收下，置信 clamp 到 0-1，读失败返回空列表，顺手去 BOM |
+| 7 | `src/memory/facts.ts` | `effectiveConfidence` 遇到坏日期 / 坏置信会把 `NaN` 一路传下去 | `dayStart` 校验日期，坏日期退回首次记录日期，置信 clamp |
+| 8 | `src/memory/facts.ts` | `loadDeleted` 读失败会抛；只认 `text` 字段，不校验类型 | 读失败返回空列表；坏行跳过，非字符串 `text` 忽略 |
+| 9 | `src/memory/recall.ts` | `lambdaOf` / `scoreOf` 对 `NaN`、越界重要度和坏衰减配置没兜底，排序会乱 | `finiteOr` + clamp，坏值按普通重要度 5 处理 |
+| 10 | `src/memory/recall.ts` | 召回记账和去重只按 `e.id`：同一天不同会话都叫 `2026-10-26-01`，会把别人的经历标成「刚想起」、合并时误去重 | 记账 key 改成 `scope + id` |
+| 11 | `src/memory/recall.ts` | 空召回也会排一个 `flushTimer` | 没有要记的直接返回 |
+
+### 验证方式
+
+新增两个体检脚本：
+
+- `scripts/test-store-bugs.ts`：`serialized` 空队列同步 / 有队列按序 / 异步任务、`drainWrites` 等待期间新任务、单个任务失败不污染链、`writeAtomic` 失败不留 `.tmp`、`appendJsonl` 半行修复，共 **23 项**
+- `scripts/test-memory-bugs.ts`：手工改坏的 facts、无效日期、并发追加、可见性矩阵、删除黑名单坏行、空库召回、同 id 不同 scope 的记账，共 **47 项**
+
+两个都纳入了 `npm run check-all`（现在 **23 项**），跑完 23/23 全绿。
+
+### 遗留
+
+- `src/persona/` 还没进版本控制（见下面坑 2），需要单独修。
+- `scripts/test-deep.ts` 的 `saveWill` 断言依赖现场数据（见下面坑 3），建议改成断言结构完整。
+
+### 过程中的坑
+
+1. **worktree 里还是没有 `node_modules`**：第 1 轮就踩过，这轮 `check-all` 的类型检查步骤又直接 `MODULE_NOT_FOUND`。这次用目录 junction 指到主仓库的 `node_modules` 才跑起来。
+2. **`.gitignore` 的 `persona/` 把 `src/persona/` 也忽略了**：`src/persona/{mood,profile,version}.ts` 从来没进过 git，主仓库里是未跟踪文件，worktree 里直接没有 → 冒烟 / 数据体检报 `ERR_MODULE_NOT_FOUND`。建议改成 `/persona/`，并把 `src/persona/` 提交。
+3. **`test-deep` 依赖 `persona/will.json` 里已有 `at`**：新 worktree 的默认 `will.json` 是 `at: 0`，`Boolean(w.at)` 直接判失败。测试该断言 `typeof w.at === 'number'`，而不是依赖已有数据。
+4. **live 检查连的是主仓库的服务**：控制台在 7788 跑着，worktree 里的「API 边界 / 并发」实际打的是主仓库代码，结果只能参考，不能当作本 worktree 的验证。
