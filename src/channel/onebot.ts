@@ -1,11 +1,17 @@
 import { timingSafeEqual } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import type { IncomingMessage } from 'node:http'
+import { fileURLToPath } from 'node:url'
 import { WebSocketServer, WebSocket, type RawData } from 'ws'
 import { info, warnAt, errorAt } from '../core/log.ts'
 import type { GroupMember, Transport } from '../core/transport.ts'
 import type { AccessPolicy } from '../core/access.ts'
 import { checkAccess } from '../core/access.ts'
+import type { Rules } from '../core/config.ts'
 import type { Incoming, Target } from '../core/types.ts'
+import { MAX_EMOJI_BYTES, type EmojiStore } from '../emoji/store.ts'
+import { isEmojiCandidate } from '../emoji/detect.ts'
+import { setImageTransport, type OutgoingSegment } from './send.ts'
 
 export interface OnebotOptions {
   host: string
@@ -32,6 +38,29 @@ export interface OnebotOptions {
   followUpWindowMs?: number
   /** 调用 action 的超时（毫秒） */
   timeoutMs?: number
+  /** 每次判断都取一次规则：用来读 emoji.enabled；不传则不收表情包 */
+  getRules?: () => Rules
+  /** 表情包库；不传则不收表情包 */
+  emojiStore?: EmojiStore
+  /** 取图依赖：默认先下 URL，再走 get_image；测试可注入假实现 */
+  getEmojiImage?: EmojiImageFetcher
+}
+
+/** 取到的一张图片：内容 + 扩展名（扩展名会写进表情包库的文件名） */
+export interface EmojiImage {
+  buffer: Uint8Array
+  ext: string
+}
+
+/** 从 image 段取图。失败返回 null，不抛错，避免影响消息主流程。 */
+export type EmojiImageFetcher = (seg: { type: string; data?: Record<string, string> }) => Promise<EmojiImage | null>
+
+export interface EmojiCaptureOptions {
+  enabled: boolean
+  store: Pick<EmojiStore, 'add'>
+  getImage: EmojiImageFetcher
+  /** 一条消息最多收几张，防止有人连发几十张把库刷爆 */
+  limit?: number
 }
 
 interface Pending {
@@ -95,6 +124,224 @@ export function extractImages(message: OBEvent['message']): string[] {
   return out.slice(0, 4)
 }
 
+const IMAGE_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+
+const IMAGE_EXT_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+  'image/avif': 'avif',
+}
+
+/** 只认这几种常见图片扩展名，避免把奇怪后缀写进表情包库。 */
+const KNOWN_IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif'])
+
+function extFromMime(mime: string | null | undefined): string | null {
+  if (!mime) return null
+  const base = mime.split(';')[0]?.trim().toLowerCase() ?? ''
+  return IMAGE_EXT_BY_MIME[base] ?? null
+}
+
+function extFromName(name: string): string | null {
+  const clean = name.split(/[?#]/)[0] ?? ''
+  const m = /\.([a-z0-9]{2,5})$/i.exec(clean)
+  const ext = m?.[1]?.toLowerCase()
+  if (!ext || !KNOWN_IMAGE_EXT.has(ext)) return null
+  return ext === 'jpeg' ? 'jpg' : ext
+}
+
+/** 文件头识别：不少图床的 content-type 是 octet-stream。 */
+function sniffImageExt(buf: Uint8Array): string {
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png'
+  if (buf[0] === 0xff && buf[1] === 0xd8) return 'jpg'
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'gif'
+  if (
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return 'webp'
+  }
+  if (buf[0] === 0x42 && buf[1] === 0x4d) return 'bmp'
+  return 'jpg'
+}
+
+function makeImage(buf: Uint8Array, ext?: string | null): EmojiImage | null {
+  if (!buf.byteLength || buf.byteLength > MAX_EMOJI_BYTES) return null
+  return { buffer: buf, ext: ext ?? sniffImageExt(buf) }
+}
+
+/** 直接把远程图片下下来。QQ 的链接有防盗链，所以带浏览器 UA。 */
+async function downloadImage(url: string): Promise<EmojiImage | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': IMAGE_UA,
+        Referer: 'https://qzone.qq.com/',
+        Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) return null
+    const type = res.headers.get('content-type') ?? ''
+    if (type && !type.startsWith('image/') && !type.startsWith('application/octet-stream')) return null
+    const buf = Buffer.from(await res.arrayBuffer())
+    return makeImage(buf, extFromMime(type) ?? extFromName(url))
+  } catch {
+    return null
+  }
+}
+
+/** 解码 base64://、data:image/... 或裸 base64。 */
+function imageFromBase64(raw: string): EmojiImage | null {
+  let text = raw.trim()
+  let mime = ''
+  const dataUrl = /^data:([^;,]*)(?:;base64)?,([\s\S]*)$/.exec(text)
+  if (dataUrl) {
+    mime = dataUrl[1] ?? ''
+    text = dataUrl[2] ?? ''
+  } else if (text.startsWith('base64://')) {
+    text = text.slice('base64://'.length)
+  }
+  if (!text) return null
+  try {
+    const buf = Buffer.from(text, 'base64')
+    if (!buf.byteLength) return null
+    return makeImage(buf, extFromMime(mime))
+  } catch {
+    return null
+  }
+}
+
+/** get_image 有时返回本机临时文件路径 / file://。 */
+async function readLocalImage(ref: string): Promise<EmojiImage | null> {
+  let path = ref
+  if (ref.startsWith('file://')) {
+    try {
+      path = fileURLToPath(ref)
+    } catch {
+      return null
+    }
+  }
+  // 有 scheme 的（http/base64/data）不在这里处理
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) return null
+  try {
+    const buf = await readFile(path)
+    return makeImage(buf, extFromName(path))
+  } catch {
+    return null
+  }
+}
+
+async function imageFromRef(ref: string): Promise<EmojiImage | null> {
+  const value = ref.trim()
+  if (!value) return null
+  if (/^https?:\/\//i.test(value)) return downloadImage(value)
+  if (value.startsWith('base64://') || value.startsWith('data:')) return imageFromBase64(value)
+  return readLocalImage(value)
+}
+
+/** 解析 get_image 的返回：可能给 base64、file、url 中的任意一种。 */
+async function imageFromActionResult(result: unknown): Promise<EmojiImage | null> {
+  if (typeof result === 'string') return imageFromRef(result)
+  if (typeof result !== 'object' || result === null) return null
+  const o = result as Record<string, unknown>
+
+  for (const key of ['base64', 'data']) {
+    const value = o[key]
+    if (typeof value === 'string') {
+      const got = imageFromBase64(value)
+      if (got) return got
+    }
+  }
+  for (const key of ['file', 'url']) {
+    const value = o[key]
+    if (typeof value !== 'string' || !value.trim()) continue
+    const got = await imageFromRef(value)
+    if (got) return got
+  }
+  return null
+}
+
+/** 把消息段里平台给的尺寸/体积转成数字；缺了就算 undefined。 */
+function toNumber(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
+function toStringRecord(data: Record<string, unknown> | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!data) return out
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined && value !== null) out[key] = String(value)
+  }
+  return out
+}
+
+/**
+ * 从一条消息里挑出表情包候选，取图后入库。
+ *
+ * 失败只 warn：收表情包是锦上添花，绝不能拖慢/打断正常聊天。
+ * 日志里只写 id、体积、原因，不写图片内容。
+ */
+export async function captureEmojiSegments(
+  message: OBEvent['message'],
+  opts: EmojiCaptureOptions,
+): Promise<number> {
+  if (!opts.enabled || !Array.isArray(message)) return 0
+
+  let added = 0
+  let seen = 0
+  const limit = opts.limit ?? 4
+
+  for (const rawSeg of message) {
+    if (rawSeg.type !== 'image') continue
+    if (seen >= limit) break
+    seen++
+
+    const data = toStringRecord(rawSeg.data)
+    const meta = {
+      size: toNumber(data['size']) ?? toNumber(data['file_size']),
+      width: toNumber(data['width']),
+      height: toNumber(data['height']),
+    }
+    const seg = { type: rawSeg.type, data }
+    if (!isEmojiCandidate(seg, meta)) continue
+
+    try {
+      const image = await opts.getImage(seg)
+      if (!image || !image.buffer.byteLength) continue
+      const result = await opts.store.add({
+        buffer: image.buffer,
+        ext: image.ext,
+        source: 'onebot',
+      })
+      if (result.added) {
+        added++
+        info('收到表情包，已入库', { id: result.id, size: image.buffer.byteLength })
+      } else if (result.reason) {
+        warnAt('表情包没有入库', { id: result.id, reason: result.reason })
+      }
+    } catch (err) {
+      warnAt('表情包入库失败，不影响消息', {
+        err: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      })
+    }
+  }
+
+  return added
+}
+
 export class OnebotTransport implements Transport {
   readonly kind = 'onebot'
   private readonly opts: OnebotOptions
@@ -105,6 +352,8 @@ export class OnebotTransport implements Transport {
 
   constructor(opts: OnebotOptions) {
     this.opts = opts
+    // 让 sendImage(target, filePath) 这种两参数写法也能找到当前通道
+    setImageTransport(this)
   }
 
   get connected(): boolean {
@@ -208,6 +457,17 @@ export class OnebotTransport implements Transport {
   }
 
   private onEvent(ev: OBEvent): void {
+    // 收表情包和"要不要回复"解耦：纯图片消息不触发模型，但也值得收。
+    // 故意不 await：下载/入库再慢也不能卡住消息分发。
+    const rules = this.opts.getRules?.()
+    if (this.opts.emojiStore && rules) {
+      void captureEmojiSegments(ev.message, {
+        enabled: rules.emoji.enabled,
+        store: this.opts.emojiStore,
+        getImage: this.opts.getEmojiImage ?? ((seg) => this.fetchEmojiImage(seg)),
+      })
+    }
+
     if (!shouldHandle(ev, this.opts)) {
       // 被 @ 了却没处理：这是异常，必须留痕，否则查不到原因
       if (ev.message_type === 'group' && isAddressed(ev)) {
@@ -250,6 +510,29 @@ export class OnebotTransport implements Transport {
     })
   }
 
+  /** 取一张表情包原图：先直接下 URL，不行再走 OneBot 的 get_image。 */
+  private async fetchEmojiImage(seg: { type: string; data?: Record<string, string> }): Promise<EmojiImage | null> {
+    const data = seg.data ?? {}
+    for (const ref of [data['url'], data['file']]) {
+      if (ref && /^https?:\/\//i.test(ref)) {
+        const got = await downloadImage(ref)
+        if (got) return got
+      }
+    }
+
+    const ref = (data['file'] || data['url'] || '').trim()
+    if (!ref) return null
+    try {
+      const result = await this.callAction('get_image', { file: ref })
+      return await imageFromActionResult(result)
+    } catch (err) {
+      warnAt('get_image 取图失败，跳过这张', {
+        err: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+      })
+      return null
+    }
+  }
+
   private callAction(action: string, params: Record<string, unknown>): Promise<unknown> {
     const ws = this.socket
     if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('NapCat 未连接'))
@@ -272,6 +555,23 @@ export class OnebotTransport implements Transport {
     const replyId = to.replyTo && /^\d+$/.test(to.replyTo) ? to.replyTo : ''
     const message = replyId ? `[CQ:reply,id=${replyId}]${plain}` : plain
     const params = to.kind === 'private' ? { user_id: Number(to.id), message } : { group_id: Number(to.id), message }
+    const data = (await this.callAction(action, params)) as { message_id?: number | string } | null
+    const id = data?.message_id
+    return id !== undefined && id !== null ? { messageId: String(id) } : {}
+  }
+
+  /** 发任意消息段（图片用 base64:// 的 image 段），供 sendImage 复用。 */
+  async sendSegment(to: Target, segment: OutgoingSegment): Promise<{ messageId?: string }> {
+    const action = to.kind === 'private' ? 'send_private_msg' : 'send_group_msg'
+    const replyId = to.replyTo && /^\d+$/.test(to.replyTo) ? to.replyTo : ''
+    const message: Array<{ type: string; data: Record<string, string> }> = []
+    if (replyId) message.push({ type: 'reply', data: { id: replyId } })
+    message.push({ type: segment.type, data: segment.data })
+
+    const params =
+      to.kind === 'private'
+        ? { user_id: Number(to.id), message }
+        : { group_id: Number(to.id), message }
     const data = (await this.callAction(action, params)) as { message_id?: number | string } | null
     const id = data?.message_id
     return id !== undefined && id !== null ? { messageId: String(id) } : {}
