@@ -50,6 +50,45 @@ console.log('=== 1. 只改名字 ===')
   check('不存在的账号会建档', ghost === true && store.loadPerson('qq-000000000')?.name === '谁', store.loadPerson('qq-000000000')?.name)
 }
 
+/* ---------- 1b. 群名片 vs QQ 昵称 ---------- */
+console.log('\n=== 1b. 群名片不覆盖全局名 ===')
+{
+  // 同一个人：QQ 昵称「真名」，两个群的名片不同
+  gc.resetMemberCacheEverywhere()
+
+  const g1 = {
+    async listGroupMembers(): Promise<Array<{ id: string; name: string; nick?: string }>> {
+      return [{ id: '666000111', name: '群A的名片', nick: '真名' }]
+    },
+  }
+  const g2 = {
+    async listGroupMembers(): Promise<Array<{ id: string; name: string; nick?: string }>> {
+      return [{ id: '666000111', name: '群B的名片', nick: '真名' }]
+    },
+  }
+
+  await gc.refreshGroupMembers(g1, '111111111', { force: true })
+  const afterA = store.loadPerson('qq-666000111')?.name
+  check('拉群 A 后全局名是 QQ 昵称', afterA === '真名', afterA)
+  check('群 A 的名单里是群名片', gc.groupMembers('111111111')[0]?.name === '群A的名片', gc.groupMembers('111111111')[0]?.name)
+
+  await gc.refreshGroupMembers(g2, '222222222', { force: true })
+  const afterB = store.loadPerson('qq-666000111')?.name
+  check('拉群 B 后全局名还是 QQ 昵称（没被覆盖）', afterB === '真名', afterB)
+  check('群 B 的名单里是 B 的名片', gc.groupMembers('222222222')[0]?.name === '群B的名片', gc.groupMembers('222222222')[0]?.name)
+  check('两群名片不同但全局名一致', gc.groupMembers('111111111')[0]!.name !== gc.groupMembers('222222222')[0]!.name && afterB === '真名')
+
+  // 没有 nick 的老数据：用 name 兜底
+  gc.resetMemberCacheEverywhere()
+  const noNick = {
+    async listGroupMembers(): Promise<Array<{ id: string; name: string }>> {
+      return [{ id: '666000222', name: '只有名片' }]
+    },
+  }
+  await gc.refreshGroupMembers(noNick, '333333333', { force: true })
+  check('没有 nick 时用 name 兜底', store.loadPerson('qq-666000222')?.name === '只有名片', store.loadPerson('qq-666000222')?.name)
+}
+
 /* ---------- 2. 拉名单时自动回写 ---------- */
 console.log('\n=== 2. 拉名单自动回写名字 ===')
 {
@@ -124,7 +163,7 @@ if (backup) {
 // 收尾：清掉测试建的假人（别污染真实数据）
 {
   const { rmSync, existsSync } = await import('node:fs')
-  const fakes = ['qq-000000000', 'qq-777000111', 'qq-555000111', 'qq-555000222', 'qq-444000111', 'qq-444000222']
+  const fakes = ['qq-000000000', 'qq-777000111', 'qq-555000111', 'qq-555000222', 'qq-444000111', 'qq-444000222', 'qq-666000111', 'qq-666000222']
   let n = 0
   for (const id of fakes) {
     const dir = `persona/people/${id}`

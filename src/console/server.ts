@@ -343,7 +343,7 @@ async function runAction(
       if (!opts.transport.listGroupMembers) throw new Error('当前通道不支持拉群成员')
       // 走缓存：拉到的会落盘，重启后还用得上
       const { refreshGroupMembers, groupMembers } = await import('../people/group.ts')
-      await refreshGroupMembers(opts.transport, gid)
+      await refreshGroupMembers(opts.transport, gid, { force: true })
       const members = groupMembers(gid)
       return { groupId: gid, count: members.length, members: members.slice(0, 100) }
     }

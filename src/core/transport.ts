@@ -11,7 +11,13 @@ export interface SendResult {
 
 export interface GroupMember {
   id: string
+  /** 群里显示的名字（群名片优先） */
   name: string
+  /**
+   * QQ 昵称。群名片每个群可能不一样，全局名要用这个，
+   * 不然同一个人在不同群会互相覆盖。
+   */
+  nick?: string
 }
 
 export interface Transport {

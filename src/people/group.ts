@@ -68,6 +68,8 @@ export function renderGroupContext(groupId: string): string {
   if (members.length) {
     const names = members.map((m) => m.name).slice(0, 25)
     lines.push(`这个群一共 ${members.length} 人：${names.join('、')}${members.length > 25 ? '……' : ''}`)
+    // 群名片每个群不一样：说明一下，免得它把"群里叫这个"当成"这个人就叫这个"
+    lines.push('（这些是他们在群里的名字，可能和私聊时不一样）')
     // 关键：名单里大部分人你没打过交道。不说这句，它会以为"群里就我们俩"。
     const known = new Set(mates.map((m) => m.name))
     const others = members.filter((m) => !known.has(m.name)).length

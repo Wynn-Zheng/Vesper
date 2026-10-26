@@ -649,10 +649,18 @@ export class OnebotTransport implements Transport {
       | null
     if (!Array.isArray(data)) return []
     return data
-      .map((m) => ({
-        id: String(m.user_id ?? ''),
-        name: (m.card || m.nickname || String(m.user_id ?? '')).toString(),
-      }))
+      .map((m) => {
+        const card = (m.card ?? '').toString().trim()
+        const nick = (m.nickname ?? '').toString().trim()
+        const id = String(m.user_id ?? '')
+        return {
+          id,
+          // 群里显示的名字优先用群名片（他在这个群里的名字）
+          name: card || nick || id,
+          // QQ 昵称单独留着：全局名要用它，不能被群名片覆盖
+          nick: nick || card || id,
+        }
+      })
       .filter((m) => m.id && m.id !== 'undefined')
   }
 }

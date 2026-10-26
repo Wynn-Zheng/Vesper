@@ -14,7 +14,10 @@ import { writeAtomic } from '../store/fs.ts'
 
 export interface CachedMember {
   id: string
+  /** 群名片（这个群里显示的名字） */
   name: string
+  /** QQ 昵称（全局名用这个，各群一致） */
+  nick?: string
 }
 
 interface CacheFile {
@@ -146,7 +149,10 @@ export async function refreshGroupMembers(
       const { syncPersonName } = await import('./store.ts')
       let renamed = 0
       for (const m of members) {
-        if (m.id && m.name && syncPersonName('qq', m.id, m.name)) renamed += 1
+        // 用 QQ 昵称同步全局名，不用群名片 ——
+        // 群名片每个群不一样，写进全局会出现"在群 A 叫这个、在群 B 叫那个"
+        const globalName = m.nick || m.name
+        if (m.id && globalName && syncPersonName('qq', m.id, globalName)) renamed += 1
       }
       if (renamed) info(`群里 ${renamed} 个人的名字更新了`, { group: groupId })
     } catch {
