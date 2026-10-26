@@ -44,6 +44,8 @@ const STEPS: Step[] = [
   { name: '记忆层边界', cmd: 'node scripts/test-memory-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '调度器边界', cmd: 'node scripts/test-sched-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '通道层边界', cmd: 'node scripts/test-chan-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '核心边界', cmd: 'node scripts/test-core-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '人物边界', cmd: 'node scripts/test-people-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'

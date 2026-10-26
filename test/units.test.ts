@@ -114,10 +114,12 @@ test('限流：超过额度就拒绝，不同 key 互不影响', () => {
   assert.equal(allow('u:2', 3), true, '别人不受影响')
 })
 
-test('限流：max<=0 表示不限', () => {
+test('限流：max<=0 一律拒绝', () => {
   resetRateLimit()
-  assert.equal(allow('u:9', 0), true)
-  assert.equal(allow('u:9', 0), true)
+  assert.equal(allow('u:9', 0), false)
+  assert.equal(allow('u:9', 0), false)
+  assert.equal(allow('u:9', -1), false)
+  assert.equal(allow('u:9', Number.NaN), false)
 })
 
 /* ---------------- 会话 ---------------- */
