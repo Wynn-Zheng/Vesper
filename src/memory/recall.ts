@@ -2,6 +2,25 @@ import type { Episode, Insight, RawTurn, Recalled, Scope } from './types.ts'
 import { loadFacts, effectiveConfidence } from './facts.ts'
 import { loadEpisodes, loadInsights, recentRaw, saveEpisode } from './store.ts'
 import { loadOpen, type OpenItem } from '../people/open.ts'
+import { listPeople } from '../people/store.ts'
+
+/**
+ * 从 QQ 号查显示名。
+ *
+ * 为什么要查：raw 里只存 senderId（精确），但渲染给模型看时
+ * 一串「他：」「他：」分不清是谁说的 —— 群里两个人对话后突然 @ 你，
+ * 你必须知道上一句是谁说的。查不到就返回空，渲染时回落到"他"。
+ */
+function nameOfAccount(account: string): string {
+  try {
+    for (const person of listPeople()) {
+      if (person.accounts.some((a) => a.id === account)) return person.name?.trim() ?? ''
+    }
+  } catch {
+    /* 查不到就算了 */
+  }
+  return ''
+}
 
 import { sharedBigrams, similarity } from '../core/text.ts'
 
@@ -313,9 +332,18 @@ export function recall(opts: RecallOptions): Recalled {
 
   markRecalled(finalEps, now)
 
+  // 取最近 8 条而不是 4 条：群里两个人你来我往，"突然 @ 你"之前
+  // 至少得看到完整的一轮，4 条经常只截到半句话。
   const recent: RawTurn[] = recentRaw(3)
     .filter((t) => visible(t.scope, scope))
-    .slice(-4)
+    .slice(-8)
+    // 补发言人名字（只用于渲染）。raw 里只有 senderId，
+    // 直接渲染出来会变成一串「他：」——分不清是谁说的。
+    .map((t) => {
+      if (t.role !== 'user' || !t.senderId) return t
+      const name = nameOfAccount(t.senderId)
+      return name ? { ...t, speakerName: name } : t
+    })
 
   // 待办按人：只有私聊才注入他自己的；群里不注入（那是私事清单）
   const open: OpenItem[] = scope.startsWith('private:') ? loadOpen(personId).slice(-5) : []
@@ -370,7 +398,12 @@ export function renderRecalled(r: Recalled): string {
   if (r.recent.length) {
     parts.push('')
     parts.push('【最近说过的话】')
-    for (const t of r.recent) parts.push(`${t.role === 'user' ? '他' : '我'}：${t.text}`)
+    for (const t of r.recent) {
+      // 用真名而不是"他"：群里两个人对话后突然 @ 你，
+      // 必须能分清上一句是谁说的、上上句是谁说的。
+      const who = t.role === 'user' ? t.speakerName || '他' : '我'
+      parts.push(`${who}：${t.text}`)
+    }
   }
 
   return parts.join('\n')

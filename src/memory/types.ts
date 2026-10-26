@@ -11,6 +11,14 @@ export interface RawTurn {
   text: string
   /** 群聊时是谁说的（QQ 号），私聊可省 */
   senderId?: string
+  /**
+   * 发言人的显示名。**只用于渲染，不落盘**。
+   *
+   * raw 里存 senderId 是为了精确；但渲染给模型看时，
+   * 一串「他：」「他：」分不清是谁说的 —— 群里两个人对话后突然 @ 你，
+   * 你必须知道上一句是谁说的、上上句是谁说的。
+   */
+  speakerName?: string
 }
 
 export interface Episode {
