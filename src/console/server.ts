@@ -277,11 +277,21 @@ async function runAction(
         groups.set(t.scope, list)
       }
       const results: unknown[] = []
+      // 手动整理也走同一套筛选——不然"自动"和"手动"结果不一样，
+      // 而手动跑出来的 episode 反而是没筛过的（废话更多）。
+      const { pickForDistill } = await import('../memory/filter.ts')
+      const { loadEpisodes } = await import('../memory/store.ts')
       for (const [scope, list] of groups) {
         const pid = scope.startsWith('private:') ? personOfAccount('qq', scope.slice('private:'.length)) : personId
+        const existing = loadEpisodes()
+          .filter((e) => e.scope === scope)
+          .map((e) => `${e.title} ${e.body}`)
+        const picked = pickForDistill(list, existing)
         results.push({
           scope,
-          ...(await distill({ personId: pid, scope: scope as Scope, turns: list, llm: opts.llm, rules })),
+          原始条数: list.length,
+          筛后条数: picked.length,
+          ...(await distill({ personId: pid, scope: scope as Scope, turns: picked, llm: opts.llm, rules })),
         })
       }
       return { date, account, results }
