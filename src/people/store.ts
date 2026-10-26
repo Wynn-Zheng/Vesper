@@ -252,11 +252,9 @@ export function syncPersonName(platform: Platform, accountId: string, name: stri
   const hit =
     cache.get(key) ?? listPeople().find((p) => p.accounts.some((a) => a.platform === platform && a.id === accountId))
 
-  // 没档案：建一个（内容和 ensurePerson 一样，只是名字来自群名单）
-  if (!hit) {
-    ensurePerson(platform, accountId, display)
-    return true
-  }
+  // 没档案就不建：名单里的人不等于认识的人。
+  // 真聊过之后 ensurePerson 会建档。
+  if (!hit) return false
 
   if (hit.name === display) return false
   hit.name = display

@@ -24,7 +24,17 @@ const store = await import('../src/people/store.ts')
 const gc = await import('../src/people/groupcache.ts')
 
 const GID = '888888888'
-const backup = existsSync('persona/groups.json') ? readFileSync('persona/groups.json', 'utf8') : ''
+// 备份所有群名单（新结构是按群分目录）
+const GROUP_BACKUPS = new Map<string, string>()
+try {
+  const { readdirSync } = await import('node:fs')
+  for (const gid of readdirSync('persona/groups')) {
+    const f = `persona/groups/${gid}/members.json`
+    if (existsSync(f)) GROUP_BACKUPS.set(gid, readFileSync(f, 'utf8'))
+  }
+} catch {
+  /* 没有就算了 */
+}
 
 /* ---------- 1. syncPersonName ---------- */
 console.log('=== 1. 只改名字 ===')
@@ -45,16 +55,19 @@ console.log('=== 1. 只改名字 ===')
   const empty = store.syncPersonName('qq', '777000111', '   ')
   check('空名字不覆盖', empty === false && store.loadPerson('qq-777000111')?.name === '新名字')
 
-  // 不存在的账号：现在会建档（群名单里看到的人都要能对上号）
+  // 不存在的账号：不建档（名单里的人不等于认识的人）
   const ghost = store.syncPersonName('qq', '000000000', '谁')
-  check('不存在的账号会建档', ghost === true && store.loadPerson('qq-000000000')?.name === '谁', store.loadPerson('qq-000000000')?.name)
+  check('不存在的账号不建档', ghost === false && store.loadPerson('qq-000000000') === null, String(ghost))
 }
 
 /* ---------- 1b. 群名片 vs QQ 昵称 ---------- */
 console.log('\n=== 1b. 群名片不覆盖全局名 ===')
 {
-  // 同一个人：QQ 昵称「真名」，两个群的名片不同
-  gc.resetMemberCacheEverywhere()
+  // 先建一个人（代表"真聊过"），再看群名单能不能改他的全局名
+  store.ensurePerson('qq', '666000111', '占位名')
+  store.ensurePerson('qq', '666000222', '占位名2')
+
+  gc.clearMemberCache()
 
   const g1 = {
     async listGroupMembers(): Promise<Array<{ id: string; name: string; nick?: string }>> {
@@ -78,8 +91,8 @@ console.log('\n=== 1b. 群名片不覆盖全局名 ===')
   check('群 B 的名单里是 B 的名片', gc.groupMembers('222222222')[0]?.name === '群B的名片', gc.groupMembers('222222222')[0]?.name)
   check('两群名片不同但全局名一致', gc.groupMembers('111111111')[0]!.name !== gc.groupMembers('222222222')[0]!.name && afterB === '真名')
 
-  // 没有 nick 的老数据：用 name 兜底
-  gc.resetMemberCacheEverywhere()
+  // 没有 nick 的老数据：用 name 兜底（但只更新已存在的）
+  gc.clearMemberCache()
   const noNick = {
     async listGroupMembers(): Promise<Array<{ id: string; name: string }>> {
       return [{ id: '666000222', name: '只有名片' }]
@@ -95,7 +108,7 @@ console.log('\n=== 2. 拉名单自动回写名字 ===')
   // 先建一个人，名字故意写错
   store.ensurePerson('qq', '555000111', '错名字')
 
-  gc.resetMemberCacheEverywhere()
+  gc.clearMemberCache()
   const transport = {
     async listGroupMembers(): Promise<Array<{ id: string; name: string }>> {
       return [
@@ -108,14 +121,15 @@ console.log('\n=== 2. 拉名单自动回写名字 ===')
   await gc.refreshGroupMembers(transport, GID, { force: true })
 
   check('旧人的名字被纠正', store.loadPerson('qq-555000111')?.name === '对的名字', store.loadPerson('qq-555000111')?.name)
-  check('新人也被建档', store.loadPerson('qq-555000222')?.name === '新人', store.loadPerson('qq-555000222')?.name)
+  // 那个人只在名单里躺着、没聊过 → 不建档案
+  check('只在名单里的人不建档', store.loadPerson('qq-555000222') === null, JSON.stringify(store.loadPerson('qq-555000222')))
 }
 
 /* ---------- 3. 名字为空时不覆盖已有 ---------- */
 console.log('\n=== 3. 空名字不覆盖 ===')
 {
   store.ensurePerson('qq', '444000111', '有名字的')
-  gc.resetMemberCacheEverywhere()
+  gc.clearMemberCache()
   const transport = {
     async listGroupMembers(): Promise<Array<{ id: string; name: string }>> {
       return [
@@ -136,27 +150,36 @@ console.log('\n=== 4. 真实数据 ===')
   const empty = people.filter((p) => !p.name?.trim())
   check(`${people.length} 个人里没有空名字`, empty.length === 0, empty.map((p) => p.id).join(','))
 
-  // 群名单里的名字和 people 里的对得上吗
+  // 有档案的人：全局名应该是 QQ 昵称（不是群名片）
   let mismatch = 0
   for (const gid of gc.knownGroups()) {
     for (const m of gc.groupMembers(gid)) {
       const p = store.listPeople().find((x) => x.accounts.some((a) => a.id === m.id))
-      if (p && m.name && p.name !== m.name) mismatch += 1
+      if (!p || !m.nick) continue
+      if (p.name !== m.nick) mismatch += 1
     }
   }
-  check('群名单和 people 的名字一致', mismatch === 0, `${mismatch} 个不一致`)
+  check('有档案的人全局名是 QQ 昵称', mismatch === 0, `${mismatch} 个不一致`)
 }
 
 // 恢复
-gc.resetMemberCacheEverywhere()
-if (backup) {
-  const { writeFileSync } = await import('node:fs')
-  writeFileSync('persona/groups.json', backup, 'utf8')
-} else {
+// 恢复群名单
+{
+  const { mkdirSync, rmSync } = await import('node:fs')
+  const { readdirSync } = await import('node:fs')
+  const { join } = await import('node:path')
   try {
-    unlinkSync('persona/groups.json')
+    // 删掉测试期间新建的假群
+    for (const gid of readdirSync('persona/groups')) {
+      if (!GROUP_BACKUPS.has(gid)) rmSync(join('persona/groups', gid), { recursive: true, force: true })
+    }
+    // 恢复备份
+    for (const [gid, content] of GROUP_BACKUPS) {
+      mkdirSync(join('persona/groups', gid), { recursive: true })
+      writeFileSync(join('persona/groups', gid, 'members.json'), content, 'utf8')
+    }
   } catch {
-    /* 本来就没了 */
+    /* 恢复失败不影响结论 */
   }
 }
 
