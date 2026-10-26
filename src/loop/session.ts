@@ -229,14 +229,21 @@ export function sessionCount(): number {
   return sessions.size
 }
 
-/** 把历史轮次转成模型消息（跳过过长的，避免爆上下文） */
+/**
+ * 把历史轮次转成模型消息：从最近往前装，单条超预算就跳过它，
+ * 但继续看更早的（它们可能更短），绝不把一条消息截成半条。
+ *
+ * 这里只返回历史原文；滚动摘要由 buildPrompt 单独作为【前情摘要】注入，
+ * 所以 summary 设置与否都不会改变原文的条数和顺序。
+ */
 export function historyMessages(key: string, maxChars = 6000): ChatMessage[] {
   const turns = getTurns(key)
   const out: ChatMessage[] = []
   let budget = maxChars
   for (let i = turns.length - 1; i >= 0; i--) {
     const t = turns[i]!
-    if (t.content.length > budget) break
+    // 单条太长：跳过它本身，不能截断，也不能连累更早的短消息
+    if (t.content.length > budget) continue
     budget -= t.content.length
     out.unshift({ role: t.role, content: t.content })
   }

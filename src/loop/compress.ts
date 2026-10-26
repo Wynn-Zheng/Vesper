@@ -86,17 +86,46 @@ function squeeze(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+const summaryGraphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' })
+
+/**
+ * 按字素边界截断，避免把 emoji / 组合字切成半个。
+ * 先保证结果不超过上限（text.length 是 UTF-16 长度），
+ * 再保证不会留下半个代理对或拆开的组合字符。
+ */
+function truncateSummary(text: string, limit: number): string {
+  if (limit <= 0) return ''
+  if (text.length <= limit) return text
+  let out = ''
+  for (const { segment } of summaryGraphemes.segment(text)) {
+    if (out.length + segment.length > limit) break
+    out += segment
+  }
+  return out
+}
+
 /**
  * 把这次的新摘要接到旧摘要后面。
- * 旧摘要为空就直接用新的；否则用「；」拼起来，超长从尾部裁掉。
+ * 旧摘要为空就直接用新的；否则用「；」拼起来。
+ *
+ * 超长时优先完整保留新摘要：它代表这次刚从 history 里移除的内容，
+ * 丢掉就等于那几轮对话彻底没了。让旧摘要从尾部让位；
+ * 只有新摘要自己就超过上限时才截新摘要，截的时候按字素切。
  */
 export function mergeSummary(prevSummary: string | null, digest: string): string {
   const prev = squeeze(prevSummary ?? '')
   const next = squeeze(digest ?? '')
-  if (!prev) return next.slice(0, SUMMARY_LIMIT)
-  if (!next) return prev.slice(0, SUMMARY_LIMIT)
-  const joined = `${prev}；${next}`
-  return joined.length > SUMMARY_LIMIT ? joined.slice(0, SUMMARY_LIMIT) : joined
+
+  if (!next) return truncateSummary(prev, SUMMARY_LIMIT)
+  const nextPart = truncateSummary(next, SUMMARY_LIMIT)
+  if (!prev) return nextPart
+
+  // 「；」占 1 个字符；剩下的空间才轮到旧摘要
+  const room = SUMMARY_LIMIT - nextPart.length - 1
+  if (room <= 0) return nextPart
+
+  const prevPart = truncateSummary(prev, room)
+  return prevPart ? `${prevPart}；${nextPart}` : nextPart
 }
 
 export interface CompressOptions {
