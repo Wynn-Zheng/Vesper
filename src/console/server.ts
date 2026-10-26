@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
@@ -602,6 +602,63 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
       // 新功能总览：表情包 / 看图 / 压缩 / 表达学习
       // 这几块以前只在代码里，控制台看不见，改了什么也没法验证。
+
+      // 群名单总览：每个群一个列表，标出哪些人真有档案（聊过）
+      if (req.method === 'GET' && path === '/api/groups') {
+        const { knownGroups, groupMembers, membersAreStale } = await import('../people/group.ts')
+        const { listPeople } = await import('../people/store.ts')
+
+        // 档案：accountId → { name, hasContent }
+        const people = listPeople()
+        const byAccount = new Map<string, { personId: string; name: string; parts: string[] }>()
+        for (const p of people) {
+          const parts: string[] = []
+          // 只做存在性判断，不读内容（列表页不需要正文）
+          const dir = `persona/people/${p.id}`
+          for (const f of ['facts.md', 'relation.yaml', 'profile.md', 'impression.md', 'open.md']) {
+            try {
+              if (existsSync(`${dir}/${f}`)) parts.push(f)
+            } catch {
+              /* 跳过 */
+            }
+          }
+          for (const a of p.accounts) {
+            byAccount.set(a.id, { personId: p.id, name: p.name, parts })
+          }
+        }
+
+        const groups = knownGroups().map((gid) => {
+          const members = groupMembers(gid).map((m) => {
+            const hit = byAccount.get(m.id)
+            return {
+              id: m.id,
+              名片: m.name,
+              昵称: m.nick ?? '',
+              认识: !!hit,
+              ...(hit ? { 档案: hit.personId, 有: hit.parts } : {}),
+            }
+          })
+          // 认识的排前面，方便一眼看到"这个群里我熟谁"
+          members.sort((a, b) => Number(b.认识) - Number(a.认识))
+          return {
+            groupId: gid,
+            总数: members.length,
+            认识几个: members.filter((m) => m.认识).length,
+            过期: membersAreStale(gid),
+            members,
+          }
+        })
+
+        json(res, 200, {
+          groups,
+          // 群名单之外的档案（私聊认识、不在任何群里的人）
+          others: people
+            .filter((p) => !groups.some((g) => g.members.some((m) => m.档案 === p.id)))
+            .map((p) => ({ id: p.id, name: p.name })),
+        })
+        return
+      }
+
       if (req.method === 'GET' && path === '/api/features') {
         const rules = opts.getRules()
         const out: Record<string, unknown> = {}

@@ -636,7 +636,25 @@
       </div>
     </section>
 
-        <section class="view" id="v-search">
+    
+    <section class="view" id="v-groups">
+      <div class="panel">
+        <h3>群成员 <span class="r" id="groups-head"></span></h3>
+        <div class="body">
+          <div class="hint" style="margin-bottom:10px">
+            这些是群里的人。<b>认识</b>指的是有档案（聊过、有印象）；
+            没标的只是名单里的人，你对他们的了解只有名字。
+          </div>
+          <div id="groups-list"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h3>不在任何群里的 <span class="r">只私聊过的人</span></h3>
+        <div class="body"><div id="groups-others"></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-search">
       <div class="panel">
         <h3>搜索 <span class="r">记忆和日志一起搜</span></h3>
         <div class="body">
@@ -794,7 +812,7 @@ async function api(path, init) {
 // ---------- 导航：6 组，组内用 tab 切 ----------
 const GROUPS = {
   state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
-  memory: [['v-memory', '记忆'], ['v-search', '搜索']],
+  memory: [['v-memory', '记忆'], ['v-groups', '群成员'], ['v-search', '搜索']],
   comm: [['v-logs', '日志'], ['v-chat', '对话']],
   self: [['v-self', '自我'], ['v-features', '新功能']],
   settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
@@ -841,6 +859,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-relation') loadRelation()
   if (viewId === 'v-memory') loadMemory()
   if (viewId === 'v-search') $('search-input')?.focus()
+  if (viewId === 'v-groups') loadGroups()
   if (viewId === 'v-logs') loadStatus()
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
@@ -1135,6 +1154,64 @@ async function loadRelation() {
 const PHASE_LABEL = { sleep: '睡着了', rest: '午后犯懒', active: '醒着' }
 
 // ---------- 新功能（表情包 / 看图 / 压缩 / 情绪序列 / 表达学习） ----------
+
+// ---------- 群成员 ----------
+async function loadGroups() {
+  const box = $('groups-list')
+  const others = $('groups-others')
+  const head = $('groups-head')
+  if (!box) return
+
+  try {
+    const d = await api('/api/groups')
+    const groups = d.groups || []
+
+    if (!groups.length) {
+      head.textContent = '还没有名单'
+      box.innerHTML = '<div class="hint">还没拉到任何群名单。去「工具 → 操作」点「刷新群成员」，或者在群里说句话。</div>'
+    } else {
+      const totalPeople = groups.reduce((a, g) => a + g.总数, 0)
+      const totalKnown = groups.reduce((a, g) => a + g.认识几个, 0)
+      head.textContent = `${groups.length} 个群 / 共 ${totalPeople} 人次，认识 ${totalKnown} 个`
+
+      box.innerHTML = groups
+        .map((g) => {
+          const rows = (g.members || [])
+            .map((m) => {
+              const bad = m.认识
+                ? '<span class="badge" style="background:#238636;color:#fff">认识</span>'
+                : '<span class="hint" style="opacity:.5">—</span>'
+              const nick = m.昵称 && m.昵称 !== m.名片 ? `<span class="hint">（昵称 ${esc(m.昵称)}）</span>` : ''
+              const files = m.有 && m.有.length ? `<span class="hint">${esc(m.有.join(' '))}</span>` : ''
+              return `<div class="row" style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+                <span style="width:52px">${bad}</span>
+                <span style="flex:1">${esc(m.名片)}${nick}</span>
+                <span style="width:120px;text-align:right">${files}</span>
+              </div>`
+            })
+            .join('')
+          const stale = g.过期 ? '<span class="hint" style="color:#d29922">（名单旧了）</span>' : ''
+          return `<details style="margin-bottom:14px" ${g.认识几个 > 0 ? 'open' : ''}>
+            <summary style="cursor:pointer;padding:6px 0;font-weight:600">
+              群 ${esc(g.groupId)} · ${g.总数} 人 · 认识 ${g.认识几个} 个 ${stale}
+            </summary>
+            <div style="max-height:360px;overflow:auto;margin-top:6px">${rows}</div>
+          </details>`
+        })
+        .join('')
+    }
+
+    const o = d.others || []
+    others.innerHTML = o.length
+      ? o.map((p) => `<div class="row"><span class="badge">档案</span> ${esc(p.name)}</div>`).join('')
+      : '<div class="hint">没有（所有人都在某个群里）</div>'
+  } catch (e) {
+    console.error(e)
+    head.textContent = '加载失败'
+    box.innerHTML = `<div class="hint">${esc(e.message)}</div>`
+  }
+}
+
 async function loadFeatures() {
   try {
     const f = await api('/api/features')
