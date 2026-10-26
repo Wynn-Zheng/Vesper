@@ -52,7 +52,7 @@ const PICK_SYSTEM = `你在决定"现在想看哪个视频"。只输出一个编
 - 挑那种你看了标题会想"这说的是什么"的。
 - 不要每次都挑第一个。`
 
-const THINK_SYSTEM = `你刚看完一个视频。写一句你自己想到的话。规则：
+const THINK_SYSTEM = `你刚翻到一个视频——只看到标题、UP 主和简介，没看画面。写一句你自己想到的话。规则：
 
 - **不要总结视频讲了什么**。写你自己的想法、联想、疑问、或者不同意的地方。
 - 一句话，不超过 40 个字。
@@ -132,7 +132,7 @@ export async function watchOne(opts: WatchOptions): Promise<WatchResult> {
   if (!conf) return { ok: false, reason: '没有配置' }
   if (!conf.开启 && !opts.force) return { ok: false, reason: '刷视频没开' }
   if (opts.force !== true && watchedToday() >= conf.每天最多) {
-    return { ok: false, reason: `今天已经看了 ${watchedToday()} 个` }
+    return { ok: false, reason: `今天已经翻了 ${watchedToday()} 个` }
   }
 
   const zones = opts.zone ? [opts.zone] : conf.分区
@@ -161,7 +161,7 @@ export async function watchOne(opts: WatchOptions): Promise<WatchResult> {
   const d = await detail(picked.bvid)
   if (!d) return { ok: false, reason: '拿不到视频详情' }
 
-  info(`它去看了「${d.title}」（${d.up} · ${humanDuration(d.duration)}）`)
+  info(`它翻到「${d.title}」（${d.up} · ${humanDuration(d.duration)}）`)
 
   const thought = await think(opts.llm, {
     title: d.title,
@@ -178,10 +178,10 @@ export async function watchOne(opts: WatchOptions): Promise<WatchResult> {
   appendJsonl(join(ROOT, 'log.jsonl'), { at: rec.at, bvid: d.bvid, title: d.title, zone: d.zone, thought })
 
   if (thought) {
-    appendLife(today(), [`看了个视频《${d.title.slice(0, 20)}》，我想到：${thought}`])
-    info(`它看完想到：${thought}`)
+    appendLife(today(), [`翻到个视频《${d.title.slice(0, 20)}》，我想到：${thought}`])
+    info(`它想到：${thought}`)
   } else {
-    info('它看完没什么感觉，没写')
+    info('它翻到没什么感觉，没写')
   }
 
   return { ok: true, bvid: d.bvid, title: d.title, thought }

@@ -59,6 +59,7 @@ const STEPS: Step[] = [
   { name: '代码地图', cmd: 'node scripts/test-codemap.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群成员名单', cmd: 'node --env-file-if-exists=.env scripts/test-group.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '名字同步', cmd: 'node --env-file-if-exists=.env scripts/test-names.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '能力诚实性', cmd: 'node --env-file-if-exists=.env scripts/test-honesty.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'

@@ -71,8 +71,26 @@ export function listAbilities(rules: Rules): Ability[] {
   }
 
   // 明确做不到的（这几条是硬事实，不是配置）
+  // 上网这件事要说准：B站接口是真能调的，但"能上网"和"能看视频"是两回事。
+  out.push({
+    name: '查 B站',
+    available: true,
+    hint: '能调 B站的公开接口：看热门榜单、拿视频的标题和简介。这是真联网',
+    usedRecently: 0,
+  })
   out.push({ name: '执行代码', available: false, hint: '跑不了程序', usedRecently: 0 })
-  out.push({ name: '上网查东西', available: false, hint: '打不开网页、搜不了东西', usedRecently: 0 })
+  out.push({
+    name: '打开网页/搜索',
+    available: false,
+    hint: '只能调 B站那几个接口，不能打开任意网页、不能搜索',
+    usedRecently: 0,
+  })
+  out.push({
+    name: '看视频画面',
+    available: false,
+    hint: '只看得到标题和简介，看不到视频本身',
+    usedRecently: 0,
+  })
   out.push({ name: '看图片/文件', available: false, hint: '看不见图，也打不开文件', usedRecently: 0 })
 
   return out
