@@ -66,17 +66,14 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
     const pending = unmentionedIssues()
     if (pending.length) {
       lines.push('')
-      lines.push('- 你这套程序有个地方确定在出错（扫系统日志扫出来的，不是你感觉出来的）：')
+      // 只说"哪里在报错"，不贴技术分析。
+      // 详细诊断在控制台能看，每轮往 prompt 里塞 400 字技术细节会把它变成运维机器人。
+      lines.push('- 你这套程序有地方在报错（扫日志扫出来的，不是你感觉出来的）：')
       for (const i of pending) {
-        lines.push(`  · ${i.message}，出在 ${i.where}，已经 ${i.count} 次了`)
-        if (i.guess) {
-          lines.push(`    你读过那段代码，觉得：${i.guess.why}（${i.guess.certainty}）`)
-          if (i.guess.howToFix) lines.push(`    你想到的办法：${i.guess.howToFix}`)
-        }
+        lines.push(`  · ${i.message}（${i.where || '没定位到'}，${i.count} 次）`)
       }
-      lines.push('  · 这是程序层面的故障，不是你的性格问题，别说成"我有个毛病"。')
-      lines.push('  · 抓准时机提一句：「我这边有个地方老出错，出在 xxx，你有空看看」。')
-      lines.push('  · 但如果这一轮聊的是别的事，就别硬插，让它过去。')
+      lines.push('  · 这是程序层面的问题，不是你的性格，别说成"我有个毛病"。')
+      lines.push('  · 聊天顺的时候可以提一句「我这边有个地方老报错，你有空看看」；不顺就别硬插。')
     }
   } catch {
     /* 扫日志失败不影响组装 */

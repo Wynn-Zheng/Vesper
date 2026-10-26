@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { similarity } from '../core/text.ts'
+import { sharedBigrams, similarity } from '../core/text.ts'
 import { appendJsonl } from '../store/fs.ts'
 import { writeAtomic } from '../store/fs.ts'
 
@@ -241,11 +241,22 @@ export function appendLife(date: string, lines: string[]): void {
   const entries = loadLife()
 
   // 已经说过的就不再记（跨天也算，同一件事不该每天写一遍）
+  //
+  // 两道判据一起用：
+  //   1. Jaccard 相似度 > 0.5 —— 抓"几乎一样"
+  //   2. 共同 bigram >= 10 —— 抓"换个说法但说的是同一件事"
+  //      （实测：同一件事改写后 Jaccard 只有 0.16，但共同 bigram 有 12 个）
   const known = entries.flatMap((e) => e.lines)
   const fresh = lines.filter((l) => {
     const t = l.trim()
     if (!t) return false
-    return !known.some((k) => k === t || similarity(k, t) > 0.7)
+    return !known.some((k) => {
+      if (k === t) return true
+      if (similarity(k, t) > 0.5) return true
+      // 短句共同 bigram 天然少，门槛按长度缩放
+      const need = Math.max(5, Math.floor(Math.min(k.length, t.length) / 4))
+      return sharedBigrams(k, t) >= need
+    })
   })
   if (!fresh.length) return
 
