@@ -53,7 +53,7 @@ act   = ["opencode"]
 
 [git]
 # 必须和当前分支一致，否则 run 会切走
-base_branch = "agenttree/20261026-fill-gaps"
+base_branch = "bugfix/r1-emoji-vision"
 worktree_dir = ".agenttree/wt"
 auto_merge = true
 auto_commit = true
