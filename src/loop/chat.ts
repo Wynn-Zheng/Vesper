@@ -11,6 +11,7 @@ import { describeImages, renderImages } from '../llm/vision.ts'
 import type { ChatMessage, LlmOptions, ToolSpec } from '../llm/types.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
 import { recall, renderRecalled, similarity } from '../memory/recall.ts'
+import { renderCoreForPrompt } from '../memory/core.ts'
 import { markMentioned, unmentionedIssues } from '../self/observe.ts'
 import { personOfMessage, scopeOf } from '../memory/scope.ts'
 import { decayedMood, loadMood } from '../persona/mood.ts'
@@ -208,11 +209,13 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     relation: [buildRelationBlock(opts.rules, loadRelation(personId), loadMood()), groupBlock]
       .filter((s) => s.trim())
       .join('\n\n'),
+    // 核心记忆：只能人改的那部分，优先级最高
+    core: renderCoreForPrompt(),
     // 只用精选模式：只注入人工审过的经验
-  memory: [
-    renderRecalled(recalled),
-    renderPlays(relevantPlays(text, 3, opts.rules.表达学习?.只用精选 ?? false)),
-  ]
+    memory: [
+      renderRecalled(recalled),
+      renderPlays(relevantPlays(text, 3, opts.rules.表达学习?.只用精选 ?? false)),
+    ]
     .filter((s) => s.trim())
     .join('\n\n'),
     userChars: m.text.length,

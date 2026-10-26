@@ -655,6 +655,31 @@
       </div>
     </section>
 
+
+    <section class="view" id="v-core">
+      <div class="panel">
+        <h3>我一定不能弄错的 <span class="r" id="core-head"></span></h3>
+        <div class="body">
+          <div class="hint" style="margin-bottom:10px">
+            这个文件<b>只有你能改</b>。它只读，但可以<b>提申请</b>。
+            这是故意的：让它自己判断"什么该永远记住"会膨胀成一堆。
+          </div>
+          <div id="core-list"></div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <input id="core-input" class="chip-input" style="flex:1" placeholder="加一条（例：他讨厌被追问感受）" autocomplete="off">
+            <select id="core-kind" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px">
+              <option>身份</option><option>边界</option><option>诺言</option><option>偏好</option>
+            </select>
+            <button class="btn" onclick="coreAdd()">加</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h3>它提的申请 <span class="r" id="core-req-head"></span></h3>
+        <div class="body"><div id="core-req-list"></div></div>
+      </div>
+    </section>
+
     <section class="view" id="v-groups">
       <div class="panel">
         <h3>群成员 <span class="r" id="groups-head"></span></h3>
@@ -835,7 +860,7 @@ async function api(path, init) {
 // ---------- 导航：6 组，组内用 tab 切 ----------
 const GROUPS = {
   state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
-  memory: [['v-memory', '记忆'], ['v-groups', '群成员'], ['v-search', '搜索']],
+  memory: [['v-memory', '记忆'], ['v-core', '核心'], ['v-groups', '群成员'], ['v-search', '搜索']],
   comm: [['v-logs', '日志'], ['v-chat', '对话']],
   self: [['v-self', '自我'], ['v-qzone', '说说'], ['v-features', '新功能']],
   settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
@@ -883,6 +908,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-memory') loadMemory()
   if (viewId === 'v-search') $('search-input')?.focus()
   if (viewId === 'v-groups') loadGroups()
+  if (viewId === 'v-core') loadCore()
   if (viewId === 'v-logs') loadStatus()
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
@@ -1182,6 +1208,98 @@ const PHASE_LABEL = { sleep: '睡着了', rest: '午后犯懒', active: '醒着'
 // ---------- 群成员 ----------
 
 // ---------- 说说草稿 ----------
+
+// ---------- 核心记忆 ----------
+async function loadCore() {
+  const list = $('core-list')
+  const reqList = $('core-req-list')
+  const head = $('core-head')
+  const reqHead = $('core-req-head')
+  if (!list) return
+
+  try {
+    const d = await api('/api/core')
+    const core = d.core || []
+    const reqs = d.requests || []
+
+    head.textContent = `${core.length} / ${d.max}`
+    list.innerHTML = core.length
+      ? core
+          .map(
+            (x, i) => `<div class="row" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+              <span class="badge" style="background:#1f6feb;color:#fff;width:44px;text-align:center">${esc(x.kind)}</span>
+              <span style="flex:1;margin-left:8px">${esc(x.text)}</span>
+              <span class="hint" style="width:80px">${esc(x.at || '')}</span>
+              <button class="btn" onclick="coreDrop(${i})">删</button>
+            </div>`,
+          )
+          .join('')
+      : '<div class="hint">还没有核心记忆。它是空的，它就只靠 facts 里那些会衰减的东西。</div>'
+
+    reqHead.textContent = reqs.length ? `${reqs.length} 条待批` : ''
+    reqList.innerHTML = reqs.length
+      ? reqs
+          .map(
+            (r, i) => `<div style="margin-bottom:12px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:8px">
+              <div class="hint" style="margin-bottom:6px">${new Date(r.at).toLocaleString()} · ${esc(r.kind)}</div>
+              <div style="margin-bottom:6px"><b>${esc(r.text)}</b></div>
+              ${r.reason ? `<div class="hint" style="margin-bottom:8px">它说：${esc(r.reason)}</div>` : ''}
+              <div style="display:flex;gap:8px">
+                <button class="btn" onclick="coreApprove(${i})">批准（写进 core.md）</button>
+                <button class="btn" onclick="coreReject(${i})">拒绝</button>
+              </div>
+            </div>`,
+          )
+          .join('')
+      : '<div class="hint">它没提申请。它觉得有"不能弄错"的事时会提。</div>'
+  } catch (e) {
+    console.error(e)
+    head.textContent = '加载失败'
+    list.innerHTML = `<div class="hint">${esc(e.message)}</div>`
+  }
+}
+
+async function coreAdd() {
+  const el = $('core-input')
+  const kind = $('core-kind').value
+  if (!el || !el.value.trim()) return
+  try {
+    await api('/api/action', { action: 'addCore', payload: { text: el.value.trim(), kind } })
+    el.value = ''
+    loadCore()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function coreDrop(i) {
+  if (!confirm('删掉这条核心记忆？')) return
+  try {
+    await api('/api/action', { action: 'dropCore', payload: { index: i } })
+    loadCore()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function coreApprove(i) {
+  try {
+    await api('/api/action', { action: 'approveCoreRequest', payload: { index: i } })
+    loadCore()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function coreReject(i) {
+  try {
+    await api('/api/action', { action: 'rejectCoreRequest', payload: { index: i } })
+    loadCore()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
 async function loadQzone() {
   const list = $('qzone-list')
   const pub = $('qzone-published')

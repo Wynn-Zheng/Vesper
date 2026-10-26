@@ -337,7 +337,42 @@ async function runAction(
       return { snapshot: id }
     }
 
-// 发一条草稿。只有人能触发——它自己调不到这里（没给它工具）。
+    // 核心记忆：只有人能加/删
+    case 'addCore': {
+      const text = String(payload['text'] ?? '')
+      const kind = String(payload['kind'] ?? '身份')
+      const { addCore } = await import('../memory/core.ts')
+      const valid = ['身份', '边界', '诺言', '偏好'].includes(kind)
+        ? (kind as '身份' | '边界' | '诺言' | '偏好')
+        : '身份'
+      const r = addCore(text, valid)
+      if (!r.ok) throw new Error(r.why)
+      return { added: text }
+    }
+
+    case 'dropCore': {
+      const index = Number(payload['index'] ?? -1)
+      const { dropCore } = await import('../memory/core.ts')
+      if (!dropCore(index)) throw new Error('没有这一条')
+      return { dropped: index }
+    }
+
+    case 'approveCoreRequest': {
+      const index = Number(payload['index'] ?? -1)
+      const { approveRequest } = await import('../memory/core.ts')
+      const r = approveRequest(index)
+      if (!r.ok) throw new Error('批不了（序号不对，或核心已满 30 条）')
+      return { approved: r.item }
+    }
+
+    case 'rejectCoreRequest': {
+      const index = Number(payload['index'] ?? -1)
+      const { rejectRequest } = await import('../memory/core.ts')
+      if (!rejectRequest(index)) throw new Error('没有这条申请')
+      return { rejected: index }
+    }
+
+    // 发一条草稿。只有人能触发——它自己调不到这里（没给它工具）。
     case 'publishQzone': {
       const index = Number(payload['index'] ?? -1)
       if (!Number.isInteger(index) || index < 0) throw new Error('缺少草稿序号')
@@ -649,6 +684,13 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
 
+
+      // 核心记忆 + 它的申请。core.md 只有人能改，它只能申请。
+      if (req.method === 'GET' && path === '/api/core') {
+        const { loadCore, loadRequests } = await import('../memory/core.ts')
+        json(res, 200, { core: loadCore(), requests: loadRequests(), max: 30 })
+        return
+      }
 
       // 说说草稿：看、改、发、删。发之前必须人看过——发出去收不回。
       if (req.method === 'GET' && path === '/api/qzone') {

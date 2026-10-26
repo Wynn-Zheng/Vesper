@@ -133,4 +133,50 @@ ${loadCodeMapBrief()}`
   },
 }
 
-export const codeTools: Tool[] = [readCodeTool, readAroundTool, searchCodeTool, findCallersTool, rescanCodeTool]
+
+/**
+ * 申请把某条记成核心记忆。
+ *
+ * **它只能申请，不能写入**——core.md 只有人能改。
+ * 这是故意的：让它自己判断"什么该永远记住"必然膨胀
+ * （现在给它打 importance 分，24 条经验全给 8 分）。
+ */
+export const requestCoreTool: Tool = {
+  name: 'request_core',
+  description:
+    '你觉得某件事是"不能弄错"的（身份/边界/诺言/偏好），可以提申请让人批准写进核心记忆。' +
+    '你不是直接写，是提交一个申请，人看过才生效。' +
+    '只在对方明确表达过边界、承诺、或身份信息时用，不要每句都提。',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: '想记成核心的那句话，一句，具体' },
+      kind: {
+        type: 'string',
+        enum: ['身份', '边界', '诺言', '偏好'],
+        description: '身份=他是谁；边界=不许干什么；诺言=答应过的事；偏好=长期喜欢/讨厌',
+      },
+      reason: { type: 'string', description: '为什么觉得该永远记住，一句话' },
+    },
+    required: ['text', 'kind'],
+  },
+  async run(args) {
+    const { requestCore } = await import('../memory/core.ts')
+    const text = typeof args['text'] === 'string' ? args['text'] : ''
+    const kind = typeof args['kind'] === 'string' ? args['kind'] : '身份'
+    const reason = typeof args['reason'] === 'string' ? args['reason'] : ''
+
+    const validKind = ['身份', '边界', '诺言', '偏好'].includes(kind) ? (kind as '身份' | '边界' | '诺言' | '偏好') : '身份'
+    const r = requestCore(text, validKind, reason)
+    return r.ok ? `申请已提交（${validKind}），等人批。` : `没提成：${r.why}`
+  },
+}
+
+export const codeTools: Tool[] = [
+  requestCoreTool,
+  readCodeTool,
+  readAroundTool,
+  searchCodeTool,
+  findCallersTool,
+  rescanCodeTool,
+]

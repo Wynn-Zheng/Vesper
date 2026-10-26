@@ -10,6 +10,8 @@ function nowText(d: Date): string {
 }
 
 export interface PromptParts {
+  /** 核心记忆（只能人改的那部分），优先级最高 */
+  core?: string
   /** 它自己的模块地图（精简版）：一共几块、各干什么 */
   codeMap?: string
   rules: Rules
@@ -75,6 +77,11 @@ export function buildSystem(parts: PromptParts): string {
   lines.push('')
   // 只留硬约束（做不到的事），"会什么"交给它自己的自我认知（self.md 的"我能做什么"）。
   // 我们在 prompt 里替它列能力，结果是它会把两条互相矛盾的说法揉在一起。
+  // 核心记忆：只能人改的那部分。放最前面，因为它优先级最高。
+  if (parts.core) {
+    lines.push(parts.core, '')
+  }
+
   lines.push('几条硬的：')
   lines.push('- 你不能执行代码、运行程序、打开任一网页、打开文件、替他操作软件。')
   // 上网这件事要说准：B站接口是真能调的，"我上不了网"是错的，
