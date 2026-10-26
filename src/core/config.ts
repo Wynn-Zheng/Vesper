@@ -265,6 +265,11 @@ export const DEFAULTS: Rules = {
   },
 }
 
+/** 拼接配置路径；根路径为空时不要产生 ".键" 这种前缀。 */
+function joinPath(path: string, key: string): string {
+  return path ? `${path}.${key}` : key
+}
+
 /** 只合并 DEFAULTS 里已有的键；未知键会被收集起来警告，防止拼错字段静默失效。 */
 function merge<T>(base: T, override: unknown, path: string, unknown: string[]): T {
   if (override === undefined || override === null) return base
@@ -275,10 +280,10 @@ function merge<T>(base: T, override: unknown, path: string, unknown: string[]): 
     if (typeof override !== 'object' || override === null || Array.isArray(override)) return base
     const out = { ...(base as Record<string, unknown>) }
     for (const key of Object.keys(out)) {
-      if (key in src) out[key] = merge(out[key], src[key], `${path}.${key}`, unknown)
+      if (key in src) out[key] = merge(out[key], src[key], joinPath(path, key), unknown)
     }
     for (const key of Object.keys(src)) {
-      if (!(key in out)) unknown.push(`${path}.${key}`)
+      if (!(key in out)) unknown.push(joinPath(path, key))
     }
     return out as T
   }
@@ -373,6 +378,13 @@ export function loadRules(path = 'persona/rules.yaml'): LoadResult {
     parsed = YAML.parse(readFileSync(path, 'utf8'))
   } catch (err) {
     throw new Error(`${path} 不是合法 YAML：${(err as Error).message}`)
+  }
+
+  // 空文件按"全默认"处理；但数组/标量根节点说明文件结构写错了，
+  // 直接给明确错误，别悄悄退回默认值让人以为配置生效了。
+  if (parsed !== undefined && parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
+    const actual = Array.isArray(parsed) ? '数组' : typeof parsed
+    throw new Error(`${path} 的顶层必须是键值映射，实际是 ${actual}`)
   }
 
   const unknownKeys: string[] = []

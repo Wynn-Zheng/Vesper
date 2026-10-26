@@ -2,7 +2,8 @@
 const buckets = new Map<string, number[]>()
 
 export function allow(key: string, max: number, windowMs = 60_000): boolean {
-  if (max <= 0) return true
+  // 0 额度就是一次都不允许（配错成 NaN 之类也按拒绝处理，避免静默放开）。
+  if (!Number.isFinite(max) || max <= 0) return false
   const now = Date.now()
   const recent = (buckets.get(key) ?? []).filter((t) => now - t < windowMs)
   if (recent.length >= max) {
