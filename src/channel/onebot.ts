@@ -633,6 +633,42 @@ export class OnebotTransport implements Transport {
     return id !== undefined && id !== null ? { messageId: String(id) } : {}
   }
 
+  /**
+   * 发 QQ 空间说说。
+   *
+   * NapCat 的扩展 action：send_qzone_msg
+   * 参数 content / images / ugc_right / target_uins，返回 { tid }
+   */
+  async sendQzone(post: {
+    content: string
+    images?: string[]
+    ugcRight?: number
+    targetUins?: string[]
+  }): Promise<{ tid: string }> {
+    const payload: Record<string, unknown> = {
+      content: post.content.slice(0, 2000),
+      // 默认所有人可见
+      ugc_right: post.ugcRight ?? 1,
+    }
+    if (post.images?.length) payload['images'] = post.images.slice(0, 9)
+    if (post.targetUins?.length) payload['target_uins'] = post.targetUins
+
+    const data = (await this.callAction('send_qzone_msg', payload)) as { tid?: string | number } | null
+    const tid = data?.tid
+    if (tid === undefined || tid === null) throw new Error('发说说没有返回 tid')
+    return { tid: String(tid) }
+  }
+
+  /** 删说说。发错了能收回，这是敢自动发的底气。 */
+  async deleteQzone(tid: string): Promise<boolean> {
+    try {
+      await this.callAction('delete_qzone_msg', { tid })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async recall(messageId: string): Promise<boolean> {
     try {
       await this.callAction('delete_msg', { message_id: Number(messageId) })

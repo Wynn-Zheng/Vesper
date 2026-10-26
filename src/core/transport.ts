@@ -20,8 +20,29 @@ export interface GroupMember {
   nick?: string
 }
 
+/** 发说说的参数 */
+export interface QzonePost {
+  /** 正文 */
+  content: string
+  /** 图片地址（http(s) / file:// / base64://），可以不传 */
+  images?: string[]
+  /** 1所有人 4好友 16部分好友 64仅自己 128部分好友不可见 */
+  ugcRight?: number
+  /** ugcRight 为 16/128 时，权限作用的 QQ 号 */
+  targetUins?: string[]
+}
+
 export interface Transport {
   readonly kind: string
+
+  /**
+   * 发一条 QQ 空间说说。
+   * 不是所有通道都支持——不支持的返回 undefined，调用方要判空。
+   */
+  sendQzone?(post: QzonePost): Promise<{ tid: string }>
+
+  /** 删一条自己发的说说（发错了能收回） */
+  deleteQzone?(tid: string): Promise<boolean>
   /** 链路是否可用。可选，给控制台展示用 */
   readonly connected?: boolean
   start(): Promise<void>

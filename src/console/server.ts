@@ -337,6 +337,52 @@ async function runAction(
       return { snapshot: id }
     }
 
+// 发一条草稿。只有人能触发——它自己调不到这里（没给它工具）。
+    case 'publishQzone': {
+      const index = Number(payload['index'] ?? -1)
+      if (!Number.isInteger(index) || index < 0) throw new Error('缺少草稿序号')
+      const { publishDraft } = await import('../outward/qzone.ts')
+      const rules = opts.getRules()
+      const r = await publishDraft(opts.transport, index, { ugcRight: rules.外部?.发空间?.默认权限 ?? 1 })
+      if (!r.ok) throw new Error(r.reason ?? '发失败')
+      return { tid: r.tid }
+    }
+
+    case 'dropDraft': {
+      const index = Number(payload['index'] ?? -1)
+      const { dropDraft } = await import('../outward/qzone.ts')
+      if (!dropDraft(index)) throw new Error('没有这条草稿')
+      return { dropped: index }
+    }
+
+    case 'editDraft': {
+      const index = Number(payload['index'] ?? -1)
+      const content = String(payload['content'] ?? '')
+      const { editDraft } = await import('../outward/qzone.ts')
+      if (!editDraft(index, content)) throw new Error('改不了（内容太短或序号不对）')
+      return { edited: index }
+    }
+
+    // 删一条已经发出去的
+    case 'unpublishQzone': {
+      const tid = String(payload['tid'] ?? '')
+      if (!tid) throw new Error('缺少 tid')
+      const { unpublish } = await import('../outward/qzone.ts')
+      const ok = await unpublish(opts.transport, tid)
+      if (!ok) throw new Error('删不掉（通道不支持或 tid 不对）')
+      return { deleted: tid }
+    }
+
+    // 让它现在想一条说说攒成草稿（它自己主动想，不是自动发）
+    case 'draftQzone': {
+      if (!opts.llm) throw new Error('没有模型配置')
+      const { composeDraft } = await import('../outward/qzone.ts')
+      const rules = opts.getRules()
+      const r = await composeDraft(opts.llm, rules)
+      if (!r.ok) throw new Error(r.reason ?? '没想出什么')
+      return { drafted: r.content }
+    }
+
     case 'groupMembers': {
       const gid = String(payload['groupId'] ?? '')
       if (!gid) throw new Error('缺少 groupId')
@@ -599,6 +645,21 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         return
       }
 
+
+
+      // 说说草稿：看、改、发、删。发之前必须人看过——发出去收不回。
+      if (req.method === 'GET' && path === '/api/qzone') {
+        const { loadDrafts } = await import('../outward/qzone.ts')
+        const rules = opts.getRules()
+        const d = loadDrafts()
+        json(res, 200, {
+          开启: rules.外部?.发空间?.开启 ?? false,
+          默认权限: rules.外部?.发空间?.默认权限 ?? 1,
+          支持发送: !!opts.transport.sendQzone,
+          ...d,
+        })
+        return
+      }
 
       // 新功能总览：表情包 / 看图 / 压缩 / 表达学习
       // 这几块以前只在代码里，控制台看不见，改了什么也没法验证。

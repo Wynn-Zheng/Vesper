@@ -637,6 +637,24 @@
     </section>
 
     
+
+    <section class="view" id="v-qzone">
+      <div class="panel">
+        <h3>说说草稿 <span class="r" id="qzone-head"></span></h3>
+        <div class="body">
+          <div class="hint" style="margin-bottom:10px">
+            它想发的东西先存这儿。<b>发出去收不回</b>（虽然能删，但看到的人已经看到了），
+            所以必须你看过、点「发出去」才真发。也可以直接改下面框里的字。
+          </div>
+          <div id="qzone-list"></div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h3>发过的 <span class="r">能删</span></h3>
+        <div class="body"><div id="qzone-published"></div></div>
+      </div>
+    </section>
+
     <section class="view" id="v-groups">
       <div class="panel">
         <h3>群成员 <span class="r" id="groups-head"></span></h3>
@@ -747,6 +765,11 @@
           <div class="op-t">导出备份</div>
           <div class="op-d">所有人 + 记忆 + 最近对话，一个 JSON</div>
         </div>
+        <div class="op" onclick="act('draftQzone')">
+          <div class="op-ico">✎</div>
+          <div class="op-t">让它想一条说说</div>
+          <div class="op-d">攒成草稿，你看了再决定发不发</div>
+        </div>
         <div class="op" onclick="refreshGroupMembers()">
           <div class="op-ico">👥</div>
           <div class="op-t">刷新群成员</div>
@@ -814,7 +837,7 @@ const GROUPS = {
   state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
   memory: [['v-memory', '记忆'], ['v-groups', '群成员'], ['v-search', '搜索']],
   comm: [['v-logs', '日志'], ['v-chat', '对话']],
-  self: [['v-self', '自我'], ['v-features', '新功能']],
+  self: [['v-self', '自我'], ['v-qzone', '说说'], ['v-features', '新功能']],
   settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
   tools: [['v-try', '试聊'], ['v-ops', '操作']],
 }
@@ -865,6 +888,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-trend') loadTrend()
   if (viewId === 'v-self') loadSelf()
   if (viewId === 'v-features') loadFeatures()
+  if (viewId === 'v-qzone') loadQzone()
   if (viewId === 'v-rules') loadRules()
   if (viewId === 'v-access') loadAccessPolicy()
   if (viewId === 'v-history') loadHistory()
@@ -1156,6 +1180,111 @@ const PHASE_LABEL = { sleep: '睡着了', rest: '午后犯懒', active: '醒着'
 // ---------- 新功能（表情包 / 看图 / 压缩 / 情绪序列 / 表达学习） ----------
 
 // ---------- 群成员 ----------
+
+// ---------- 说说草稿 ----------
+async function loadQzone() {
+  const list = $('qzone-list')
+  const pub = $('qzone-published')
+  const head = $('qzone-head')
+  if (!list) return
+
+  try {
+    const d = await api('/api/qzone')
+    const drafts = d.drafts || []
+    const published = d.published || []
+
+    head.textContent = `${drafts.length} 条待发 · ${d.支持发送 ? '通道支持' : '通道不支持'} · 开关${d.开启 ? '开' : '关'}`
+
+    if (!d.开启) {
+      list.innerHTML = '<div class="hint">「外部.发空间.开启」现在是关的。打开它才能攒草稿/发说说。</div>'
+      pub.innerHTML = ''
+      return
+    }
+
+    list.innerHTML = drafts.length
+      ? drafts
+          .map(
+            (x, i) => `<div style="margin-bottom:16px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:8px">
+              <div class="hint" style="margin-bottom:6px">
+                ${new Date(x.at).toLocaleString()}
+                ${x.reason ? ` · ${esc(x.reason)}` : ''}
+              </div>
+              <textarea id="qz-${i}" style="width:100%;min-height:60px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:8px;font-family:inherit;font-size:13px">${esc(x.content)}</textarea>
+              ${x.images && x.images.length ? `<div class="hint" style="margin-top:4px">配图：${esc(x.images.join(', '))}</div>` : ''}
+              <div style="margin-top:8px;display:flex;gap:8px">
+                <button class="btn" onclick="qzonePublish(${i})">发出去</button>
+                <button class="btn" onclick="qzoneSave(${i})">保存改动</button>
+                <button class="btn" onclick="qzoneDrop(${i})">删掉</button>
+              </div>
+            </div>`,
+          )
+          .join('')
+      : '<div class="hint">还没有草稿。去「工具 → 操作」点「让它想一条说说」，或者它自己攒。</div>'
+
+    pub.innerHTML = published.length
+      ? published
+          .slice()
+          .reverse()
+          .map(
+            (x) => `<div class="row" style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+              <span class="hint" style="width:130px">${new Date(x.at).toLocaleString()}</span>
+              <span style="flex:1">${esc(x.content.slice(0, 60))}</span>
+              <button class="btn" onclick="qzoneUnpublish('${esc(x.tid)}')">删</button>
+            </div>`,
+          )
+          .join('')
+      : '<div class="hint">还没发过</div>'
+  } catch (e) {
+    console.error(e)
+    head.textContent = '加载失败'
+    list.innerHTML = `<div class="hint">${esc(e.message)}</div>`
+  }
+}
+
+async function qzonePublish(i) {
+  if (!confirm('确定发出去？发完就收不回了（虽然能删，但看到的人已经看到了）。')) return
+  try {
+    const r = await api('/api/action', { action: 'publishQzone', payload: { index: i } })
+    toast('发出去了：' + (r.tid || ''))
+    loadQzone()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function qzoneSave(i) {
+  const el = $('qz-' + i)
+  if (!el) return
+  try {
+    await api('/api/action', { action: 'editDraft', payload: { index: i, content: el.value } })
+    toast('改好了')
+    loadQzone()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function qzoneDrop(i) {
+  if (!confirm('删掉这条草稿？')) return
+  try {
+    await api('/api/action', { action: 'dropDraft', payload: { index: i } })
+    loadQzone()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function qzoneUnpublish(tid) {
+  if (!confirm('把这条说说从空间删掉？')) return
+  try {
+    await api('/api/action', { action: 'unpublishQzone', payload: { tid } })
+    toast('删了')
+    loadQzone()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
 async function loadGroups() {
   const box = $('groups-list')
   const others = $('groups-others')
