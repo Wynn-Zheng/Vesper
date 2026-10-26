@@ -27,14 +27,51 @@ const SYSTEM = `你在帮一个聊天机器人看图。只描述，不评价。�
 - 不要猜图外的事，不要编。看不出就说"这张图看不太清"。`
 
 
+/** 单张图最多 5MB。超过就不看，免得拖慢整个回复。 */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+/**
+ * 读完响应体，但最多只收 max 字节。
+ *
+ * 不能直接 arrayBuffer：一张几十 MB 的图会先被完整读进内存再被拒。
+ * 这里边读边数，超了立刻取消，顺便也守住 Content-Length 撒谎的情况。
+ */
+async function readCapped(res: Response, max: number): Promise<Buffer | null> {
+  if (!res.body) {
+    const buf = Buffer.from(await res.arrayBuffer())
+    return buf.length > max ? null : buf
+  }
+
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > max) {
+        await reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return Buffer.concat(chunks, size)
+}
+
 /**
  * 把远程图下载下来转成 data URL。
  *
  * 为什么要自己下：实测 DeepSeek 服务器下载维基百科的图会失败
  * （Failed to download image）。QQ 的图片链接有防盗链和有效期，
  * 让对面去下更不可靠。自己下完用 base64 内联，最稳。
+ *
+ * 导出给体检脚本用；正常调用只经过 describeImages。
  */
-async function toDataUrl(url: string): Promise<string | null> {
+export async function toDataUrl(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
       headers: {
@@ -47,12 +84,18 @@ async function toDataUrl(url: string): Promise<string | null> {
       signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) return null
-    const type = res.headers.get('content-type') ?? 'image/jpeg'
+
+    // content-type 可能带 charset，也可能大小写不统一
+    const type = (res.headers.get('content-type') ?? 'image/jpeg').split(';')[0]!.trim().toLowerCase()
     if (!type.startsWith('image/')) return null
-    const buf = Buffer.from(await res.arrayBuffer())
-    // 太大就不看了：一张图 5MB 会拖慢整个回复
-    if (buf.length > 5 * 1024 * 1024) return null
-    return `data:${type.split(';')[0]};base64,${buf.toString('base64')}`
+
+    // 先看声明的长度，明显超限就不下载了
+    const declared = Number(res.headers.get('content-length'))
+    if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) return null
+
+    const buf = await readCapped(res, MAX_IMAGE_BYTES)
+    if (!buf) return null
+    return `data:${type};base64,${buf.toString('base64')}`
   } catch {
     return null
   }

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { warn } from '../core/log.ts'
 
 /** 单张表情包上限：2MB。再大就不像表情包了，也容易被平台拒收。 */
@@ -47,6 +47,25 @@ export interface EmojiStore {
 
 const DEFAULT_ROOT = join('persona', 'emoji')
 const DEFAULT_CAP = 200
+
+/**
+ * 按目录串行化。只按 store 实例排队不够：chat 和通道可能各建一个指向同一
+ * 目录的 store，两个实例同时 read-modify-write 会互相覆盖索引。
+ * key 是绝对路径，不同目录之间不会互相阻塞。
+ */
+const dirLocks = new Map<string, Promise<unknown>>()
+
+function serialByDir<T>(key: string, job: () => Promise<T>): Promise<T> {
+  const prev = dirLocks.get(key) ?? Promise.resolve()
+  const run = prev.then(job, job)
+  const tail = run.catch(() => undefined)
+  dirLocks.set(key, tail)
+  // 队列空了就把 key 清掉，避免长期运行攒一堆 Promise
+  void tail.then(() => {
+    if (dirLocks.get(key) === tail) dirLocks.delete(key)
+  })
+  return run
+}
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -110,14 +129,12 @@ export function createEmojiStore(
 ): EmojiStore {
   const root = rootDir
   const indexPath = join(root, 'index.json')
+  /** 同一目录的所有读写都走同一把锁，避免读改写互相覆盖。 */
+  const lockKey = resolve(rootDir)
   const cap = Number.isFinite(opts.libraryCap) ? Math.max(0, Math.floor(opts.libraryCap)) : DEFAULT_CAP
 
-  /** 同一个 store 内的写操作串行执行，避免两个 add 同时读改写丢条目。 */
-  let queue: Promise<unknown> = Promise.resolve()
   function serial<T>(job: () => Promise<T>): Promise<T> {
-    const run = queue.then(job, job)
-    queue = run.catch(() => undefined)
-    return run
+    return serialByDir(lockKey, job)
   }
 
   /** 先写唯一临时文件再 rename；半截索引比没有索引更糟。 */
@@ -153,6 +170,32 @@ export function createEmojiStore(
     return empty
   }
 
+  /**
+   * 索引里可能有指向已删除/丢失文件的条目。留在库里只会让 pickEmoji 挑中它，
+   * 发图时再失败。读索引时顺手清掉并回写，保证 list() 返回的每条都能用。
+   */
+  async function pruneMissing(items: IndexItem[]): Promise<IndexItem[]> {
+    if (items.length === 0) return items
+
+    const checked = await Promise.all(
+      items.map(async (item) => ((await fileExists(join(root, item.file))) ? item : null)),
+    )
+    const kept = checked.filter((item): item is IndexItem => item !== null)
+    if (kept.length === items.length) return items
+
+    warn('表情包索引里有文件已不存在的条目，已清理', {
+      path: indexPath,
+      missing: items.length - kept.length,
+    })
+    try {
+      await saveIndex(kept)
+    } catch (err) {
+      // 清理失败也先把有效条目返回，下次读索引再试
+      warn('清理失效表情包索引失败', { path: indexPath, error: errorMessage(err) })
+    }
+    return kept
+  }
+
   async function readIndex(): Promise<EmojiIndex> {
     let text: string
     try {
@@ -161,6 +204,9 @@ export function createEmojiStore(
       if (isNotFound(err)) return rebuildEmpty('不存在')
       return rebuildEmpty('读取失败', err)
     }
+
+    // Windows 记事本等工具可能给 UTF-8 文件加 BOM，JSON.parse 会直接报错
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
 
     let parsed: unknown
     try {
@@ -181,7 +227,7 @@ export function createEmojiStore(
       else skipped++
     }
     if (skipped > 0) warn('表情包索引里有无法识别的条目，已跳过', { path: indexPath, skipped })
-    return { version: 1, items }
+    return { version: 1, items: await pruneMissing(items) }
   }
 
   /** 超 cap 时按 lastUsedAt、其次 createdAt 从旧到新淘汰，并删掉图片文件。 */
@@ -218,6 +264,9 @@ export function createEmojiStore(
       const existing = index.items.find((item) => item.hash === hash)
       if (existing) return { id: existing.id, added: false }
 
+      // cap=0 表示不保留任何表情：不要先写图再被 evict 删掉，还回报 added=true
+      if (cap === 0) return { id, added: false, reason: 'library-full' }
+
       const file = `${id}.${ext}`
       const target = join(root, file)
       const now = Date.now()
@@ -244,9 +293,12 @@ export function createEmojiStore(
   }
 
   async function list(): Promise<IndexItem[]> {
-    const index = await readIndex()
-    // 返回副本，调用方改 tags 不会污染下次读盘结果
-    return index.items.map((item) => ({ ...item, tags: [...item.tags] }))
+    // 也进队列：读索引可能触发重建/清理并回写，不能和 add 的读改写交错
+    return serial(async () => {
+      const index = await readIndex()
+      // 返回副本，调用方改 tags 不会污染下次读盘结果
+      return index.items.map((item) => ({ ...item, tags: [...item.tags] }))
+    })
   }
 
   async function remove(id: string): Promise<boolean> {

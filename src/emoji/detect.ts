@@ -34,17 +34,20 @@ export function isEmojiSegment(seg: SegmentLike): boolean {
 /**
  * 是不是值得收进表情包库的候选。
  *
- * 1) 平台明确标了表情包 → 是；
- * 2) 否则按体积和尺寸做启发式：小图才有可能是表情包。
+ * 1) 不是 image 段 → 一定不是；
+ * 2) 平台明确标了表情包 → 是；
+ * 3) 否则按体积和尺寸做启发式：小图才有可能是表情包。
  *
  * 纯函数：meta 由调用方从消息段里取，不读盘、不联网。
  */
 export function isEmojiCandidate(seg: SegmentLike, meta: EmojiMeta): boolean {
+  if (seg.type !== 'image') return false
   if (isEmojiSegment(seg)) return true
 
   const { size, width, height } = meta
-  const sizeOk = typeof size === 'number' && Number.isFinite(size) && size <= EMOJI_MAX_SIZE
-  const widthOk = typeof width === 'number' && Number.isFinite(width) && width <= EMOJI_MAX_EDGE
-  const heightOk = typeof height === 'number' && Number.isFinite(height) && height <= EMOJI_MAX_EDGE
+  // 0 / 负数不是有效的图片元信息，按"不可判断"处理
+  const sizeOk = typeof size === 'number' && Number.isFinite(size) && size > 0 && size <= EMOJI_MAX_SIZE
+  const widthOk = typeof width === 'number' && Number.isFinite(width) && width > 0 && width <= EMOJI_MAX_EDGE
+  const heightOk = typeof height === 'number' && Number.isFinite(height) && height > 0 && height <= EMOJI_MAX_EDGE
   return sizeOk && widthOk && heightOk
 }

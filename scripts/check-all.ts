@@ -35,6 +35,7 @@ const STEPS: Step[] = [
   { name: '历史压缩', cmd: 'node scripts/test-compress.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '会话摘要', cmd: 'node scripts/test-session-summary.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '表情包', cmd: 'node scripts/test-emoji.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '表情包边界', cmd: 'node scripts/test-emoji-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '表情包通道', cmd: 'node scripts/test-emoji-channel.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '表达学习', cmd: 'node --env-file-if-exists=.env scripts/test-expression.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
