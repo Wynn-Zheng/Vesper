@@ -29,7 +29,8 @@ function stateFile(): string {
   return join(memoryRoot(), '.proactive.json')
 }
 
-function todayKey(d = new Date()): string {
+/** 本地日期键：跨过午夜就会变，主动消息的每日额度靠它重置。 */
+export function todayKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
@@ -92,14 +93,22 @@ export function proactiveBudget(stageName: string): { minGapHours: number; daily
 
 /** 二元组相似度，用来防止反复说同一句 */
 export function tooSimilar(a: string, b: string, threshold = 0.6): boolean {
+  const clean = (s: string): string => s.replace(/\s+/g, '')
+  const ca = clean(a)
+  const cb = clean(b)
+  // 空串（或只有空白）没有可比内容
+  if (!ca || !cb) return false
+  // 完全一样就是重复。单字消息（"嗯"）没有二元组，靠这一步兜住。
+  if (ca === cb) return true
+
   const grams = (s: string): Set<string> => {
-    const clean = s.replace(/\s+/g, '')
     const set = new Set<string>()
-    for (let i = 0; i < clean.length - 1; i++) set.add(clean.slice(i, i + 2))
+    for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2))
     return set
   }
-  const A = grams(a)
-  const B = grams(b)
+  const A = grams(ca)
+  const B = grams(cb)
+  // 不同的单字没有二元组可算，不能判成重复
   if (!A.size || !B.size) return false
   let inter = 0
   for (const g of A) if (B.has(g)) inter++
