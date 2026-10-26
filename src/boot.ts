@@ -32,6 +32,21 @@ export interface BootOptions {
 }
 
 /** 这类短消息可以偶尔不回 */
+/**
+ * 改口用的句子。
+ *
+ * 为什么用预设句而不是让模型现生成：
+ *   改口本来就该短、该含糊（"算了，当我没说"没人会写小作文），
+ *   现生成反而容易变成长篇认错。而且这是低频行为，不值一次模型调用。
+ */
+const FIX_LINES = [
+  '不对，刚才那句说岔了。',
+  '算了，当我没说。',
+  '……说错了，别当真。',
+  '嗯，上一条不太行，我收回。',
+  '等等，我刚才说得不对。',
+]
+
 const SKIPPABLE = /^(嗯+|哦+|噢+|好+|行|OK|ok|收到|在吗|在不在|哈哈+|呵+|笑死|草|6+)[。！？~～. ]*$/
 
 
@@ -333,6 +348,24 @@ export function boot(transport: Transport, opts: BootOptions): void {
               // 分高或分低的才值得记，中间分没信号
               if (r && opts.llm) {
                 void recordPlayReviewed(r.score, text, reply.trim(), opts.llm, rules).catch(() => {})
+              }
+              // 改口：自评很差、而且说得出具体问题时，小概率补一句。
+              //
+              // 只在 score < 4 时考虑——分数中等的那些"改口"反而显得神经质。
+              // 而且要看 issue：只说"不够好"不算，得指出哪儿不对。
+              const fixRate = rules.行为.改口概率 ?? 0
+              if (fixRate > 0 && r && r.score < 4 && r.issue.trim() && Math.random() < fixRate) {
+                void (async () => {
+                  // 隔一会儿再发，像"发完才后悔"
+                  await sleep(1200 + Math.random() * 2500)
+                  const line = FIX_LINES[Math.floor(Math.random() * FIX_LINES.length)]!
+                  try {
+                    await say(transport, m.from, line, rules)
+                    info(`改口：${line}`, { 原因: r.issue })
+                  } catch {
+                    /* 补不出去就算了，本来也不是必须说的 */
+                  }
+                })()
               }
             })
             .catch(() => {})

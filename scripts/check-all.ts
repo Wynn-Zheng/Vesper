@@ -68,6 +68,7 @@ const STEPS: Step[] = [
   { name: '边界扫描', cmd: 'node --env-file-if-exists=.env scripts/scan-bugs.ts', expect: /没发现 bug/ },  { name: '情绪效价', cmd: 'node --env-file-if-exists=.env scripts/test-mood-valence.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '情绪对比基准', cmd: 'node --env-file-if-exists=.env scripts/test-mood-context.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '拟人化', cmd: 'node --env-file-if-exists=.env scripts/test-humanlike.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '改口', cmd: 'node --env-file-if-exists=.env scripts/test-retract.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
