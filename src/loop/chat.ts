@@ -206,7 +206,13 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     relation: [buildRelationBlock(opts.rules, loadRelation(personId), loadMood()), groupBlock]
       .filter((s) => s.trim())
       .join('\n\n'),
-    memory: [renderRecalled(recalled), renderPlays(relevantPlays(text))].filter((s) => s.trim()).join('\n\n'),
+    // 只用精选模式：只注入人工审过的经验
+  memory: [
+    renderRecalled(recalled),
+    renderPlays(relevantPlays(text, 3, opts.rules.表达学习?.只用精选 ?? false)),
+  ]
+    .filter((s) => s.trim())
+    .join('\n\n'),
     userChars: m.text.length,
     phase: buildPhaseBlock(opts.rules),
     repeatHint: detectRepeat(key),

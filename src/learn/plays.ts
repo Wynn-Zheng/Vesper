@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { info } from '../core/log.ts'
 import { similarity } from '../core/text.ts'
+import { chat } from '../llm/deepseek.ts'
+import type { LlmOptions } from '../llm/types.ts'
+import type { Rules } from '../core/config.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { serialized } from '../store/serialize.ts'
 
@@ -19,6 +22,12 @@ export interface Play {
   /** 我当时怎么回的 */
   reply: string
   date: string
+  /**
+   * 人工精选过。
+   * rules.表达学习.只用精选 = true 时，只有带这个标记的会被用上——
+   * 相当于"我审过的句子才让它学"。
+   */
+  checked?: boolean
 }
 
 const FILE = 'persona/learned/plays.md'
@@ -37,13 +46,35 @@ export function loadPlays(): Play[] {
   if (!existsSync(FILE)) return []
   const out: Play[] = []
   for (const line of readFileSync(FILE, 'utf8').split(/\r?\n/)) {
-    const m = /^-\s+\[(\d+)分\]\s+他说「(.+?)」→\s*我回「(.+?)」\s*（(\d{4}-\d{2}-\d{2})）\s*$/.exec(line.trim())
+    // ★ 表示人工精选过；有没有它都要能读
+    const m = /^-\s+\[(\d+)分\](★?)\s+他说「(.+?)」→\s*我回「(.+?)」\s*（(\d{4}-\d{2}-\d{2})）\s*$/.exec(line.trim())
     if (!m) continue
     const score = Number(m[1])
     // 文件被手改坏时跳过，别让 NaN 混进渲染
-    if (Number.isFinite(score)) out.push({ score, scene: m[2]!, reply: m[3]!, date: m[4]! })
+    if (Number.isFinite(score)) {
+      const play: Play = { score, scene: m[3]!, reply: m[4]!, date: m[5]! }
+      if (m[2] === '★') play.checked = true
+      out.push(play)
+    }
   }
   return out
+}
+
+
+/** 一行经验；精选过的带 ★，人能直接看出来哪句被审过 */
+function formatLine(p: Play): string {
+  const star = p.checked ? '★' : ''
+  return `- [${p.score}分]${star} 他说「${p.scene}」→ 我回「${p.reply}」（${p.date}）`
+}
+
+/** 人工标记/取消精选。改完立刻落盘。 */
+export function toggleChecked(scene: string, checked: boolean): boolean {
+  const items = loadPlays()
+  const hit = items.find((p) => p.scene === scene || similarity(p.scene, scene) > 0.9)
+  if (!hit) return false
+  hit.checked = checked
+  savePlays(items)
+  return true
 }
 
 export function savePlays(items: Play[]): void {
@@ -53,16 +84,48 @@ export function savePlays(items: Play[]): void {
     '# 我学到的应对方式',
     '',
     '## 这么回效果不错',
-    ...(good.length ? good.map((p) => `- [${p.score}分] 他说「${p.scene}」→ 我回「${p.reply}」（${p.date}）`) : ['- （还没有）']),
+    ...(good.length ? good.map(formatLine) : ['- （还没有）']),
     '',
     '## 这么回不太好',
-    ...(bad.length ? bad.map((p) => `- [${p.score}分] 他说「${p.scene}」→ 我回「${p.reply}」（${p.date}）`) : ['- （还没有）']),
+    ...(bad.length ? bad.map(formatLine) : ['- （还没有）']),
     '',
   ]
   writeAtomic(FILE, body.join('\n'))
 }
 
 /** 只有明显好或明显不好的才值得记，中间的不记（没信号） */
+
+/**
+ * 让模型自己审一遍：这条经验值不值得学。
+ *
+ * 不审的后果：模型自评偏高（动不动 8 分），学到的句子越来越像模板。
+ * 返回 false 就不记。
+ */
+async function reviewPlay(score: number, scene: string, reply: string, llm: LlmOptions): Promise<boolean> {
+  const material = [
+    `这条回复我自评 ${score} 分。`,
+    `他说的：${scene}`,
+    `我回的：${reply}`,
+    '',
+    '这条值得当作"以后遇到类似场景可以这么回"的范例吗？只输出 yes 或 no。',
+    '不值得的情况：只是碰巧接上了、没信息量、像模板、或者靠的是具体某个事实（换个场景就不成立）。',
+  ].join('\n')
+
+  try {
+    const res = await chat(
+      [
+        { role: 'system', content: '你在审查自己学到的东西。只输出 yes 或 no，不要解释。' },
+        { role: 'user', content: material },
+      ],
+      { ...llm, maxTokens: 4, temperature: 0 },
+    )
+    return /yes|是|值得/i.test(res.text.trim())
+  } catch {
+    // 审不了就记下来：宁可多学一条，也别因为一次网络问题丢掉经验
+    return true
+  }
+}
+
 export function recordPlay(score: number, scene: string, reply: string): void {
   if (score >= 4 && score <= 6) return
   // 读-改-写要排队：两条回复几乎同时自评完时，不排队会丢一条经验
@@ -87,9 +150,35 @@ function doRecordPlay(score: number, scene: string, reply: string): void {
   info(`记下一条经验（${score} 分）`, { 场景: s })
 }
 
+
+/**
+ * 带审核的记经验。
+ * 审核只在 score >= 7（要当范例的）时做；差评不用审，留着当反面教材。
+ */
+export async function recordPlayReviewed(
+  score: number,
+  scene: string,
+  reply: string,
+  llm: LlmOptions,
+  rules: Rules,
+): Promise<boolean> {
+  if (score >= 7 && rules.表达学习?.审核) {
+    const ok = await reviewPlay(score, scene, reply, llm)
+    if (!ok) {
+      info('这条没通过自审，不记', { 场景: scene.slice(0, 20) })
+      return false
+    }
+  }
+  recordPlay(score, scene, reply)
+  return true
+}
+
 /** 找和他这次说的话最接近的几条经验 */
-export function relevantPlays(text: string, limit = 3): Play[] {
-  const items = loadPlays()
+export function relevantPlays(text: string, limit = 3, checkedOnly = false): Play[] {
+  let items = loadPlays()
+  if (!items.length) return []
+  // 只挑人工审过的句子：模型自我评分偏高时，未审的那批质量参差不齐
+  if (checkedOnly) items = items.filter((p) => p.checked)
   if (!items.length) return []
   return items
     .map((p) => ({ p, sim: similarity(p.scene, text) }))

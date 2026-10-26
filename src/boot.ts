@@ -14,7 +14,7 @@ import { ensurePerson } from './people/store.ts'
 import { refreshGroupMembers, groupMembers } from './people/group.ts'
 import { evaluateTurn } from './relation/evaluate.ts'
 import { judgeReply } from './loop/judge.ts'
-import { recordPlay } from './learn/plays.ts'
+import { recordPlayReviewed } from './learn/plays.ts'
 
 /**
  * 退避：连续决定不说话后，慢一点再看。
@@ -316,7 +316,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
           })
             .then((r) => {
               // 分高或分低的才值得记，中间分没信号
-              if (r) recordPlay(r.score, text, reply.trim())
+              if (r && opts.llm) {
+                void recordPlayReviewed(r.score, text, reply.trim(), opts.llm, rules).catch(() => {})
+              }
             })
             .catch(() => {})
         }
