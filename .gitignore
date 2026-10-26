@@ -7,3 +7,6 @@ persona/
 .DS_Store
 .dev-memory/
 .dev-people/
+.acl-recovery/
+.agenttree/
+*.tmp
