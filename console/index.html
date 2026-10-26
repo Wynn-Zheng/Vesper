@@ -795,6 +795,11 @@
           <div class="op-t">让它想一条说说</div>
           <div class="op-d">攒成草稿，你看了再决定发不发</div>
         </div>
+        <div class="op" onclick="restoreGroups()">
+          <div class="op-ico">↺</div>
+          <div class="op-t">从快照恢复群名单</div>
+          <div class="op-d">名单被清空时用这个救回来</div>
+        </div>
         <div class="op" onclick="refreshGroupMembers()">
           <div class="op-ico">👥</div>
           <div class="op-t">刷新群成员</div>
@@ -1295,6 +1300,22 @@ async function coreReject(i) {
   try {
     await api('/api/action', { action: 'rejectCoreRequest', payload: { index: i } })
     loadCore()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+// ---------- 从快照恢复群名单 ----------
+async function restoreGroups() {
+  try {
+    const r = await api('/api/action', { action: 'restoreGroups', payload: {} })
+    const detail = (r['详情'] || []).join('\n')
+    const skipped = (r['跳过详情'] || []).join('\n')
+    const head = `恢复了 ${r['恢复了']} 个群，跳过 ${r['跳过']} 个（扫了 ${r['扫了快照']} 个快照）`
+    alert(detail ? head + '\n\n' + detail : head + '\n\n' + (skipped || '（没有群需要恢复）'))
+    // 如果正停在「群成员」页，顺手刷一下
+    const vg = document.querySelector('#v-groups')
+    if (vg && vg.classList.contains('on')) loadGroups()
   } catch (e) {
     alert('失败：' + e.message)
   }

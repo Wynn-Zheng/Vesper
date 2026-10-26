@@ -70,6 +70,7 @@ const STEPS: Step[] = [
   { name: '拟人化', cmd: 'node --env-file-if-exists=.env scripts/test-humanlike.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '改口', cmd: 'node --env-file-if-exists=.env scripts/test-retract.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群聊发言人', cmd: 'node --env-file-if-exists=.env scripts/test-speaker.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '群名单恢复', cmd: 'node --env-file-if-exists=.env scripts/test-restore-groups.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'

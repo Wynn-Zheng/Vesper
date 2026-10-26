@@ -431,6 +431,20 @@ async function runAction(
         : { drafted: '', reason: r.reason ?? '没想出什么', tried: r.content ?? '' }
     }
 
+    // 从快照恢复被清空的群名单。
+    // 只在快照明显更完整时才覆盖（差 5 人以上），避免把新名单退回去。
+    case 'restoreGroups': {
+      const { restoreGroupsFromSnapshots } = await import('../people/groupcache.ts')
+      const r = restoreGroupsFromSnapshots()
+      return {
+        恢复了: r.restored.length,
+        跳过: r.skipped.length,
+        扫了快照: r.scanned,
+        详情: r.restored.map((x) => `群 ${x.groupId}: ${x.from} → ${x.to} 人（${x.snapshot}）`),
+        跳过详情: r.skipped.map((x) => `群 ${x.groupId}: 现在 ${x.current} 人，快照最好 ${x.best} 人`),
+      }
+    }
+
     case 'groupMembers': {
       const gid = String(payload['groupId'] ?? '')
       if (!gid) throw new Error('缺少 groupId')

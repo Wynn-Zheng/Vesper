@@ -245,3 +245,99 @@ export function resetMemberCacheEverywhere(): void {
     /* 清不掉就算了 */
   }
 }
+
+/* ============================================================
+ * 从快照恢复群名单
+ * ============================================================ */
+
+export interface RestoreReport {
+  /** 恢复了哪些群 */
+  restored: Array<{ groupId: string; from: number; to: number; snapshot: string }>
+  /** 哪些群不用恢复（当前已经是最好的） */
+  skipped: Array<{ groupId: string; current: number; best: number }>
+  /** 扫了多少个快照 */
+  scanned: number
+}
+
+/**
+ * 扫 data/versions/ 里的快照，把每个群的名单恢复到**历史上最完整的那一份**。
+ *
+ * 为什么要这个：
+ *   群名单被清空过（1 人 / 0 人），但 data/versions/ 里每天/每次改动都有快照。
+ *   之前是手动跑脚本救回来的，做成按钮以后遇到不用找人。
+ *
+ * 为什么只恢复"更多人的"：
+ *   快照里的名单可能比现在的旧（群里进过新人）。
+ *   只在快照明显更完整时才覆盖，避免把新名单退回去。
+ */
+export function restoreGroupsFromSnapshots(opts: { snapshotRoot?: string; minGain?: number } = {}): RestoreReport {
+  const root = opts.snapshotRoot ?? 'data/versions'
+  // 至少要"多这么多人"才值得覆盖。默认 5：
+  // 差一两个可能只是有人退群，差五个以上基本是名单被清过。
+  const minGain = opts.minGain ?? 5
+
+  const report: RestoreReport = { restored: [], skipped: [], scanned: 0 }
+
+  let snaps: string[]
+  try {
+    snaps = readdirSync(root).sort()
+  } catch {
+    return report
+  }
+  report.scanned = snaps.length
+
+  // 快照号 → 每个群的最好成绩
+  const best = new Map<string, { count: number; path: string; snap: string }>()
+
+  for (const snap of snaps) {
+    const dir = join(root, snap, 'groups')
+    let groups: string[]
+    try {
+      groups = readdirSync(dir)
+    } catch {
+      continue
+    }
+    for (const gid of groups) {
+      const f = join(dir, gid, 'members.json')
+      try {
+        const j = JSON.parse(readFileSync(f, 'utf8')) as { members?: unknown[] }
+        const count = Array.isArray(j.members) ? j.members.length : 0
+        const cur = best.get(gid)
+        if (!cur || count > cur.count) best.set(gid, { count, path: f, snap })
+      } catch {
+        /* 坏快照跳过 */
+      }
+    }
+  }
+
+  // 只处理"当前还存在"的群。
+  // 快照里会留着测试造的假群（111111111 之类），没必去恢复它们。
+  const live = new Set(knownGroups())
+
+  for (const [gid, b] of best) {
+    if (!live.has(gid)) continue
+    const current = groupMembers(gid).length
+    if (b.count < current + minGain) {
+      report.skipped.push({ groupId: gid, current, best: b.count })
+      continue
+    }
+
+    try {
+      const raw = readFileSync(b.path, 'utf8')
+      const parsed = JSON.parse(raw) as CacheFile
+      if (!Array.isArray(parsed.members) || !parsed.members.length) continue
+
+      mkdirSync(dirOf(gid), { recursive: true })
+      // at 用当前时间：恢复后一小时 TTL 从头算，别刚从快照回来就又被判过期
+      const entry: CacheFile = { groupId: gid, at: Date.now(), members: parsed.members }
+      save(entry)
+
+      report.restored.push({ groupId: gid, from: current, to: parsed.members.length, snapshot: b.snap })
+      info(`群名单已从快照恢复：${gid} ${current} → ${parsed.members.length} 人（${b.snap}）`)
+    } catch (err) {
+      warnAt('从快照恢复群名单失败', { group: gid, err: String(err).slice(0, 80) })
+    }
+  }
+
+  return report
+}
