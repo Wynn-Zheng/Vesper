@@ -7,22 +7,85 @@ import { MAX_EMOJI_BYTES } from '../emoji/store.ts'
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 export function rand([min, max]: [number, number]): number {
-  return Math.floor(min + Math.random() * (max - min))
+  // 配置写反了也要落在区间里；取整保证是整数毫秒
+  const lo = Math.min(min, max)
+  const hi = Math.max(min, max)
+  return Math.floor(lo + Math.random() * (hi - lo))
 }
 
 const HARD_BREAK = /([。！？!?～~…]+|[\n]+)/
 const SOFT_BREAK = /([，,、；;：:]+)/
 
+/** 只有标点/空白的片段：不该单独成为一条消息 */
+const PUNCT_ONLY = /^[\s。！？!?～~…，,、；;：:]+$/
+
+/**
+ * 按"字素簇"切分：emoji、组合字符（e + ́）、ZWJ 家庭、肤色、旗帜都算一个整体。
+ * 没有 Intl.Segmenter 时退回按码点切，至少不会切出半个代理对。
+ */
+const graphemeSegmenter =
+  typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null
+
+function graphemes(text: string): string[] {
+  if (!graphemeSegmenter) return Array.from(text)
+  const out: string[] = []
+  for (const { segment } of graphemeSegmenter.segment(text)) out.push(segment)
+  return out
+}
+
+/** 硬切：按字素累加，绝不把一个 emoji / 组合字符切成两半。 */
+function hardSplit(text: string, maxLen: number): string[] {
+  const out: string[] = []
+  let cur = ''
+  for (const g of graphemes(text)) {
+    if (cur && cur.length + g.length > maxLen) {
+      out.push(cur)
+      cur = ''
+    }
+    // 单个字素本身就超上限（maxLen 很小时）只能整块留着，不切半个
+    cur += g
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+/**
+ * 按逗号类软标点切，但标点跟着前一段走。
+ * 以前是直接 split，结果 "， " 自己成了一条消息。
+ */
+function splitSoft(sentence: string): string[] {
+  const pieces: string[] = []
+  let lead = ''
+  for (const chunk of sentence.split(SOFT_BREAK)) {
+    if (!chunk) continue
+    if (SOFT_BREAK.test(chunk)) {
+      if (pieces.length) pieces[pieces.length - 1] += chunk
+      else lead += chunk
+    } else {
+      pieces.push(lead + chunk)
+      lead = ''
+    }
+  }
+  if (lead) {
+    if (pieces.length) pieces[pieces.length - 1] += lead
+    else pieces.push(lead)
+  }
+  return pieces.map((p) => p.trim()).filter(Boolean)
+}
+
 /**
  * 按语义切句，不按字数硬切。
  * 1) 先按句末标点和换行切
- * 2) 单句仍超长，按逗号类切
- * 3) 还超长，才硬切
- * 4) 超过 maxParts 的合并进最后一条（宁可长一点，也别发一串）
+ * 2) 单句仍超长，按逗号类切（标点跟着前一段）
+ * 3) 还超长，才按字素硬切
+ * 4) 超过 maxParts 的部分截掉，不把剩下的全塞进最后一条
  */
 export function splitBySentence(text: string, maxLen: number, maxParts: number): string[] {
   const clean = text.replace(/\r/g, '').trim()
   if (!clean) return []
+
+  // 上限非法（0 / 负数 / NaN）时退回 1：以前 maxLen=0 会在硬切里死循环
+  const limit = Number.isFinite(maxLen) ? Math.max(1, Math.floor(maxLen)) : 1
 
   const sentences: string[] = []
   let buf = ''
@@ -39,16 +102,26 @@ export function splitBySentence(text: string, maxLen: number, maxParts: number):
   if (buf.trim()) sentences.push(buf.trim())
 
   const sized: string[] = []
+  const push = (part: string): void => {
+    const p = part.trim()
+    if (!p) return
+    // 只有标点的尾巴并回上一条，宁可多一个标点也别单独发一条 "，"
+    // 上一条本身也只有标点时就不合并了，否则会长到超过上限
+    if (PUNCT_ONLY.test(p) && sized.length && !PUNCT_ONLY.test(sized[sized.length - 1]!)) {
+      sized[sized.length - 1] += p
+      return
+    }
+    sized.push(p)
+  }
+
   for (const s of sentences) {
-    if (s.length <= maxLen) {
-      sized.push(s)
+    if (s.length <= limit) {
+      push(s)
       continue
     }
-    for (const piece of s.split(SOFT_BREAK)) {
-      const p = piece.trim()
-      if (!p) continue
-      if (p.length <= maxLen) sized.push(p)
-      else for (let i = 0; i < p.length; i += maxLen) sized.push(p.slice(i, i + maxLen))
+    for (const piece of splitSoft(s)) {
+      if (piece.length <= limit) push(piece)
+      else for (const part of hardSplit(piece, limit)) push(part)
     }
   }
 
@@ -57,7 +130,7 @@ export function splitBySentence(text: string, maxLen: number, maxParts: number):
   // 超了条数上限：只发前 maxParts 条。
   // 以前是"剩下全拼进最后一条"，结果最后一条能有几百字，违背每条不超过 maxLen 的约束。
   // 模型本来就不该说这么多，截掉比发一坨更像人。
-  return sized.slice(0, maxParts)
+  return sized.slice(0, Math.max(0, Math.floor(maxParts)))
 }
 
 /** 分句 + 间隔发送。返回实际发出的每条消息 id（平台支持时）。 */

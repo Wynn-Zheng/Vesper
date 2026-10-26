@@ -81,22 +81,79 @@ export interface OBEvent {
   raw_message?: string
 }
 
+/** CQ 码里的转义字符，按 OneBot 规范还原。&amp; 最后处理，避免二次解码。 */
+function unescapeCq(text: string): string {
+  return text
+    .replace(/&#91;/g, '[')
+    .replace(/&#93;/g, ']')
+    .replace(/&#44;/g, ',')
+    .replace(/&amp;/g, '&')
+}
+
+/** 解析 CQ 码参数：`[CQ:face,id=1]` → { id: '1' } */
+function parseCqParams(raw: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const part of raw.split(',')) {
+    if (!part) continue
+    const eq = part.indexOf('=')
+    if (eq < 1) continue
+    out[part.slice(0, eq).trim()] = unescapeCq(part.slice(eq + 1))
+  }
+  return out
+}
+
+/** 字符串格式的消息（CQ 码）拆成消息段，后续逻辑和数组格式共用一套。 */
+function parseCqString(raw: string): Array<{ type: string; data: Record<string, string> }> {
+  const out: Array<{ type: string; data: Record<string, string> }> = []
+  const cq = /\[CQ:([a-zA-Z0-9_.-]+)((?:,[^\]]*)?)\]/g
+  let last = 0
+  for (let m = cq.exec(raw); m; m = cq.exec(raw)) {
+    if (m.index > last) {
+      out.push({ type: 'text', data: { text: unescapeCq(raw.slice(last, m.index)) } })
+    }
+    out.push({ type: (m[1] ?? '').toLowerCase(), data: parseCqParams(m[2] ?? '') })
+    last = m.index + m[0].length
+  }
+  if (last < raw.length) {
+    out.push({ type: 'text', data: { text: unescapeCq(raw.slice(last)) } })
+  }
+  return out
+}
+
+/** 数组格式原样保留，字符串格式先转成段；坏数据直接跳过。 */
+function messageSegments(message: OBEvent['message']): Array<{ type: string; data: Record<string, string> }> {
+  if (typeof message === 'string') return parseCqString(message)
+  if (!Array.isArray(message)) return []
+  const out: Array<{ type: string; data: Record<string, string> }> = []
+  for (const seg of message) {
+    if (!seg || typeof seg !== 'object' || typeof seg.type !== 'string') continue
+    const data: Record<string, string> = {}
+    for (const [key, value] of Object.entries(seg.data ?? {})) {
+      if (value !== undefined && value !== null) data[key] = String(value)
+    }
+    out.push({ type: seg.type, data })
+  }
+  return out
+}
+
+function atText(data: Record<string, string>): string {
+  const qq = (data['qq'] ?? '').trim()
+  if (qq === 'all') return '@全体成员'
+  // 用昵称而不是 QQ 号：模型看到 @552388771 不知道那是谁
+  const name = (data['name'] ?? '').trim()
+  if (name) return `@${name}`
+  return qq ? `@${qq}` : ''
+}
+
 /** 把 OneBot 的 message 段数组压成纯文本，非文本段留占位。 */
 export function extractText(message: OBEvent['message']): string {
-  if (typeof message === 'string') return message.trim()
-  if (!Array.isArray(message)) return ''
   const out: string[] = []
-  for (const seg of message) {
-    if (seg.type === 'text') out.push(String(seg.data?.['text'] ?? ''))
+  for (const seg of messageSegments(message)) {
+    if (seg.type === 'text') out.push(seg.data['text'] ?? '')
     else if (seg.type === 'face') out.push('[表情]')
     else if (seg.type === 'image') out.push('[图片]')
     else if (seg.type === 'record') out.push('[语音]')
-    else if (seg.type === 'at') {
-      // 用昵称而不是 QQ 号：模型看到 @552388771 不知道那是谁
-      const qq = String(seg.data?.['qq'] ?? '')
-      const name = String(seg.data?.['name'] ?? '').trim()
-      out.push(`@${name || qq}`)
-    }
+    else if (seg.type === 'at') out.push(atText(seg.data))
   }
   return out.join('').trim()
 }
@@ -108,16 +165,15 @@ export function extractText(message: OBEvent['message']): string {
  * 没有地址的（只给了 file 名的）就跳过，宁可当没图也别传个坏链接。
  */
 export function extractImages(message: OBEvent['message']): string[] {
-  if (!Array.isArray(message)) return []
   const out: string[] = []
-  for (const seg of message) {
+  for (const seg of messageSegments(message)) {
     if (seg.type !== 'image') continue
-    const url = String(seg.data?.['url'] ?? '').trim()
+    const url = (seg.data['url'] ?? '').trim()
     if (/^https?:\/\//i.test(url)) {
       out.push(url)
       continue
     }
-    const file = String(seg.data?.['file'] ?? '').trim()
+    const file = (seg.data['file'] ?? '').trim()
     if (/^https?:\/\//i.test(file)) out.push(file)
   }
   // 一次最多看几张：多了又慢又贵
@@ -645,8 +701,6 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
   return true
 }
 
-/** 这条消息有没有 @ 它 */
-
 /** 这个人是不是刚刚还在跟它说话 */
 export function isRecentTalker(opts: OnebotOptions, groupId: string, userId: string): boolean {
   const at = opts.recentTalkers?.get(`${groupId}:${userId}`) ?? 0
@@ -664,11 +718,12 @@ function markTalker(opts: OnebotOptions, groupId: string, userId: string): void 
     for (const [k, v] of opts.recentTalkers) if (v < cutoff) opts.recentTalkers.delete(k)
   }
 }
+
+/** 这条消息有没有 @ 它。数组格式和字符串 CQ 码格式都认。 */
 export function isAddressed(ev: OBEvent): boolean {
   if (ev.message_type === 'private') return true
-  const selfId = String(ev.self_id ?? '')
-  const ats = Array.isArray(ev.message)
-    ? ev.message.filter((s) => s.type === 'at').map((s) => String(s.data?.['qq'] ?? ''))
-    : []
-  return ats.includes(selfId)
+  const selfId = String(ev.self_id ?? '').trim()
+  // 连自己是谁都不知道，就别猜"@ 的是我"
+  if (!selfId) return false
+  return messageSegments(ev.message).some((s) => s.type === 'at' && (s.data['qq'] ?? '').trim() === selfId)
 }
