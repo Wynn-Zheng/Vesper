@@ -42,6 +42,8 @@ const STEPS: Step[] = [
   { name: '表达学习', cmd: 'node --env-file-if-exists=.env scripts/test-expression.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '存储层边界', cmd: 'node scripts/test-store-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '记忆层边界', cmd: 'node scripts/test-memory-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '调度器边界', cmd: 'node scripts/test-sched-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '通道层边界', cmd: 'node scripts/test-chan-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
