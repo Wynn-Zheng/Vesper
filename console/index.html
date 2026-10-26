@@ -294,7 +294,9 @@
 
   <div class="views">
       <div class="group-tabs" id="group-tabs"></div>
-        <section class="view" id="v-overview">
+        
+
+    <section class="view" id="v-overview">
       <div class="hero">
         <div class="hero-left">
           <div class="hero-label">你们的关系</div>
@@ -425,6 +427,10 @@
           <div class="body"><div id="st-today" class="sched"></div></div>
         </div>
       </div>
+    
+      <div class="panel" style="margin-top:14px"><h3>成本 <span class="r">按 token 估，实际以账单为准</span></h3>
+        <div class="body"><div class="kv" id="cost-total"></div></div>
+      </div>
     </section>
 
     <section class="view" id="v-logs">
@@ -516,6 +522,43 @@
         </div>
         <div class="panel"><h3>我自己的事 <span class="r">和对方无关的那些</span></h3>
           <div class="body" style="max-height:520px;overflow:auto"><div id="self-life"></div></div>
+        </div>
+      </div>
+    </section>
+
+
+    <section class="view" id="v-features">
+      <div class="cols2">
+        <div class="panel"><h3>表情包 <span class="r" id="feat-emoji-head"></span></h3>
+          <div class="body">
+            <div class="kv" id="feat-emoji-stats"></div>
+            <div class="hint" style="margin-top:12px">按情绪分布</div>
+            <div class="chips" id="feat-emoji-moods" style="margin-top:6px"></div>
+            <div class="hint" style="margin-top:12px">最近收的</div>
+            <div id="feat-emoji-recent" style="margin-top:6px"></div>
+          </div>
+        </div>
+        <div class="panel"><h3>看图 <span class="r">主模型是纯文本也能看</span></h3>
+          <div class="body"><div class="kv" id="feat-vision"></div></div>
+        </div>
+      </div>
+      <div class="cols2" style="margin-top:14px">
+        <div class="panel"><h3>上下文压缩</h3>
+          <div class="body"><div class="kv" id="feat-context"></div></div>
+        </div>
+        <div class="panel"><h3>情绪序列 <span class="r">多轮情感上下文</span></h3>
+          <div class="body">
+            <div class="kv" id="feat-mood-now"></div>
+            <div class="hint" style="margin-top:12px">最近的情绪变化</div>
+            <div id="feat-mood-seq" style="margin-top:6px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:14px"><h3>表达学习 <span class="r" id="feat-expr-head"></span></h3>
+        <div class="body">
+          <div class="kv" id="feat-expr-stats"></div>
+          <div class="hint" style="margin-top:12px">最近学到的（点 ★ 标记精选）</div>
+          <div id="feat-expr-list" style="margin-top:6px"></div>
         </div>
       </div>
     </section>
@@ -686,6 +729,11 @@
           <div class="op-t">导出备份</div>
           <div class="op-d">所有人 + 记忆 + 最近对话，一个 JSON</div>
         </div>
+        <div class="op" onclick="refreshGroupMembers()">
+          <div class="op-ico">👥</div>
+          <div class="op-t">刷新群成员</div>
+          <div class="op-d">重拉群名单，@ 显示成昵称而不是 QQ 号</div>
+        </div>
       </div>
       <div class="panel" style="margin-top:12px">
         <h3>危险操作 <span class="r">回滚请去「历史」页</span></h3>
@@ -720,6 +768,15 @@ function toast(msg) {
   t.classList.add('on')
   setTimeout(() => t.classList.remove('on'), 2200)
 }
+/** HTML 转义：内容里有尖括号会破坏结构 */
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 async function api(path, init) {
   // token 走 header，不拼在 URL 里：URL 会进浏览器历史和 Referer
   const headers = { 'x-console-token': token, ...(init?.headers || {}) }
@@ -739,7 +796,7 @@ const GROUPS = {
   state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
   memory: [['v-memory', '记忆'], ['v-search', '搜索']],
   comm: [['v-logs', '日志'], ['v-chat', '对话']],
-  self: [['v-self', '自我']],
+  self: [['v-self', '自我'], ['v-features', '新功能']],
   settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
   tools: [['v-try', '试聊'], ['v-ops', '操作']],
 }
@@ -788,6 +845,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
   if (viewId === 'v-self') loadSelf()
+  if (viewId === 'v-features') loadFeatures()
   if (viewId === 'v-rules') loadRules()
   if (viewId === 'v-access') loadAccessPolicy()
   if (viewId === 'v-history') loadHistory()
@@ -803,6 +861,25 @@ $('nav').addEventListener('click', (e) => {
 // ---------- 状态 ----------
 let last = null
 async function loadStatus() {
+  // 成本：/api/cost 一直存在但前端没用，白放着
+  try {
+    const c = await api('/api/cost')
+    const panel = $('cost-panel')
+    const box = $('cost-total')
+    if (panel && box && c) {
+      panel.style.display = ''
+      const calls = c.calls ?? 0
+      const pin = c.prompt ?? 0
+      const pout = c.completion ?? 0
+      box.innerHTML = [
+        ['调用次数', calls + ' 次'],
+        ['输入 token', pin.toLocaleString()],
+        ['输出 token', pout.toLocaleString()],
+        ['合计', (pin + pout).toLocaleString()],
+      ].map(([k, v]) => `<div><span class="hint">${k}</span> <b>${v}</b></div>`).join('')
+    }
+  } catch { /* 没有日志就跳过 */ }
+
   try {
     const s = await api('/api/status')
     last = s
@@ -1056,6 +1133,108 @@ async function loadRelation() {
 
 // ---------- 自我 ----------
 const PHASE_LABEL = { sleep: '睡着了', rest: '午后犯懒', active: '醒着' }
+
+// ---------- 新功能（表情包 / 看图 / 压缩 / 情绪序列 / 表达学习） ----------
+async function loadFeatures() {
+  try {
+    const f = await api('/api/features')
+
+    // 表情包
+    const em = f.emoji || {}
+    $('feat-emoji-head').textContent = em.开启 ? '开着' : '关着'
+    $('feat-emoji-stats').innerHTML = [
+      ['库存', `${em.总数 ?? 0} / ${em.上限 ?? 200}`],
+      ['开关', em.开启 ? '开启' : '关闭'],
+    ].map(([k, v]) => `<div><span class="hint">${k}</span> <b>${esc(v)}</b></div>`).join('')
+
+    const moods = em.按情绪 || {}
+    const moodKeys = Object.keys(moods)
+    $('feat-emoji-moods').innerHTML = moodKeys.length
+      ? moodKeys.map((k) => `<span class="chip">${esc(k)} ${moods[k]}</span>`).join('')
+      : '<span class="hint">还没有表情包</span>'
+
+    const recent = em.最近 || []
+    $('feat-emoji-recent').innerHTML = recent.length
+      ? recent.map((it) => `<div class="row"><span class="badge">${esc(it.mood || '未分类')}</span> <span class="hint">${esc((it.tags || []).join(' '))}</span></div>`).join('')
+      : '<div class="hint">收到表情包时会自动收进来（需要「表情包.开启」）</div>'
+
+    // 看图
+    const v = f.vision || {}
+    $('feat-vision').innerHTML = [
+      ['开关', v.开启 ? '开启' : '关闭'],
+      ['视觉模型', v.模型 || '—'],
+      ['主模型', v.主模型是 || '—'],
+      ['每轮最多看', `${v.最多张数 ?? 4} 张`],
+    ].map(([k, val]) => `<div><span class="hint">${k}</span> <b>${esc(String(val))}</b></div>`).join('')
+
+    // 上下文压缩
+    const c = f.context || {}
+    $('feat-context').innerHTML = [
+      ['超过多少条开始压', `${c.摘要阈值 ?? 20} 条`],
+      ['压完保留最近', `${c.保留最近 ?? 6} 条`],
+    ].map(([k, val]) => `<div><span class="hint">${k}</span> <b>${esc(String(val))}</b></div>`).join('')
+
+    // 情绪序列
+    const m = f.mood
+    if (!m) {
+      $('feat-mood-now').innerHTML = '<span class="hint">现在没有情绪记录</span>'
+      $('feat-mood-seq').innerHTML = ''
+    } else {
+      $('feat-mood-now').innerHTML = `<div><span class="hint">当前</span> <b>${esc(m.当前)}</b> <span class="hint">强度 ${Number(m.强度).toFixed(2)}</span></div>`
+      const seq = m.最近 || []
+      $('feat-mood-seq').innerHTML = seq.length >= 2
+        ? seq.map((r) => {
+            const bar = '█'.repeat(Math.round((r.intensity || 0) * 10)).padEnd(10, '░')
+            const why = r.reason ? ` <span class="hint">— ${esc(r.reason)}</span>` : ''
+            return `<div class="row"><code>${esc(r.emotion)}</code> <span style="font-family:monospace;color:#7aa2f7">${bar}</span>${why}</div>`
+          }).join('')
+        : '<div class="hint">至少两轮不同情绪才有变化可看（每轮对话后会自动记）</div>'
+    }
+
+    // 表达学习
+    const ex = f.expression || {}
+    $('feat-expr-head').textContent = ex.审核 ? '审核开着' : '审核关着'
+    $('feat-expr-stats').innerHTML = [
+      ['学到的条数', ex.总数 ?? 0],
+      ['已精选', `${ex.已精选 ?? 0} 条`],
+      ['高分', `${ex.高分 ?? 0} 条`],
+      ['低分（反面教材）', `${ex.低分 ?? 0} 条`],
+      ['只用精选', ex.只用精选 ? '是' : '否'],
+    ].map(([k, val]) => `<div><span class="hint">${k}</span> <b>${esc(String(val))}</b></div>`).join('')
+
+    const list = ex.最近 || []
+    $('feat-expr-list').innerHTML = list.length
+      ? list.map((p) => `<div class="row" style="align-items:flex-start;gap:8px">
+          <span class="badge">${p.score} 分</span>
+          <span style="flex:1"><span class="hint">他说</span> ${esc(p.scene)} <span class="hint">→ 我回</span> ${esc(p.reply)}</span>
+          <span style="cursor:pointer;font-size:16px" title="标记精选" onclick="togglePlay(${JSON.stringify(p.scene).replace(/"/g, '&quot;')}, ${p.checked ? 'false' : 'true'})">${p.checked ? '★' : '☆'}</span>
+        </div>`).join('')
+      : '<div class="hint">还没有学到东西（聊得多了、评分高的会自动记）</div>'
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+async function refreshGroupMembers() {
+  // 拿当前选中的群：如果当前对象是群就用它
+  const gid = (last && last.groupId) || ''
+  try {
+    if (!gid) {
+      alert('先在右上角选一个群，再点这个')
+      return
+    }
+    const r = await api('/api/action', { action: 'groupMembers', payload: { groupId: gid } })
+    alert(`刷好了：${r.count ?? r.members?.length ?? 0} 个人`)
+  } catch (e) { alert('失败：' + e.message) }
+}
+
+async function togglePlay(scene, checked) {
+  try {
+    await api('/api/action', { action: 'togglePlay', payload: { scene, checked } })
+    loadFeatures()
+  } catch (e) { alert('失败：' + e.message) }
+}
+
 async function loadSelf() {
   try {
     const d = await api('/api/self')

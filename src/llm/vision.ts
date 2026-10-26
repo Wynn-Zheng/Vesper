@@ -113,7 +113,9 @@ export async function describeImages(urls: string[], opts: LlmOptions): Promise<
   const usable = urls.filter(isImageUrl).slice(0, 4)
   if (!usable.length) return []
   if (!opts.apiKey || !opts.baseUrl || !opts.model) {
-    warnAt('没有视觉模型配置，图片按 [图片] 处理')
+    // 不报警：视觉开关关着是正常状态，调用方本来就不该走到这里。
+    // 真走到这里说明代码路径写错了，但那是开发期该发现的，
+    // 不该在运行日志里刷成「问题」，把真正要紧的报错淹掉。
     return []
   }
 

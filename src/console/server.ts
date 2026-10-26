@@ -292,6 +292,17 @@ async function runAction(
       return { reloaded: true, warnings: rules.warnings }
     }
 
+// 标记/取消精选：表达学习里"这句值得学吗"是人工判断的，
+    // 不能只靠模型自评（实测 24 条全是 8 分，里面有追问的坏例子）。
+    case 'togglePlay': {
+      const scene = String(payload['scene'] ?? '').trim()
+      const checked = payload['checked'] === true
+      if (!scene) throw new Error('缺少 scene')
+      const { toggleChecked } = await import('../learn/plays.ts')
+      const ok = toggleChecked(scene, checked)
+      return { ok, scene, checked }
+    }
+
     case 'restore': {
       const id = String(payload['id'] ?? '')
       if (!id) throw new Error('缺少快照 id')
@@ -575,6 +586,89 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
       if (req.method === 'GET' && path === '/api/cost') {
         json(res, 200, costOfToday())
+        return
+      }
+
+
+      // 新功能总览：表情包 / 看图 / 压缩 / 表达学习
+      // 这几块以前只在代码里，控制台看不见，改了什么也没法验证。
+      if (req.method === 'GET' && path === '/api/features') {
+        const rules = opts.getRules()
+        const out: Record<string, unknown> = {}
+
+        // 表情包库
+        try {
+          const { createEmojiStore } = await import('../emoji/store.ts')
+          const store = createEmojiStore(undefined, { libraryCap: rules.表情包?.库存上限 ?? 200 })
+          const list = await store.list()
+          const byMood: Record<string, number> = {}
+          for (const it of list) {
+            const m = it.mood || '未分类'
+            byMood[m] = (byMood[m] ?? 0) + 1
+          }
+          out.emoji = {
+            开启: rules.表情包?.开启 ?? false,
+            总数: list.length,
+            上限: rules.表情包?.库存上限 ?? 200,
+            按情绪: byMood,
+            最近: list.slice(-6).map((it) => ({ id: it.id, mood: it.mood, tags: it.tags, size: it.size, createdAt: it.createdAt, lastUsedAt: it.lastUsedAt })),
+          }
+        } catch (e) {
+          out.emoji = { 错误: String(e).slice(0, 80) }
+        }
+
+        // 看图
+        out.vision = {
+          开启: rules.视觉?.开启 ?? false,
+          模型: rules.视觉?.模型 || process.env.DEEPSEEK_VISION_MODEL || 'deepseek-v4-flash-vision-exp',
+          最多张数: rules.视觉?.最多张数 ?? 4,
+          主模型是: process.env.DEEPSEEK_MODEL ?? 'deepseek-chat',
+        }
+
+        // 上下文压缩
+        out.context = {
+          摘要阈值: rules.上下文压缩?.摘要阈值 ?? 20,
+          保留最近: rules.上下文压缩?.保留最近 ?? 6,
+        }
+
+        // 表达学习
+        try {
+          const { loadPlays } = await import('../learn/plays.ts')
+          const plays = loadPlays()
+          out.expression = {
+            审核: rules.表达学习?.审核 ?? false,
+            只用精选: rules.表达学习?.只用精选 ?? false,
+            总数: plays.length,
+            已精选: plays.filter((x) => x.checked).length,
+            高分: plays.filter((x) => x.score >= 7).length,
+            低分: plays.filter((x) => x.score <= 3).length,
+            最近: plays.slice(-6).map((x) => ({ score: x.score, scene: x.scene, reply: x.reply, date: x.date, checked: !!x.checked })),
+          }
+        } catch (e) {
+          out.expression = { 错误: String(e).slice(0, 80) }
+        }
+
+        // 情绪序列（多轮情感上下文）
+        try {
+          const { loadMood } = await import('../persona/mood.ts')
+          const m = loadMood()
+          out.mood = m
+            ? {
+                当前: m.emotion,
+                强度: m.intensity,
+                最近: (m.recent ?? []).slice(-5).map((r) => ({
+                  emotion: r.emotion,
+                  intensity: r.intensity,
+                  at: r.at,
+                  reason: r.reason ?? '',
+                })),
+              }
+            : null
+        } catch {
+          out.mood = null
+        }
+
+        json(res, 200, out)
         return
       }
 

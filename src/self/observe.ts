@@ -85,7 +85,14 @@ export interface ObserveOptions {
  * 只挑 warn / error——info 是正常流水。
  */
 /** 这些是测试或正常行为，不算问题 */
-const NOISE = [/工具重名，已覆盖/, /控制台请求出错/]
+const NOISE = [
+  /工具重名，已覆盖/,
+  /控制台请求出错/,
+  // 重试是正常机制：最终失败会单独记一条，重试警告不该算问题
+  /重试（第 \d+ 次）/,
+  // 单条消息被跳过属于正常过滤
+  /重复消息，已跳过/,
+]
 
 export function findIssues(opts: ObserveOptions = {}): Issue[] {
   const days = Math.min(14, Math.max(1, opts.days ?? 3))
@@ -102,7 +109,10 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
 
       // where 只认字符串；对象/数字当没有位置，免得拼出 "[object Object]" 这样的指纹
       const where = typeof rec.extra?.where === 'string' ? rec.extra.where : ''
-      const key = `${rec.level}|${normalize(rec.msg)}|${where}`
+      // 指纹只按「级别 + 归一化后的消息」算，**不含行号**：
+            // 同一个错误在不同行号报，对用户来说是同一件事，拆成多条只会淹没真正的问题。
+            // 行号作为「最近一次出现的位置」留着展示。
+            const key = `${rec.level}|${normalize(rec.msg)}`
       const existing = buckets.get(key)
       const extraText = rec.extra ? JSON.stringify(rec.extra).slice(0, 120) : ''
 
