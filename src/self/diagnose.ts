@@ -47,7 +47,10 @@ export function readSlice(file: string, from: number, to: number, maxLines = 80)
   } catch {
     return null
   }
-  const lo = Math.max(1, Math.min(from, to))
+  // 负数或 0 行号只可能是调用方写错，直接拒绝。
+  // 静默夹成 1 会把"传错了参数"伪装成"读到了第一行"。
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < 1) return null
+  const lo = Math.min(from, to)
   // 起点超出文件末尾就没东西可读了：返回 null，别给个空字符串让人以为读到了
   if (lo > lines.length) return null
   const hi = Math.min(lines.length, Math.max(from, to), lo + maxLines - 1)
@@ -64,7 +67,8 @@ export function readSourceAt(where: string, around = 35): SourceSlice | null {
   if (!abs) return null
   const lineNo = Number(where.split(':')[1] ?? 0)
   if (!Number.isFinite(lineNo) || lineNo <= 0) return null
-  return readSlice(where.split(':')[0]!, lineNo - around, lineNo + around)
+  // 错误在第 3 行时 lineNo-35 是负数，这里夹回 1 再交给 readSlice
+  return readSlice(where.split(':')[0]!, Math.max(1, lineNo - around), lineNo + around)
 }
 
 function walkSrc(dir = 'src', out: string[] = []): string[] {

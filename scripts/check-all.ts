@@ -47,6 +47,9 @@ const STEPS: Step[] = [
   { name: '核心边界', cmd: 'node scripts/test-core-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '人物边界', cmd: 'node scripts/test-people-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '关系边界', cmd: 'node scripts/test-relation-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '模型客户端', cmd: 'node scripts/test-llm-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '外部能力', cmd: 'node scripts/test-outward-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '诊断工具', cmd: 'node scripts/test-diagnose-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'

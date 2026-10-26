@@ -160,8 +160,11 @@ async function subtitleOf(bvid: string, cid: number): Promise<string> {
 
 /** 时长格式化：3474 → 58 分钟 */
 export function humanDuration(sec: number): string {
-  if (sec < 60) return `${sec} 秒`
-  const m = Math.round(sec / 60)
-  if (m < 60) return `${m} 分钟`
+  if (!Number.isFinite(sec) || sec < 0) return '0 秒'
+  if (sec < 60) return `${Math.round(sec)} 秒`
+  // 一小时以内一律用分钟报：3599 秒四舍五入会变成「60 分钟」，
+  // 而不是「1 小时 0 分」——后者会让人以为是整整一小时。
+  if (sec < 3600) return `${Math.round(sec / 60)} 分钟`
+  const m = Math.floor(sec / 60)
   return `${Math.floor(m / 60)} 小时 ${m % 60} 分`
 }
