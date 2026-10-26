@@ -49,7 +49,7 @@ timeout = 1200
 [route]
 plan  = ["brain-llm"]
 think = ["brain-llm"]
-act   = ["opencode"]
+act   = ["brain-llm"]
 
 [git]
 # 必须和当前分支一致，否则 run 会切走
