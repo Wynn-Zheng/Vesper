@@ -152,15 +152,15 @@ export interface Rules {
    * 未压缩的历史消息超过 summaryThreshold 条时触发压缩，
    * 压缩后最近 keepRecent 条消息保留原文。
    */
-  context: {
-    summaryThreshold: number
-    keepRecent: number
+  上下文压缩: {
+    摘要阈值: number
+    保留最近: number
   }
   /** 回复里的表情包 */
-  emoji: {
-    enabled: boolean
-    maxPerReply: number
-    libraryCap: number
+  表情包: {
+    开启: boolean
+    每条最多: number
+    库存上限: number
   }
 }
 
@@ -239,14 +239,14 @@ export const DEFAULTS: Rules = {
     群每分钟上限: 6,
     主动消息: { 去重相似度: 0.6, 每日上限: '由阶段决定' },
   },
-  context: {
-    summaryThreshold: 20,
-    keepRecent: 6,
+  上下文压缩: {
+    摘要阈值: 20,
+    保留最近: 6,
   },
-  emoji: {
-    enabled: true,
-    maxPerReply: 1,
-    libraryCap: 200,
+  表情包: {
+    开启: true,
+    每条最多: 1,
+    库存上限: 200,
   },
 }
 
@@ -310,33 +310,33 @@ function readBoolEnv(name: string): boolean | null {
  * 非法值不抛错：回退默认值，并在日志里 warn。
  */
 function applyEnvOverrides(rules: Rules): Rules {
-  let summaryThreshold = rules.context.summaryThreshold
-  let keepRecent = rules.context.keepRecent
+  let summaryThreshold = rules.上下文压缩.摘要阈值
+  let keepRecent = rules.上下文压缩.保留最近
 
-  const envThreshold = readPositiveIntEnv('CTX_SUMMARY_THRESHOLD', DEFAULTS.context.summaryThreshold)
+  const envThreshold = readPositiveIntEnv('CTX_SUMMARY_THRESHOLD', DEFAULTS.上下文压缩.摘要阈值)
   if (envThreshold !== null) summaryThreshold = envThreshold
-  const envKeepRecent = readPositiveIntEnv('CTX_KEEP_RECENT', DEFAULTS.context.keepRecent)
+  const envKeepRecent = readPositiveIntEnv('CTX_KEEP_RECENT', DEFAULTS.上下文压缩.保留最近)
   if (envKeepRecent !== null) keepRecent = envKeepRecent
 
   if (keepRecent >= summaryThreshold) {
     warn(
       `上下文压缩配置非法（keepRecent=${keepRecent}，summaryThreshold=${summaryThreshold}），` +
-        `keepRecent 必须小于 summaryThreshold，回退默认值 ${DEFAULTS.context.summaryThreshold}/${DEFAULTS.context.keepRecent}`,
+        `keepRecent 必须小于 summaryThreshold，回退默认值 ${DEFAULTS.上下文压缩.摘要阈值}/${DEFAULTS.上下文压缩.保留最近}`,
     )
-    summaryThreshold = DEFAULTS.context.summaryThreshold
-    keepRecent = DEFAULTS.context.keepRecent
+    summaryThreshold = DEFAULTS.上下文压缩.摘要阈值
+    keepRecent = DEFAULTS.上下文压缩.保留最近
   }
 
-  const enabled = readBoolEnv('EMOJI_ENABLED') ?? rules.emoji.enabled
+  const enabled = readBoolEnv('EMOJI_ENABLED') ?? rules.表情包.开启
   const maxPerReply =
-    readClampedNumberEnv('EMOJI_MAX_PER_REPLY', DEFAULTS.emoji.maxPerReply, 0, 3) ?? rules.emoji.maxPerReply
+    readClampedNumberEnv('EMOJI_MAX_PER_REPLY', DEFAULTS.表情包.每条最多, 0, 3) ?? rules.表情包.每条最多
   const libraryCap =
-    readClampedNumberEnv('EMOJI_LIBRARY_CAP', DEFAULTS.emoji.libraryCap, 1, 5000) ?? rules.emoji.libraryCap
+    readClampedNumberEnv('EMOJI_LIBRARY_CAP', DEFAULTS.表情包.库存上限, 1, 5000) ?? rules.表情包.库存上限
 
   return {
     ...rules,
-    context: { summaryThreshold, keepRecent },
-    emoji: { enabled, maxPerReply, libraryCap },
+    上下文压缩: { 摘要阈值: summaryThreshold, 保留最近: keepRecent },
+    表情包: { 开启: enabled, 每条最多: maxPerReply, 库存上限: libraryCap },
   }
 }
 

@@ -106,8 +106,8 @@ function currentEmotion(): string {
  * 每轮最多调一次 compressHistory，不会递归触发。
  */
 async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<void> {
-  const threshold = opts.rules.context.summaryThreshold
-  const keepRecent = opts.rules.context.keepRecent
+  const threshold = opts.rules.上下文压缩.摘要阈值
+  const keepRecent = opts.rules.上下文压缩.保留最近
 
   try {
     const session = getSession(key)
@@ -148,14 +148,14 @@ async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<voi
 
 /** 回复后按当前情绪挑一张表情包发出去；失败不影响文字回复 */
 async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
-  const limit = Math.max(0, Math.floor(rules.emoji.maxPerReply))
-  if (!rules.emoji.enabled || limit === 0) return
+  const limit = Math.max(0, Math.floor(rules.表情包.每条最多))
+  if (!rules.表情包.开启 || limit === 0) return
 
   try {
     // 没有索引说明库还不存在。先判断再建 store，避免顺手写一个空索引到 persona/。
     if (!existsSync(join(EMOJI_ROOT, 'index.json'))) return
 
-    const store = getEmojiStore(rules.emoji.libraryCap)
+    const store = getEmojiStore(rules.表情包.库存上限)
     const item = pickEmoji(await store.list(), currentEmotion())
     if (!item) return
 

@@ -38,7 +38,7 @@ export interface OnebotOptions {
   followUpWindowMs?: number
   /** 调用 action 的超时（毫秒） */
   timeoutMs?: number
-  /** 每次判断都取一次规则：用来读 emoji.enabled；不传则不收表情包 */
+  /** 每次判断都取一次规则：用来读 表情包.开启；不传则不收表情包 */
   getRules?: () => Rules
   /** 表情包库；不传则不收表情包 */
   emojiStore?: EmojiStore
@@ -462,7 +462,7 @@ export class OnebotTransport implements Transport {
     const rules = this.opts.getRules?.()
     if (this.opts.emojiStore && rules) {
       void captureEmojiSegments(ev.message, {
-        enabled: rules.emoji.enabled,
+        enabled: rules.表情包.开启,
         store: this.opts.emojiStore,
         getImage: this.opts.getEmojiImage ?? ((seg) => this.fetchEmojiImage(seg)),
       })
