@@ -41,6 +41,35 @@ export function lambdaOf(importance: number, decay?: Record<string, number>): nu
   return normal * 2
 }
 
+/**
+ * episode 专用的衰减速率。
+ *
+ * 和 lambdaOf 的区别：**看 emotion 字段，不只看 importance**。
+ *
+ * 为什么必须区分：
+ *   实测 9 条 episode 的 importance 全是 2-3（分布 {2:2, 3:7}），
+ *   而 lambdaOf 要求 >= 8 才算高情绪 —— **那条分支一次都没触发过**，
+ *   所有 episode 都在用 17 天半衰期，包括「凌晨两点他失眠说想看我成长」。
+ *   但 9 条 episode 的 emotion **100% 有值**。
+ *
+ * 依据：McGaugh (2004, Annual Review of Neuroscience) —— 杏仁核在**情绪唤起**时
+ * 加强海马对这段经历的巩固，剂量相关。文献说的是情绪，不是主观评分。
+ */
+export function lambdaOfEpisode(e: Episode, decay?: Record<string, number>): number {
+  const high = finiteOr(decay?.['高情绪'], 0.005)
+  const normal = finiteOr(decay?.['普通'], 0.02)
+  const imp = Number.isFinite(e.importance) ? Math.min(10, Math.max(0, e.importance)) : 5
+
+  // 有情绪记录 + 至少有点重要性 → 高情绪档。
+  // 门槛定 3：现有数据 7 条是 3、2 条是 2，刚好分开。
+  if (e.emotion?.trim() && imp >= 3) return high
+
+  // 没有情绪记录但重要性很高 → 也进高档
+  if (imp >= 8) return high
+
+  return imp >= 5 ? normal : normal * 2
+}
+
 function episodeRef(e: Episode): number {
   if (e.lastRecalled && e.lastRecalled > 0) return e.lastRecalled
   const t = Date.parse(`${e.date}T00:00:00`)
@@ -191,7 +220,7 @@ export function recall(opts: RecallOptions): Recalled {
       score: scoreOf(
         episodeRef(e),
         // 高情绪的记忆衰减慢（McGaugh 2004：杏仁核在情绪唤起时加强巩固）
-        lambdaOf(e.importance, opts.decay),
+        lambdaOfEpisode(e, opts.decay),
         `${e.title} ${e.body}`,
         e.importance,
         query,

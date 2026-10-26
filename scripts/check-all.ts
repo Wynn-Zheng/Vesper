@@ -63,6 +63,7 @@ const STEPS: Step[] = [
   { name: '核心与临时记忆', cmd: 'node --env-file-if-exists=.env scripts/test-core-temp.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '衰减与召回', cmd: 'node --env-file-if-exists=.env scripts/test-decay.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '事实分档', cmd: 'node --env-file-if-exists=.env scripts/test-facts-tier.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '情节档位', cmd: 'node --env-file-if-exists=.env scripts/test-episode-tier.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
