@@ -407,8 +407,13 @@ export function loadRules(path = 'persona/rules.yaml'): LoadResult {
 
 /** 用当前关系值查出所处阶段。 */
 export function stageOf(rules: Rules, value: number): StageRule {
+  // NaN / Infinity 会让下面所有 <= 都变成 false，直接落到最后一个阶段——
+  // 实测 stageOf(rules, NaN) 返回「离不开」，比抛错还糟（静默给出最亲近的结论）。
+  // 关系值算坏的时候，宁可当「陌生」。
+  const v = Number.isFinite(value) ? value : 0
+
   for (const s of rules.关系.阶段) {
-    if (value <= s.至) return s
+    if (v <= s.至) return s
   }
   return rules.关系.阶段[rules.关系.阶段.length - 1]!
 }
