@@ -1,8 +1,8 @@
 node_modules/
 .npm-cache/
 .env
-data/
-persona/
+/data/
+/persona/
 *.log
 .DS_Store
 .dev-memory/
