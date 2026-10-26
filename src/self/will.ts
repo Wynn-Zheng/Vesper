@@ -41,20 +41,36 @@ const EMPTY: WillState = {
   impressions: {},
 }
 
+/** 每次都给一份新的 impressions，别让调用方改到 EMPTY 里的共享对象 */
+function emptyWill(): WillState {
+  return { ...EMPTY, impressions: {} }
+}
+
 export function loadWill(): WillState {
-  if (!existsSync(FILE)) return { ...EMPTY }
+  if (!existsSync(FILE)) return emptyWill()
   try {
-    const data = JSON.parse(readFileSync(FILE, 'utf8')) as Partial<WillState>
+    const parsed = JSON.parse(readFileSync(FILE, 'utf8')) as unknown
+    // 能解析成 null / 数组 / 字符串的"坏 JSON"也会走到这里，先挡掉
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return emptyWill()
+    const data = parsed as Partial<WillState>
+
+    const impressions: Record<string, string> = {}
+    if (data.impressions && typeof data.impressions === 'object' && !Array.isArray(data.impressions)) {
+      for (const [pid, text] of Object.entries(data.impressions)) {
+        if (typeof text === 'string') impressions[pid] = text
+      }
+    }
+
     return {
-      at: Number(data.at ?? 0),
+      at: Number(data.at ?? 0) || 0,
       talk: Boolean(data.talk),
       talkReason: String(data.talkReason ?? ''),
       watch: Boolean(data.watch),
       watchReason: String(data.watchReason ?? ''),
-      impressions: (data.impressions ?? {}) as Record<string, string>,
+      impressions,
     }
   } catch {
-    return { ...EMPTY }
+    return emptyWill()
   }
 }
 
@@ -64,7 +80,7 @@ export function saveWill(w: WillState): void {
 
 /** 这份盘点了多久（小时）；超过 30 小时算过期，别拿昨天的意愿当今天的 */
 export function willAgeHours(w: WillState = loadWill()): number {
-  if (!w.at) return Number.POSITIVE_INFINITY
+  if (!w.at || !Number.isFinite(w.at)) return Number.POSITIVE_INFINITY
   return (Date.now() - w.at) / 3_600_000
 }
 

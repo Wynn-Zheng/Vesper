@@ -43,7 +43,19 @@ function readDayLog(date: string): Array<{ ts: number; level: string; msg: strin
   for (const line of readFileSync(f, 'utf8').split('\n')) {
     if (!line.trim()) continue
     try {
-      out.push(JSON.parse(line) as { ts: number; level: string; msg: string; extra?: Record<string, unknown> })
+      const parsed = JSON.parse(line) as unknown
+      // 坏行不止"不是 JSON"这一种：null、数组、裸字符串都能解析成功，
+      // 但后面按字段读会炸。统一在这里收成日志记录的形状。
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+      const rec = parsed as { ts?: unknown; level?: unknown; msg?: unknown; extra?: unknown }
+      out.push({
+        ts: Number(rec.ts) || 0,
+        level: typeof rec.level === 'string' ? rec.level : '',
+        msg: typeof rec.msg === 'string' ? rec.msg : String(rec.msg ?? ''),
+        ...(rec.extra && typeof rec.extra === 'object' && !Array.isArray(rec.extra)
+          ? { extra: rec.extra as Record<string, unknown> }
+          : {}),
+      })
     } catch {
       /* 坏行跳过 */
     }
@@ -88,7 +100,8 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
       if (rec.level !== 'warn' && rec.level !== 'error') continue
       if (NOISE.some((re) => re.test(rec.msg))) continue
 
-      const where = String((rec.extra as { where?: string })?.where ?? '')
+      // where 只认字符串；对象/数字当没有位置，免得拼出 "[object Object]" 这样的指纹
+      const where = typeof rec.extra?.where === 'string' ? rec.extra.where : ''
       const key = `${rec.level}|${normalize(rec.msg)}|${where}`
       const existing = buckets.get(key)
       const extraText = rec.extra ? JSON.stringify(rec.extra).slice(0, 120) : ''
@@ -193,8 +206,17 @@ export function loadIssueStore(): IssueStore {
   const f = ISSUES_FILE
   if (!existsSync(f)) return { at: 0, items: [] }
   try {
-    const data = JSON.parse(readFileSync(f, 'utf8')) as IssueStore
-    return { at: Number(data.at ?? 0), items: Array.isArray(data.items) ? data.items : [] }
+    const data = JSON.parse(readFileSync(f, 'utf8')) as { at?: unknown; items?: unknown }
+    return {
+      at: Number(data.at ?? 0) || 0,
+      // 手改坏的文件里 items 可能是 null/对象/夹着 null，别让一条脏数据拖垮整个待提列表
+      items: Array.isArray(data.items)
+        ? data.items.filter(
+            (i): i is StoredIssue =>
+              !!i && typeof i === 'object' && !Array.isArray(i) && typeof (i as StoredIssue).key === 'string',
+          )
+        : [],
+    }
   } catch {
     return { at: 0, items: [] }
   }
