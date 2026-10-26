@@ -31,9 +31,20 @@ interface CacheFile {
   members: CachedMember[]
 }
 
-const ROOT = join('persona', 'groups')
+let ROOT = join('persona', 'groups')
 /** 落盘名单一小时有效：群里安静一小时也不至于"忘了有谁" */
 const TTL = 60 * 60_000
+
+/**
+ * 测试用：换掉群名单的根目录。
+ *
+ * 没有这个，测试会直接写 persona/groups/ —— 一跑就把真实群名单覆盖掉
+ * （之前就踩过：52 人被写成 1 人）。
+ */
+export function setGroupsRoot(p: string): void {
+  ROOT = p
+  mem.clear()
+}
 
 /** groupId → 内存镜像 */
 const mem = new Map<string, CacheFile>()
@@ -130,6 +141,18 @@ export async function refreshGroupMembers(
       warnAt('群成员拉回来是空的', { group: groupId, 用了旧缓存: !!hit })
       return
     }
+
+    // 只拉回一个人也不可信：群里至少有你（bot）自己和其他人。
+    // 实测踩过这个坑——NapCat 短暂连上时回了个只含 1 人的列表，
+    // 直接把 52 人的名单覆盖成了 1 人，控制台看起来像"认不出任何人"。
+    if (members.length === 1 && hit && hit.members.length > 1) {
+      warnAt('群成员只拉回 1 个，像是拉错了，保留旧名单', {
+        group: groupId,
+        旧名单: hit.members.length,
+      })
+      return
+    }
+
     const entry: CacheFile = { groupId, at: Date.now(), members }
 
     await serialized(`groups:${groupId}`, () => {

@@ -6,6 +6,24 @@ import { loadMood, saveMood, type Mood, type MoodEntry } from '../persona/mood.t
 import { applyAnchor, loadRelation, saveRelation, todayStr } from './store.ts'
 import { loadEpisodes as loadEpisodesSafe, recentRaw as recentRawTurns } from '../memory/store.ts'
 import { sharedBigrams } from '../core/text.ts'
+import { listPeople } from '../people/store.ts'
+
+/**
+ * 从 QQ 号查显示名。查不到返回空。
+ *
+ * 为什么要查：群里两个人说的话混在【最近说过的原话】里，
+ * 不带名字就看不出"这事是他说过"还是"另一个人说过"。
+ */
+function nameOf(account: string): string {
+  try {
+    for (const person of listPeople()) {
+      if (person.accounts.some((a) => a.id === account)) return person.name?.trim() ?? ''
+    }
+  } catch {
+    /* 查不到就算了 */
+  }
+  return ''
+}
 import type { Dimension } from './types.ts'
 
 const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只输出 JSON，不要解释，不要代码块。
@@ -162,10 +180,16 @@ function recentContext(personId: string, userText: string, limit = 3): string {
       .filter((t) => t.role === 'user' && t.text.trim())
       .slice(-4)
     if (recent.length) {
+      // 带上说话人：群里两个人说的话混在一起，不带名字就看不出
+      // "这事是他说过"还是"另一个人说过"。
       parts.push(
         '',
-        '【他最近说过的原话】（判断"是不是说过"用）',
-        ...recent.map((t) => `- ${t.text.replace(/\s+/g, ' ').slice(0, 60)}`),
+        '【最近说过的原话】（判断"是不是说过"用）',
+        ...recent.map((t) => {
+          const who = t.senderId ? nameOf(t.senderId) : ''
+          const line = t.text.replace(/\s+/g, ' ').slice(0, 60)
+          return who ? `- ${who}：${line}` : `- ${line}`
+        }),
       )
     }
   } catch {

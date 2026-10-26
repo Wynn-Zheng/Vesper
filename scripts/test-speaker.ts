@@ -11,7 +11,7 @@
  * 之前渲染成 4 条「他：」，模型分不清谁是谁，「对吧」指什么只能瞎猜。
  * 现在：带发言人名字 + 取 8 条（不是 4 条）。
  */
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 
 let pass = 0
 let fail = 0
@@ -28,6 +28,7 @@ function check(name: string, ok: boolean, detail = ''): void {
 const store = await import('../src/memory/store.ts')
 const people = await import('../src/people/store.ts')
 const recall = await import('../src/memory/recall.ts')
+const gc = await import('../src/people/groupcache.ts')
 const src = readFileSync('src/memory/recall.ts', 'utf8')
 const typesSrc = readFileSync('src/memory/types.ts', 'utf8')
 
@@ -35,8 +36,10 @@ const ROOT = 'data/test-speaker'
 if (existsSync(ROOT)) rmSync(ROOT, { recursive: true, force: true })
 mkdirSync(`${ROOT}/memory/raw`, { recursive: true })
 mkdirSync(`${ROOT}/people`, { recursive: true })
+mkdirSync(`${ROOT}/groups`, { recursive: true })
 store.setMemoryRoot?.(`${ROOT}/memory`)
 people.setPeopleRoot(`${ROOT}/people`)
+gc.setGroupsRoot(`${ROOT}/groups`)
 
 /* ============ 1. 数据结构 ============ */
 console.log('=== 1. RawTurn 有 speakerName ===')
@@ -84,14 +87,21 @@ check('第一个说话的是「群代肝」', r.recent[0]?.speakerName === '群�
 check('第二个是「(ฅ]ω[*ฅ)」', r.recent[1]?.speakerName === '(ฅ]ω[*ฅ)', r.recent[1]?.speakerName)
 
 const text = recall.renderRecalled(r)
-const block = text.slice(text.indexOf('【最近说过的话】'), text.indexOf('【最近说过的话】') + 400)
+const idx = text.indexOf('【最近说过的话】')
+const block = text.slice(idx, idx + 400)
 
 check('渲染里带「群代肝：」', block.includes('群代肝：'), '')
 check('渲染里带「(ฅ]ω[*ฅ)：」', block.includes('(ฅ]ω[*ฅ)：'), '')
 check('不再是清一色的「他：」', (block.match(/他：/g) ?? []).length < 3, String((block.match(/他：/g) ?? []).length))
 
 console.log('\n--- 实际渲染 ---')
-console.log(block.split('\n').slice(0, 8).map((l) => '  ' + l).join('\n'))
+console.log(
+  block
+    .split('\n')
+    .slice(0, 8)
+    .map((l) => '  ' + l)
+    .join('\n'),
+)
 
 /* ============ 3. 取 8 条不是 4 条 ============ */
 console.log('\n=== 3. 数量 ===')
@@ -99,7 +109,6 @@ console.log('\n=== 3. 数量 ===')
   check('代码里是 slice(-8)', src.includes('.slice(-8)'), '')
   check('不再是 slice(-4)', !src.includes('.slice(-4)'), '')
 
-  // 造 10 条，看会不会只取 8 条
   for (let i = 0; i < 5; i++) {
     store.appendRaw({
       ts: now + i * 1000,
@@ -144,7 +153,6 @@ console.log('\n=== 4. 查不到名字 ===')
 /* ============ 5. 私聊不受影响 ============ */
 console.log('\n=== 5. 私聊 ===')
 {
-  people.ensurePerson('qq', '1234567890', '群代肝')
   store.appendRaw({ ts: now, scope: 'private:1234567890', role: 'user', text: '在吗', senderId: '1234567890' })
   const r4 = recall.recall({
     personId: 'qq-1234567890',
@@ -160,9 +168,32 @@ console.log('\n=== 5. 私聊 ===')
 /* ============ 6. 不落盘 ============ */
 console.log('\n=== 6. speakerName 不写进 raw ===')
 {
-  // appendRaw 的签名里没有 speakerName，所以天然不会写
   const storeSrc = readFileSync('src/memory/store.ts', 'utf8')
   check('appendRaw 不处理 speakerName', !/appendRaw[\s\S]{0,300}speakerName/.test(storeSrc), '')
+}
+
+/* ============ 7. 只拉回 1 人时保留旧名单 ============ */
+console.log('\n=== 7. 拉回 1 人当失败 ===')
+{
+  const G2 = '777777777'
+  mkdirSync(`${ROOT}/groups/${G2}`, { recursive: true })
+
+  // 先造一个 10 人的旧名单
+  const old = {
+    groupId: G2,
+    at: Date.now() - 1000,
+    members: Array.from({ length: 10 }, (_, i) => ({ id: String(i + 1), name: `人${i}`, nick: `人${i}` })),
+  }
+  writeFileSync(`${ROOT}/groups/${G2}/members.json`, JSON.stringify(old), 'utf8')
+  gc.clearMemberCache()
+
+  // 假装 transport 只返回 1 个人（NapCat 短暂连上时会这样）
+  const transport = { listGroupMembers: async () => [{ id: '1', name: '只剩一个' }] }
+  await gc.refreshGroupMembers(transport, G2, { force: true })
+
+  const after = gc.groupMembers(G2)
+  check(`只拉回 1 人时不覆盖（还是 ${after.length} 人）`, after.length === 10, String(after.length))
+  check('旧名单里的人还在', after.some((m) => m.name === '人0'), '')
 }
 
 rmSync(ROOT, { recursive: true, force: true })

@@ -1422,17 +1422,24 @@ async function loadGroups() {
       head.textContent = `${groups.length} 个群 / 共 ${totalPeople} 人次，认识 ${totalKnown} 个`
 
       box.innerHTML = groups
-        .map((g) => {
+        .map((g, gi) => {
           const rows = (g.members || [])
-            .map((m) => {
+            .map((m, mi) => {
               const bad = m.认识
                 ? '<span class="badge" style="background:#238636;color:#fff">认识</span>'
                 : '<span class="hint" style="opacity:.5">—</span>'
               const nick = m.昵称 && m.昵称 !== m.名片 ? `<span class="hint">（昵称 ${esc(m.昵称)}）</span>` : ''
               const files = m.有 && m.有.length ? `<span class="hint">${esc(m.有.join(' '))}</span>` : ''
+              // 头像：首字 + 色相。QQ 换不到真头像（NapCat 只有 set 没有 get，
+              // qlogo.cn 也没 IPv4 出口），所以用颜色当视觉锚点。
+              // 52 个人靠色相勉强能分；点开看名字才是准的。
+              const initial = (m.名片 || m.昵称 || '?').trim().slice(0, 1) || '?'
               return `<div class="row" style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)">
                 <span style="width:52px">${bad}</span>
-                <span style="flex:1">${esc(m.名片)}${nick}</span>
+                <span style="flex:1;display:flex;align-items:center;gap:8px">
+                  <span style="width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;background:${avatarColor(m.id, gi * 1000 + mi)}">${esc(initial)}</span>
+                  <span>${esc(m.名片)}${nick}</span>
+                </span>
                 <span style="width:120px;text-align:right">${files}</span>
               </div>`
             })
@@ -2099,11 +2106,29 @@ async function delEpisodeFlow(x) {
   } catch (err) { toast('失败：' + err.message) }
 }
 // ---------- 人物切换器 ----------
-const AVATAR_COLORS = ['#58a6ff', '#bc8cff', '#f778ba', '#3fb950', '#d29922', '#79c0ff', '#ff7b72']
-function avatarColor(id) {
+// 头像底色：按色相生成，不再从 7 个固定颜色里挑。
+//
+// 为什么要改：原来只有 7 种颜色，而群里有 52 个人 ——
+// 平均 7 个人同色，看列表根本分不清谁是谁。
+//
+// 现在用黄金角（137.5°）铺色相：相邻索引的颜色差别最大，
+// 而且同一群里的第 1、第 2 个人一定不同色。
+// 手写一个简单的 hash 给没有 index 的场合（比如状态栏）兜底。
+const GOLDEN_ANGLE = 137.508
+
+function hueOf(id) {
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+  return h % 360
+}
+
+/**
+ * @param id  稳定 id（同一个人在任何页面颜色都一样）
+ * @param index 可选：在列表里的序号。给了就用黄金角铺色，保证同列表不撞色
+ */
+function avatarColor(id, index) {
+  const hue = typeof index === 'number' ? (index * GOLDEN_ANGLE) % 360 : hueOf(id)
+  return `hsl(${hue.toFixed(0)} 58% 48%)`
 }
 function renderPicker(person) {
   const wrap = $('person-pick')
