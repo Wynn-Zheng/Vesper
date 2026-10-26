@@ -11,7 +11,35 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 type ReadBody = (req: IncomingMessage) => Promise<string>
 
+/**
+ * 包一层：内部不论怎么抛，都转成 { error } 返回。
+ *
+ * 为什么不让它抛到 server.ts 的外层 catch：
+ *   外层会把**原始异常**直接塞进 { error }，前端弹出来是一坨英文堆栈，
+ *   对用户没意义。这里统一成一句中文，详细内容记到 warnAt 里。
+ */
 export async function handlePeopleApi(
+  req: IncomingMessage,
+  res: ServerResponse,
+  path: string,
+  url: URL,
+  json: Json,
+  readBody: ReadBody,
+): Promise<boolean> {
+  try {
+    return await handlePeopleApiInner(req, res, path, url, json, readBody)
+  } catch (err) {
+    const { warnAt } = await import('../core/log.ts')
+    warnAt('人物接口出错', { path, err: String(err).slice(0, 200) })
+    // 已经发过响应就别再发一次（会 header already sent）
+    if (!res.headersSent) {
+      json(res, 500, { error: '这个操作没成功，详情看日志里的「人物接口出错」' })
+    }
+    return true
+  }
+}
+
+async function handlePeopleApiInner(
   req: IncomingMessage,
   res: ServerResponse,
   path: string,

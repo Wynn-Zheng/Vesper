@@ -495,7 +495,7 @@
             <div class="hint" id="pd-acc" style="margin-top:2px"></div>
             <div class="hint" id="pd-groups" style="margin-top:2px"></div>
           </div>
-          <button class="mini-btn" onclick="showGroup('people')">← 返回</button>
+          <button class="mini-btn" onclick="backToPeople()">← 返回</button>
         </div>
       </div>
 
@@ -899,7 +899,20 @@ async function api(path, init) {
     url = `${path}${sep}person=${encodeURIComponent(currentPerson)}`
   }
   const res = await fetch(url, { ...init, headers })
-  if (!res.ok) throw new Error((await res.text()).slice(0, 200))
+  if (!res.ok) {
+    // 后端出错时返回的是 {"error":"..."}，直接丢给前端会显示成一坨 JSON。
+    // 能解析就只取 error 那句话，解析不了再退回原文。
+    const raw = await res.text()
+    let msg = raw.slice(0, 200)
+    try {
+      const j = JSON.parse(raw)
+      if (typeof j === 'string' && j) msg = j
+      else if (j && typeof j === 'object' && typeof j.error === 'string' && j.error) msg = j.error
+    } catch {
+      /* 不是 JSON，就用原文 */
+    }
+    throw new Error(msg)
+  }
   return res.json()
 }
 
@@ -1470,6 +1483,27 @@ async function createPerson(accountId, name) {
   }
 }
 
+function backToPeople() {
+  PD = null
+  location.hash = ''
+  showGroup('people', 0)
+  loadPeople()
+}
+
+// 浏览器前进/后退也要能切人：
+// location.hash 是我们唯一的路由状态，不监听它的话，
+// 后退按钮会让地址栏变回列表但页面还停在详情。
+window.addEventListener('hashchange', () => {
+  const m = /^#person\/(.+)$/.exec(location.hash)
+  if (m) {
+    const id = decodeURIComponent(m[1])
+    if (PD?.id !== id) loadPersonDetail(id)
+  } else if (PD) {
+    PD = null
+    if (currentGroup === 'people') showGroup('people', 0)
+  }
+})
+
 function openPerson(id) {
   location.hash = 'person/' + id
   currentGroup = 'people'
@@ -1478,12 +1512,34 @@ function openPerson(id) {
 }
 
 async function loadPersonDetail(id) {
+  // 先清空：请求要几百毫秒，这段时间里页面不能还挂着上一个人的数据。
+  // 请求失败时也必须清空——否则点 B 加载失败，看到的会是 A 的内容（踩过）。
+  PD = null
+  PD_TAB = 'overview'
+  const av = $('pd-av')
+  if (av) {
+    av.textContent = '…'
+    av.style.background = 'var(--panel2)'
+  }
+  const tabs = $('pd-tabs')
+  if (tabs) tabs.innerHTML = ''
+  const body = $('pd-body')
+  if (body) body.innerHTML = ''
+  const name = $('pd-name')
+  if (name) name.textContent = '加载中…'
+  const acc = $('pd-acc')
+  if (acc) acc.textContent = ''
+  const grp = $('pd-groups')
+  if (grp) grp.textContent = ''
+
   try {
     PD = await api('/api/person/detail?id=' + encodeURIComponent(id))
     PD_TAB = 'overview'
     renderPersonDetail()
   } catch (e) {
-    $('pd-name').textContent = '加载失败：' + e.message
+    if (name) name.textContent = '加载失败'
+    if (acc) acc.textContent = e.message
+    if (grp) grp.textContent = '点「← 返回」看别人'
   }
 }
 

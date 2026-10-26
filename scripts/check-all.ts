@@ -72,6 +72,9 @@ const STEPS: Step[] = [
   { name: '群聊发言人', cmd: 'node --env-file-if-exists=.env scripts/test-speaker.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群名单恢复', cmd: 'node --env-file-if-exists=.env scripts/test-restore-groups.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '名字一致性', cmd: 'node --env-file-if-exists=.env scripts/test-name-consistency.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '名字边界', cmd: 'node --env-file-if-exists=.env scripts/test-name-edge.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '检索边界', cmd: 'node --env-file-if-exists=.env scripts/test-recall-edge.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '群名单并发', cmd: 'node --env-file-if-exists=.env scripts/test-group-concurrent.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
