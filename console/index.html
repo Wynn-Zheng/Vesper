@@ -269,6 +269,8 @@
   <div class="brand"><h1>QQ Bot</h1><p id="brand-sub">连接中…</p></div>
     <nav id="nav">
     <button class="on" data-v="state"><span class="ico">◎</span>状态</button>
+    <button data-v="people"><span class="ico">◉</span>人物</button>
+    <button data-v="groups"><span class="ico">▣</span>群组</button>
     <button data-v="memory"><span class="ico">◈</span>记忆</button>
     <button data-v="comm"><span class="ico">≡</span>对话</button>
     <button data-v="self"><span class="ico">✦</span>自我</button>
@@ -460,6 +462,45 @@
           <div id="chat-list"></div>
         </div>
       </div>
+    </section>
+
+    <section class="view" id="v-people">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="pp-q" placeholder="搜名字 / QQ 号" style="flex:1;min-width:180px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">
+          <button class="mini-btn" onclick="loadPeople()">刷新</button>
+        </div>
+        <div class="hint" id="pp-head" style="margin-top:8px">加载中…</div>
+      </div>
+
+      <div id="pp-list"></div>
+
+      <details id="pp-cand-wrap" style="margin-top:14px">
+        <summary style="cursor:pointer;padding:6px 0;font-weight:600" id="pp-cand-head">还没建档的人</summary>
+        <div class="hint" style="margin:6px 0 8px">这些人只在群名单里出现过，还没聊过。点「建档」才会开始记。</div>
+        <div id="pp-cand-list"></div>
+      </details>
+    </section>
+
+    <section class="view" id="v-person">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:flex-start">
+          <span id="pd-av" style="width:44px;height:44px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff"></span>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <b id="pd-name" style="font-size:16px"></b>
+              <button class="mini-btn" id="pd-rename">改名</button>
+              <button class="mini-btn danger" id="pd-del">删除档案</button>
+            </div>
+            <div class="hint" id="pd-acc" style="margin-top:2px"></div>
+            <div class="hint" id="pd-groups" style="margin-top:2px"></div>
+          </div>
+          <button class="mini-btn" onclick="showGroup('people')">← 返回</button>
+        </div>
+      </div>
+
+      <div class="group-tabs" id="pd-tabs" style="margin-bottom:12px"></div>
+      <div id="pd-body"></div>
     </section>
 
     <section class="view" id="v-memory">
@@ -865,13 +906,15 @@ async function api(path, init) {
 // ---------- 导航：6 组，组内用 tab 切 ----------
 const GROUPS = {
   state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
-  memory: [['v-memory', '记忆'], ['v-core', '核心'], ['v-groups', '群成员'], ['v-search', '搜索']],
+  people: [['v-people', '人物'], ['v-person', '详情']],
+  groups: [['v-groups', '群成员']],
+  memory: [['v-memory', '记忆'], ['v-core', '核心'], ['v-search', '搜索']],
   comm: [['v-logs', '日志'], ['v-chat', '对话']],
   self: [['v-self', '自我'], ['v-qzone', '说说'], ['v-features', '新功能']],
   settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
   tools: [['v-try', '试聊'], ['v-ops', '操作']],
 }
-const TITLES = { state: '状态', memory: '记忆', comm: '对话', self: '自我', settings: '设置', tools: '工具' }
+const TITLES = { state: '状态', people: '人物', groups: '群组', memory: '记忆', comm: '对话', self: '自我', settings: '设置', tools: '工具' }
 
 let currentGroup = 'state'
 let currentViewId = 'v-state'
@@ -910,6 +953,8 @@ function runLoaders(viewId) {
   if (viewId === 'v-state') { loadStatus(); loadState() }
   if (viewId === 'v-overview') { loadStatus(); loadTrend() }
   if (viewId === 'v-relation') loadRelation()
+  if (viewId === 'v-people') loadPeople()
+  if (viewId === 'v-person') renderPersonDetail()
   if (viewId === 'v-memory') loadMemory()
   if (viewId === 'v-search') $('search-input')?.focus()
   if (viewId === 'v-groups') loadGroups()
@@ -1305,6 +1350,342 @@ async function coreReject(i) {
   }
 }
 
+// ============================================================
+// 人物：列表 / 详情 / 建档 / 改名 / 改画像 / 改印象 / 改关系 / 删除
+// ============================================================
+
+let PEOPLE = { people: [], candidates: [] }
+
+/** api() 的第二个参数是 fetch 的 init，不是 body。
+ *  写人物这一块要发好几个 PUT/POST，包一层省得每次都写 headers+JSON.stringify。 */
+function sendJson(path, body, method = 'POST') {
+  return api(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+let PD = null               // 当前详情缓存
+let PD_TAB = 'overview'
+
+function fmtAgo(ts) {
+  if (!ts) return '没说过话'
+  const d = Math.floor((Date.now() - ts) / 1000)
+  if (d < 60) return '刚刚'
+  if (d < 3600) return Math.floor(d / 60) + ' 分钟前'
+  if (d < 86400) return Math.floor(d / 3600) + ' 小时前'
+  return Math.floor(d / 86400) + ' 天前'
+}
+
+async function loadPeople() {
+  try {
+    PEOPLE = await api('/api/people')
+    renderPeople()
+  } catch (e) {
+    const h = $('pp-head')
+    if (h) h.textContent = '加载失败：' + e.message
+  }
+}
+
+function renderPeople() {
+  const q = ($('pp-q')?.value || '').trim().toLowerCase()
+  const match = (p) => {
+    if (!q) return true
+    return (p.名字 || '').toLowerCase().includes(q) || String(p.账号 || '').includes(q)
+  }
+
+  const people = (PEOPLE.people || []).filter(match)
+  const withContent = people.filter((p) => p.事实 > 0 || p.关系 > 0)
+  const empty = people.filter((p) => !(p.事实 > 0 || p.关系 > 0))
+
+  $('pp-head').textContent = `${people.length} 个档案${q ? '（已筛选）' : ''}`
+
+  const box = $('pp-list')
+  box.innerHTML = ''
+  if (!people.length) {
+    box.appendChild(el('div', 'empty', '还没有人。去「群组」里给谁建个档。'))
+  } else {
+    // 有内容的排前面：这些才是你真想看的
+    for (const p of [...withContent, ...empty]) {
+      const row = el('div', 'item')
+      row.style.cssText = 'display:flex;gap:10px;align-items:center;padding:10px 12px;cursor:pointer'
+      row.onclick = () => openPerson(p.id)
+
+      const av = el('span', '', (p.名字 || '?').slice(0, 1))
+      av.style.cssText = `width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;background:${avatarColor(p.id)}`
+      row.appendChild(av)
+
+      const mid = el('div')
+      mid.style.cssText = 'flex:1;min-width:0'
+      mid.appendChild(el('div', 'txt', p.名字))
+      const sub = el('div', 'sub', `${p.群数} 个群 · ${p.阶段} · ${p.事实} 条事实 · ${fmtAgo(p.最近)}`)
+      mid.appendChild(sub)
+      row.appendChild(mid)
+
+      const acts = el('span', 'row-acts')
+      acts.appendChild(el('span', 'hint', String(p.关系)))
+      row.appendChild(acts)
+
+      box.appendChild(row)
+    }
+  }
+
+  // 候选（还没建档的）
+  const cands = (PEOPLE.candidates || []).filter((c) => {
+    if (!q) return true
+    return (c.名片 || '').toLowerCase().includes(q) || String(c.id).includes(q)
+  })
+  const wrap = $('pp-cand-wrap')
+  const head = $('pp-cand-head')
+  if (head) head.textContent = `还没建档的人（${cands.length}）`
+  const cl = $('pp-cand-list')
+  if (cl) {
+    cl.innerHTML = ''
+    for (const c of cands) {
+      const row = el('div', 'item')
+      row.style.cssText = 'display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+      const av = el('span', '', (c.名片 || '?').slice(0, 1))
+      av.style.cssText = `width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;background:${avatarColor(String(c.id), Number(c.id) % 97)}`
+      row.appendChild(av)
+      const mid = el('div')
+      mid.style.cssText = 'flex:1;min-width:0'
+      mid.appendChild(el('div', 'txt', c.名片 || c.id))
+      mid.appendChild(el('div', 'sub', `${c.id} · 在 ${(c.群 || []).join('、')}`))
+      row.appendChild(mid)
+      const btn = el('button', 'mini-btn', '建档')
+      btn.onclick = () => createPerson(c.id, c.名片)
+      row.appendChild(btn)
+      cl.appendChild(row)
+    }
+  }
+}
+
+async function createPerson(accountId, name) {
+  try {
+    await sendJson('/api/person/create', { accountId, name })
+    toast('已建档：' + (name || accountId))
+    await loadPeople()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+function openPerson(id) {
+  location.hash = 'person/' + id
+  currentGroup = 'people'
+  showGroup('people', 1)
+  loadPersonDetail(id)
+}
+
+async function loadPersonDetail(id) {
+  try {
+    PD = await api('/api/person/detail?id=' + encodeURIComponent(id))
+    PD_TAB = 'overview'
+    renderPersonDetail()
+  } catch (e) {
+    $('pd-name').textContent = '加载失败：' + e.message
+  }
+}
+
+function renderPersonDetail() {
+  if (!PD) return
+  const av = $('pd-av')
+  av.textContent = (PD.名字 || '?').slice(0, 1)
+  av.style.background = avatarColor(PD.id)
+
+  $('pd-name').textContent = PD.名字
+  $('pd-acc').textContent = `账号 ${PD.账号} · ${(PD.账号列表 || []).length} 个`
+  $('pd-groups').textContent =
+    (PD.在群 || []).length
+      ? '在群：' + PD.在群.map((g) => `${g.groupId}（${g.名片}）`).join(' · ')
+      : '不在任何群名单里'
+
+  const tabs = [
+    ['overview', '概览'],
+    ['facts', `事实 ${(PD.事实 || []).length}`],
+    ['relation', '关系'],
+    ['profile', '画像'],
+    ['impression', '印象'],
+    ['open', `待问 ${(PD.待问 || []).length}`],
+    ['episodes', `经历 ${(PD.经历 || []).length}`],
+  ]
+  const bar = $('pd-tabs')
+  bar.innerHTML = ''
+  for (const [key, label] of tabs) {
+    const b = el('button', 'gtab' + (key === PD_TAB ? ' on' : ''), label)
+    b.onclick = () => {
+      PD_TAB = key
+      renderPersonDetail()
+    }
+    bar.appendChild(b)
+  }
+
+  const body = $('pd-body')
+  body.innerHTML = ''
+
+  if (PD_TAB === 'overview') {
+    body.appendChild(el('div', 'card', `关系 ${PD.关系.值}（${PD.关系.阶段}）· ` +
+      Object.entries(PD.关系.维度 || {}).map(([k, v]) => `${k} ${v} 件`).join(' · ')))
+    body.appendChild(el('div', 'hint', `锚点 ${PD.关系.锚点数} 个`))
+  }
+
+  if (PD_TAB === 'facts') {
+    const box = el('div', 'card')
+    if (!PD.事实.length) box.appendChild(el('div', 'empty', '还没有事实'))
+    for (const f of PD.事实) {
+      const i = el('div', 'item')
+      i.appendChild(el('div', 'txt', f.text))
+      i.appendChild(el('div', 'sub', `${f.date} · 置信 ${f.confidence} · ${f.tier === 'major' ? '重要' : '平常'}`))
+      box.appendChild(i)
+    }
+    body.appendChild(box)
+    body.appendChild(el('div', 'hint', '要改事实，去「记忆 → 记忆」页（那里能改能删）'))
+  }
+
+  if (PD_TAB === 'relation') {
+    const card = el('div', 'card')
+    card.appendChild(el('div', 'op-t', `关系 ${PD.关系.值} — ${PD.关系.阶段}`))
+
+    const slider = el('input')
+    slider.type = 'range'
+    slider.min = '0'
+    slider.max = '100'
+    slider.value = String(PD.关系.值)
+    slider.style.cssText = 'width:100%;margin:12px 0'
+    const label = el('span', 'hint', String(PD.关系.值))
+    slider.oninput = () => (label.textContent = slider.value)
+    card.appendChild(slider)
+    card.appendChild(label)
+
+    const save = el('button', 'mini-btn', '保存关系')
+    save.style.marginTop = '10px'
+    save.onclick = async () => {
+      try {
+        await sendJson('/api/person/relation', { id: PD.id, closeness: Number(slider.value) }, 'PUT')
+        toast('已保存')
+        await loadPersonDetail(PD.id)
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+    card.appendChild(save)
+
+    card.appendChild(el('div', 'hint', '四维（信任/亲密/好奇/依赖）只记「发生过什么事」，没有分数，所以不能直接改。'))
+
+    body.appendChild(card)
+  }
+
+  if (PD_TAB === 'profile' || PD_TAB === 'impression') {
+    const isProfile = PD_TAB === 'profile'
+    const card = el('div', 'card')
+    card.appendChild(el('div', 'op-t', isProfile ? '画像（一段话）' : '我对他的印象'))
+
+    const ta = el('textarea')
+    ta.value = isProfile ? PD.画像 || '' : PD.印象 || ''
+    ta.rows = 8
+    ta.style.cssText = 'width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--text);font-size:13px;line-height:1.6;margin-top:8px'
+    card.appendChild(ta)
+
+    const save = el('button', 'mini-btn', '保存')
+    save.style.marginTop = '10px'
+    save.onclick = async () => {
+      try {
+        await sendJson(isProfile ? '/api/person/profile' : '/api/person/impression', { id: PD.id, text: ta.value }, 'PUT')
+        toast('已保存')
+        await loadPersonDetail(PD.id)
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+    card.appendChild(save)
+
+    body.appendChild(card)
+  }
+
+  if (PD_TAB === 'open') {
+    const box = el('div', 'card')
+    if (!PD.待问.length) box.appendChild(el('div', 'empty', '没有待问的事'))
+    for (const o of PD.待问) {
+      const i = el('div', 'item')
+      i.appendChild(el('div', 'txt', o.text))
+      i.appendChild(el('div', 'sub', o.at || ''))
+      box.appendChild(i)
+    }
+    body.appendChild(box)
+  }
+
+  if (PD_TAB === 'episodes') {
+    const box = el('div', 'card')
+    if (!PD.经历.length) box.appendChild(el('div', 'empty', '还没有经历'))
+    for (const e of PD.经历.slice().reverse()) {
+      const i = el('div', 'item')
+      i.appendChild(el('div', 'txt', `${e.title || '（没有标题）'}`))
+      i.appendChild(el('div', 'sub', `${e.date} · 重要度 ${e.importance}${e.emotion ? ' · ' + e.emotion : ''}`))
+      box.appendChild(i)
+    }
+    body.appendChild(box)
+  }
+}
+
+// 改名 / 删除
+document.addEventListener('DOMContentLoaded', () => {
+  const rn = $('pd-rename')
+  if (rn) {
+    rn.onclick = async () => {
+      if (!PD) return
+      const name = prompt('新的名字（全局名，群名片不受影响）', PD.名字)
+      if (name === null) return
+      const v = name.trim()
+      if (!v) return alert('名字不能空')
+      try {
+        await sendJson('/api/person/name', { id: PD.id, name: v }, 'PUT')
+        toast('改好了')
+        await loadPersonDetail(PD.id)
+        await loadPeople()
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+  }
+
+  const del = $('pd-del')
+  if (del) {
+    del.onclick = async () => {
+      if (!PD) return
+      if (!confirm(`删掉「${PD.名字}」的整个档案？\n\n事实、画像、印象、关系、待问、经历都会没。\n删之前会自动存一张快照，能回滚。`)) return
+      if (!confirm('再确认一次：真的删？')) return
+      try {
+        await api('/api/person?id=' + encodeURIComponent(PD.id), { method: 'DELETE' })
+        toast('已删除')
+        showGroup('people', 0)
+        await loadPeople()
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+  }
+})
+
+// ---------- 群成员页跳转到人物详情 ----------
+function openPersonFromGroup(personId) {
+  if (!personId) return
+  location.hash = 'person/' + personId
+  showGroup('people', 1)
+  loadPersonDetail(personId)
+}
+
+async function createPersonFromGroup(accountId, name) {
+  try {
+    await sendJson('/api/person/create', { accountId, name })
+    toast('已建档：' + (name || accountId))
+    await loadGroups()
+    await loadPeople()
+    openPersonFromGroup('qq-' + accountId)
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
 // ---------- 从快照恢复群名单 ----------
 async function restoreGroups() {
   try {
@@ -1455,13 +1836,17 @@ async function loadGroups() {
               // qlogo.cn 也没 IPv4 出口），所以用颜色当视觉锚点。
               // 52 个人靠色相勉强能分；点开看名字才是准的。
               const initial = (m.名片 || m.昵称 || '?').trim().slice(0, 1) || '?'
-              return `<div class="row" style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)">
+              // 有档案的给「查看」，没档案的给「建档」——这是这次重建的主要目的：
+              // 91 个人里任何一个都能点进去，或者一键建档。
+              const act = m.认识
+                ? `<button class="mini-btn" onclick="openPersonFromGroup('${esc(m.档案 || '')}')">查看</button>`
+                : `<button class="mini-btn" onclick="createPersonFromGroup('${esc(m.id)}', '${esc(m.名片 || '')}')">建档</button>`
+              return `<div class="row" style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);display:flex;align-items:center;gap:8px">
                 <span style="width:52px">${bad}</span>
-                <span style="flex:1;display:flex;align-items:center;gap:8px">
-                  <span style="width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;background:${avatarColor(m.id, gi * 1000 + mi)}">${esc(initial)}</span>
-                  <span>${esc(m.名片)}${nick}</span>
-                </span>
-                <span style="width:120px;text-align:right">${files}</span>
+                <span style="width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;background:${avatarColor(m.id, gi * 1000 + mi)}">${esc(initial)}</span>
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.名片)}${nick}</span>
+                <span style="width:100px;text-align:right">${files}</span>
+                <span style="width:56px;text-align:right">${act}</span>
               </div>`
             })
             .join('')

@@ -24,6 +24,7 @@ import { phaseOf } from '../self/format.ts'
 import { loadDrifts, loadLife, loadSelf, listSelfVersions } from '../self/store.ts'
 import { listSnapshots, restore } from '../persona/version.ts'
 import { loadProfile } from '../persona/profile.ts'
+import { handlePeopleApi } from './people-api.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -734,6 +735,10 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       // 这几块以前只在代码里，控制台看不见，改了什么也没法验证。
 
       // 群名单总览：每个群一个列表，标出哪些人真有档案（聊过）
+        // 人物：列表 / 详情 / 建档 / 改名 / 改画像 / 改印象 / 改关系 / 删除
+        // 逻辑在 console/people-api.ts，这里只转交（返回 true = 已写响应）
+        if (await handlePeopleApi(req, res, path, url, json, readBody)) return
+
       if (req.method === 'GET' && path === '/api/groups') {
         const { knownGroups, groupMembers, membersAreStale } = await import('../people/group.ts')
         const { listPeople } = await import('../people/store.ts')
