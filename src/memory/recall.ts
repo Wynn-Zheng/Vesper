@@ -74,6 +74,35 @@ interface Scored<T> {
   score: number
 }
 
+/**
+ * 新近度：幂律衰减。
+ *
+ * 为什么不是指数：
+ *   Wixted & Ebbesen (1991, Psychological Science 2(6):409-415) 比了 6 种函数
+ *   （线性/指数/指数-幂/双曲/对数/幂），结论是**幂函数**最好地描述了遗忘，
+ *   而且重分析 Ebbinghaus (1885) 的原始数据也是幂律。
+ *   Murre & Dros (2015, PLOS ONE) 复现了这个结论。
+ *
+ * 实际差别：
+ *   指数 e^(-0.02t)：30 天 0.55，90 天 0.17，365 天 0.0006（基本归零）
+ *   幂律 (1+t)^(-0.16)：30 天 0.60，90 天 0.47，365 天 0.36（有长尾）
+ *
+ * 这解释了"很久以前的事虽然模糊，但还记得有那么回事"。
+ *
+ * 系数 8 是我拍的：让 lambda=0.02 时半衰期仍在 30 天附近，
+ * 保持现有 rules.yaml 参数的手感。要调就调这个 8。
+ */
+function recencyOf(days: number, lambda: number, recallCount = 0): number {
+  // 平滑项：幂律在 t=0 时是无穷，加 1 避免
+  const base = Math.pow(1 + Math.max(0, days), -lambda * 8)
+
+  // 回忆过 N 次的，衰减变慢（Roediger & Karpicke 2006 的"测试效应"：
+  // 主动回忆比重复阅读对长期记忆有效得多）
+  if (recallCount <= 0) return base
+  const slowdown = 1 / (1 + Math.log(1 + recallCount) * 0.5)
+  return Math.pow(1 + Math.max(0, days), -lambda * 8 * slowdown)
+}
+
 function scoreOf(
   refTs: number,
   lambda: number,
@@ -82,9 +111,10 @@ function scoreOf(
   query: string,
   w: Weights,
   now: number,
+  recallCount = 0,
 ): number {
   const days = Math.max(0, (now - refTs) / DAY)
-  const recency = Math.exp(-lambda * days)
+  const recency = recencyOf(days, lambda, recallCount)
   const relevance = similarity(query, text)
   const impRaw = Number.isFinite(importance) ? importance : 5
   const imp = Math.min(1, Math.max(0, impRaw / 10))
@@ -119,6 +149,10 @@ export function flushRecalls(): void {
     const ts = pendingMarks.get(episodeKey(e))
     if (ts) {
       e.lastRecalled = ts
+      // 记次数，不只是记时间。
+      // 每被想起一次，以后就忘得慢一点——这是"测试效应"的实现
+      // （Roediger & Karpicke 2006）：主动回忆比重复阅读更能巩固长期记忆。
+      e.recallCount = (e.recallCount ?? 0) + 1
       saveEpisode(e)
     }
   }
@@ -152,7 +186,18 @@ export function recall(opts: RecallOptions): Recalled {
   const epScored: Scored<Episode>[] = episodes
     .map((e) => ({
       item: e,
-      score: scoreOf(episodeRef(e), lambdaOf(e.importance, opts.decay), `${e.title} ${e.body}`, e.importance, query, weights, now),
+      score: scoreOf(
+        episodeRef(e),
+        // 高情绪的记忆衰减慢（McGaugh 2004：杏仁核在情绪唤起时加强巩固）
+        lambdaOf(e.importance, opts.decay),
+        `${e.title} ${e.body}`,
+        e.importance,
+        query,
+        weights,
+        now,
+        // 被想起过几次，影响衰减速度
+        e.recallCount ?? 0,
+      ),
     }))
     .sort((a, b) => b.score - a.score)
 

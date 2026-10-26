@@ -28,6 +28,14 @@ export interface Episode {
   body: string
   /** 上次被想起来的时间戳；没想起来过就是 0 */
   lastRecalled?: number
+  /**
+   * 被想起来过几次。
+   *
+   * 这个不只是统计——它会让衰减变慢（见 recall.ts 的 recencyOf）。
+   * 依据是 Roediger & Karpicke (2006) 的测试效应：
+   * 主动回忆比重复阅读对长期记忆有效得多。
+   */
+  recallCount?: number
 }
 
 export interface Insight {

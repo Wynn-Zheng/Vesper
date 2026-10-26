@@ -61,6 +61,7 @@ const STEPS: Step[] = [
   { name: '名字同步', cmd: 'node --env-file-if-exists=.env scripts/test-names.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '能力诚实性', cmd: 'node --env-file-if-exists=.env scripts/test-honesty.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '核心与临时记忆', cmd: 'node --env-file-if-exists=.env scripts/test-core-temp.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '衰减与召回', cmd: 'node --env-file-if-exists=.env scripts/test-decay.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
