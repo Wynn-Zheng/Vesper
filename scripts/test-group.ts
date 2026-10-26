@@ -195,14 +195,13 @@ console.log('\n=== 6. knownGroups ===')
 
 // 恢复
 gc.clearMemberCache()
-if (backup) {
-  const { writeFileSync } = await import('node:fs')
-  writeFileSync(FILE, backup, 'utf8')
-} else {
-  try {
-    unlinkSync(FILE)
-  } catch {
-    /* 本来就没了 */
+// 收尾：只删自己建的假群（不碰真实群）
+{
+  const { rmSync, existsSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  for (const gid of ['999999999', '123456789']) {
+    const dir = join('persona/groups', gid)
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
   }
 }
 

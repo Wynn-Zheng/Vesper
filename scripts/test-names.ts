@@ -24,18 +24,6 @@ const store = await import('../src/people/store.ts')
 const gc = await import('../src/people/groupcache.ts')
 
 const GID = '888888888'
-// 备份所有群名单（新结构是按群分目录）
-const GROUP_BACKUPS = new Map<string, string>()
-try {
-  const { readdirSync } = await import('node:fs')
-  for (const gid of readdirSync('persona/groups')) {
-    const f = `persona/groups/${gid}/members.json`
-    if (existsSync(f)) GROUP_BACKUPS.set(gid, readFileSync(f, 'utf8'))
-  }
-} catch {
-  /* 没有就算了 */
-}
-
 /* ---------- 1. syncPersonName ---------- */
 console.log('=== 1. 只改名字 ===')
 {
@@ -163,23 +151,14 @@ console.log('\n=== 4. 真实数据 ===')
 }
 
 // 恢复
-// 恢复群名单
+// 收尾：只删自己建的假群（不碰真实群）
 {
-  const { mkdirSync, rmSync } = await import('node:fs')
-  const { readdirSync } = await import('node:fs')
+  const { rmSync, existsSync } = await import('node:fs')
   const { join } = await import('node:path')
-  try {
-    // 删掉测试期间新建的假群
-    for (const gid of readdirSync('persona/groups')) {
-      if (!GROUP_BACKUPS.has(gid)) rmSync(join('persona/groups', gid), { recursive: true, force: true })
-    }
-    // 恢复备份
-    for (const [gid, content] of GROUP_BACKUPS) {
-      mkdirSync(join('persona/groups', gid), { recursive: true })
-      writeFileSync(join('persona/groups', gid, 'members.json'), content, 'utf8')
-    }
-  } catch {
-    /* 恢复失败不影响结论 */
+  const FAKE_GROUPS = ['111111111', '222222222', '333333333', '888888888']
+  for (const gid of FAKE_GROUPS) {
+    const dir = join('persona/groups', gid)
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
   }
 }
 
