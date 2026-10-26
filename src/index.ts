@@ -154,6 +154,18 @@ if (llm) {
       }
       if (ok === groups.length) {
         info(`群名单已预热：${ok} 个群`)
+        // 每天再刷一遍做兜底：事件驱动的刷新（新成员）可能因为 NapCat 掉线漏掉
+        setInterval(() => {
+          void (async () => {
+            try {
+              const { refreshAllGroups } = await import('./people/group.ts')
+              const r = await refreshAllGroups(transport, { force: true })
+              info('群名单每日刷新', { 共: r.total, 成功: r.ok, 失败: r.failed.join(',') || '无' })
+            } catch (err) {
+              warnAt('每日刷新群名单失败', { err: String(err).slice(0, 60) })
+            }
+          })()
+        }, 24 * 3600_000)
         return
       }
     }

@@ -119,6 +119,7 @@ export function resetMemberCacheEverywhere(): void {
 export async function refreshGroupMembers(
   transport: { listGroupMembers?: (gid: string) => Promise<CachedMember[]> },
   groupId: string,
+  opts: { force?: boolean } = {},
 ): Promise<void> {
   if (!transport.listGroupMembers) {
     warnAt('当前通道不支持拉群成员，群名单用不了', { group: groupId })
@@ -126,7 +127,8 @@ export async function refreshGroupMembers(
   }
 
   const hit = hydrate(groupId)
-  if (hit && Date.now() - hit.at < MEM_TTL) return
+  // force：名单里出现了没见过的人，别等 TTL 过期，立刻去拉
+  if (!opts.force && hit && Date.now() - hit.at < MEM_TTL) return
 
   try {
     const members = await transport.listGroupMembers(groupId)
@@ -198,4 +200,46 @@ export function knownGroups(): string[] {
   }
 
   return [...out]
+}
+
+/**
+ * 名单里有这个人吗。
+ *
+ * 用途：群里冒出个名单外的人 → 可能是新成员 → 立刻刷新名单。
+ * 名单本身是空的（还没拉到）时返回 true：
+ * 那时"不认识"没有意义，别触发了无谓的刷新。
+ */
+export function isKnownMember(groupId: string, accountId: string): boolean {
+  const c = hydrate(groupId)
+  if (!c) return true
+  if (!c.members.length) return true
+  return c.members.some((m) => m.id === accountId)
+}
+
+/**
+ * 把已知的群全部刷一遍。
+ *
+ * 谁调它：每天一次的定时任务。
+ * 和"新成员检测"的分工：那个是事件驱动（来得快），这个是兜底（保证一天至少对一次）。
+ */
+export async function refreshAllGroups(
+  transport: { listGroupMembers?: (gid: string) => Promise<CachedMember[]> },
+  opts: { force?: boolean } = {},
+): Promise<{ total: number; ok: number; failed: string[] }> {
+  const groups = knownGroups()
+  let ok = 0
+  const failed: string[] = []
+
+  for (const gid of groups) {
+    try {
+      await refreshGroupMembers(transport, gid, { force: opts.force ?? false })
+      const m = groupMembers(gid)
+      if (m.length) ok += 1
+      else failed.push(gid)
+    } catch {
+      failed.push(gid)
+    }
+  }
+
+  return { total: groups.length, ok, failed }
 }

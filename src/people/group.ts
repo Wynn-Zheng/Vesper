@@ -44,9 +44,11 @@ import { groupMembers } from './groupcache.ts'
 export {
   clearMemberCache,
   groupMembers,
+  isKnownMember,
   knownGroups,
   resetMemberCacheEverywhere,
   membersAreStale,
+  refreshAllGroups,
   refreshGroupMembers,
 } from './groupcache.ts'
 

@@ -11,7 +11,7 @@ import { appendRaw } from './memory/store.ts'
 import { watchOne } from './outward/watch.ts'
 import { personOfMessage, scopeOf } from './memory/scope.ts'
 import { ensurePerson } from './people/store.ts'
-import { refreshGroupMembers, groupMembers, setGroupMembersMissingHook } from './people/group.ts'
+import { refreshGroupMembers, groupMembers, isKnownMember, setGroupMembersMissingHook } from './people/group.ts'
 import { evaluateTurn } from './relation/evaluate.ts'
 import { judgeReply } from './loop/judge.ts'
 import { recordPlayReviewed } from './learn/plays.ts'
@@ -365,9 +365,19 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
     const rules = opts.getRules()
 
-    // 群里收到消息时顺手刷新成员名单（后台，不阻塞回复）
+    // 群里收到消息时维护成员名单（后台，不阻塞回复）
+    //
+    // 名单里没这个人 → 可能是新成员 → 强制刷新，不等 TTL。
+    // 名单是空的（还没拉到）时 isKnownMember 返回 true，不会在这儿空转。
     if (m.from.kind === 'group') {
-      void refreshGroupMembers(transport, m.from.id).catch(() => {})
+      const who = m.senderId ?? ''
+      const known = who ? isKnownMember(m.from.id, who) : true
+      if (!known) {
+        info('群里出现名单外的人，刷新名单', { group: m.from.id, who })
+        void refreshGroupMembers(transport, m.from.id, { force: true }).catch(() => {})
+      } else {
+        void refreshGroupMembers(transport, m.from.id).catch(() => {})
+      }
     }
 
     // 第一次见就建档（群里也建，这样它"记得"这个人）

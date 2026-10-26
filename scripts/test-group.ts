@@ -134,6 +134,56 @@ console.log('\n=== 5. 拉失败不崩、保住旧缓存 ===')
   check('拉失败时保住旧缓存（不返回空）', gc.groupMembers(GID).length === 1, String(gc.groupMembers(GID).length))
 }
 
+/* ---------- 5b. 新成员检测 ---------- */
+console.log('\n=== 5b. 名单外的人会触发强制刷新 ===')
+{
+  gc.resetMemberCacheEverywhere()
+  const members = [
+    { id: '1', name: '甲' },
+    { id: '2', name: '乙' },
+  ]
+  let calls = 0
+  const transport = {
+    async listGroupMembers(): Promise<Array<{ id: string; name: string }>> {
+      calls += 1
+      return members
+    },
+  }
+
+  await gc.refreshGroupMembers(transport, GID, { force: true })
+  check('名单里有的认得出', gc.isKnownMember(GID, '1') === true)
+  check('名单里没的认不出', gc.isKnownMember(GID, '999') === false)
+  check('名单空时当作"都知道"（不空转刷新）', (() => {
+    gc.resetMemberCacheEverywhere()
+    return gc.isKnownMember(GID, '999') === true
+  })())
+
+  // force 会跳过 TTL
+  gc.resetMemberCacheEverywhere()
+  calls = 0
+  await gc.refreshGroupMembers(transport, GID)
+  const afterFirst = calls
+  await gc.refreshGroupMembers(transport, GID)
+  check('TTL 内不重复拉', calls === afterFirst, `${afterFirst} → ${calls}`)
+  await gc.refreshGroupMembers(transport, GID, { force: true })
+  check('force 会强制拉', calls === afterFirst + 1, String(calls))
+}
+
+/* ---------- 5c. 全刷一遍 ---------- */
+console.log('\n=== 5c. refreshAllGroups ===')
+{
+  gc.resetMemberCacheEverywhere()
+  const transport = {
+    async listGroupMembers(): Promise<Array<{ id: string; name: string }>> {
+      return [{ id: '1', name: '甲' }]
+    },
+  }
+  const r = await gc.refreshAllGroups(transport, { force: true })
+  check(`全刷覆盖 ${r.total} 个群`, r.total >= 1, String(r.total))
+  check('全刷成功数等于总数', r.ok === r.total, `${r.ok}/${r.total}`)
+  check('没有失败的', r.failed.length === 0, r.failed.join(','))
+}
+
 /* ---------- 6. knownGroups ---------- */
 console.log('\n=== 6. knownGroups ===')
 {
