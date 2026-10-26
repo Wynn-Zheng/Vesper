@@ -93,9 +93,12 @@ export function saveMood(m: Mood): void {
 /** 心情随时间回落到平静 */
 export function decayedMood(m: Mood | null, now = Date.now()): Mood | null {
   if (!m) return null
+  // 手工改坏的文件可能写着 intensity: abc / 空值 —— 那不是"有情绪"，
+  // 当成没有心情处理，别把 NaN 传下去污染 prompt。
+  if (!Number.isFinite(m.intensity) || m.intensity <= 0) return null
   const hours = (now - m.at) / 3_600_000
   if (hours < 0) return m
-  const intensity = m.intensity * Math.exp(-0.35 * hours)
+  const intensity = Math.min(1, m.intensity * Math.exp(-0.35 * hours))
   if (intensity < 0.05) return null
   return { ...m, intensity }
 }

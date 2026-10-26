@@ -382,6 +382,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
       }
     }
 
+    // 过滤要放在 appendRaw 之前：否则垃圾消息先进了 raw，
+    // distill 再把它提炼进长期记忆，过滤就成了摆设。
+    if (shouldDrop(displayText, rules)) {
+      info(`滤掉一条（不进历史）：${m.senderName ?? m.from.id}`)
+      return
+    }
+
     appendRaw({ ts: m.at, scope: scopeOf(m.from), role: 'user', text: displayText, ...(m.senderId ? { senderId: m.senderId } : {}) })
     lastTalk.set(`${m.from.kind}:${m.from.id}`, m.at)
     // 后面用的都是替换过的文本（聚合、生成、日志）
