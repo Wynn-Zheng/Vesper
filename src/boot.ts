@@ -208,7 +208,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
   }
 
   async function handle(m: Incoming, text: string, passive: boolean, rules: Rules): Promise<void> {
-    const who = m.senderName ?? m.from.name ?? m.from.id
+    // 不要退到 m.from.name：群聊时那是**群名**，会把人叫成群名。
+    // 退到 QQ 昵称，再退到 QQ 号。
+    const who = m.senderName ?? m.senderNick ?? m.senderId ?? m.from.id
 
     // 内容过滤：广告、刷屏、纯数字这些别进上下文，白烧 token
     if (shouldDrop(text, rules)) {

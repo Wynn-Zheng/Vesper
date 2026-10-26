@@ -4,6 +4,8 @@ import { loadRelation } from '../relation/store.ts'
 import { personOfAccount, loadPerson } from './store.ts'
 
 export interface GroupMate {
+  /** QQ 号。按 id 匹配才靠得住——名字在群里是群名片、在档案里是昵称，对不上 */
+  id: string
   name: string
   stage: string
 }
@@ -31,7 +33,7 @@ export function peopleInGroup(groupId: string, opts: { days?: number; limit?: nu
     const meta = loadPerson(personId)
     if (!meta) continue
     const stage = stageOf(rules, loadRelation(personId).closeness)
-    out.push({ name: meta.name || account, stage: stage.名 })
+    out.push({ id: account, name: meta.name || account, stage: stage.名 })
   }
   return out
 }
@@ -71,8 +73,13 @@ export function renderGroupContext(groupId: string): string {
     // 群名片每个群不一样：说明一下，免得它把"群里叫这个"当成"这个人就叫这个"
     lines.push('（这些是他们在群里的名字，可能和私聊时不一样）')
     // 关键：名单里大部分人你没打过交道。不说这句，它会以为"群里就我们俩"。
-    const known = new Set(mates.map((m) => m.name))
-    const others = members.filter((m) => !known.has(m.name)).length
+    //
+    // ⚠️ 必须按 QQ 号匹配，不能按名字：
+    //    members[].name 是**群名片**（群里显示的名字）
+    //    mates[].name   是**QQ 昵称**（档案里的全局名）
+    //    这两个本来就不一样，按名字比会导致 others 永远等于总人数。
+    const known = new Set(mates.map((m) => m.id))
+    const others = members.filter((m) => !known.has(m.id)).length
     if (others > 0) {
       lines.push(`这 ${members.length} 人里，你实际聊过的只有 ${mates.length} 个，另外 ${others} 个你还不认识。`)
     }
@@ -87,7 +94,12 @@ export function renderGroupContext(groupId: string): string {
   if (mates.length) {
     lines.push('')
     lines.push('其中我和这些人打过交道：')
-    for (const m of mates) lines.push(`- ${m.name}（${m.stage}）`)
+    for (const m of mates) {
+      // 群里优先用群名片：它在这一轮看到的是群名片，用昵称会显得"换了一个人"
+      const inGroup = members.find((x) => x.id === m.id)?.name
+      const label = inGroup && inGroup !== m.name ? `${inGroup}（你记的名字是「${m.name}」）` : m.name
+      lines.push(`- ${label}（${m.stage}）`)
+    }
   }
 
   if (!lines.length) return ''

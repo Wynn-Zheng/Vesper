@@ -398,11 +398,30 @@ export function renderRecalled(r: Recalled): string {
   if (r.recent.length) {
     parts.push('')
     parts.push('【最近说过的话】')
+
+    // 同一个 block 里出现重名时，加上 QQ 号才分得清。
+    //
+    // 依据：NousResearch/hermes-agent 的做法是每条都带 "[from NAME (uid:ID)]"，
+    // 理由是"平台 user_id 才是权威身份，名字只是标签"。
+    // 我们折中一下：**只在群聊、且真的重名时才加**，不然每条挂一坨数字也太吵。
+    //
+    // 为什么限定群聊：私聊里所有消息都是同一个人，那种"重名"是自己跟自己重，
+    // 加了 uid 反而让每条消息都变长。
+    const isGroup = r.recent.some((x) => x.scope.startsWith('group:'))
+    const nameCount = new Map<string, number>()
+    for (const t of r.recent) {
+      if (!isGroup || t.role !== 'user') continue
+      const n = t.speakerName || ''
+      if (n) nameCount.set(n, (nameCount.get(n) ?? 0) + 1)
+    }
+
     for (const t of r.recent) {
       // 用真名而不是"他"：群里两个人对话后突然 @ 你，
       // 必须能分清上一句是谁说的、上上句是谁说的。
       const who = t.role === 'user' ? t.speakerName || '他' : '我'
-      parts.push(`${who}：${t.text}`)
+      const dup = isGroup && t.role === 'user' && !!t.speakerName && (nameCount.get(t.speakerName) ?? 0) > 1
+      const tag = dup && t.senderId ? `(${t.senderId})` : ''
+      parts.push(`${who}${tag}：${t.text}`)
     }
   }
 

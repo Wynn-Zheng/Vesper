@@ -206,7 +206,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     rules: opts.rules,
     self: buildSelfBlock(opts.rules, new Date(), personId, m.from.name),
     codeMap: loadCodeMapBrief(),
-    personName: m.senderName ?? m.from.name,
+    // 群里 m.from.name 是群名，不能当人名用
+    personName: m.senderName ?? m.senderNick ?? m.from.id,
     profile: loadProfile(personId),
     relation: [buildRelationBlock(opts.rules, loadRelation(personId), loadMood()), groupBlock]
       .filter((s) => s.trim())
@@ -230,7 +231,7 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   })
 
   // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人
-  let userContent = formatUserText(scope, m.senderName ?? m.from.name, text)
+  let userContent = formatUserText(scope, m.senderName ?? m.senderNick ?? m.from.id, text)
 
   // 有图且有视觉模型：先"看"成文字，再混进这一轮的内容。
   // 主模型是纯文本的也照样能用——它读到的是描述，不是图。
