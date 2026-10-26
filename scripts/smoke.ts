@@ -189,7 +189,14 @@ check('心情：全局一份，会随时间衰减', () => {
   const now = Date.now()
   saveMood({ emotion: '担心', intensity: 1, at: now })
   assert(loadMood()?.emotion === '担心', '存不进去')
-  assert((decayedMood(loadMood(), now + 8 * 3600_000)?.intensity ?? 0) < 0.1, '8 小时后应几乎消失')
+  // 衰减按效价分两档（负面 11 小时、其余 6 小时），8 小时后应该还有残留
+  const at8 = decayedMood(loadMood(), now + 8 * 3600_000)
+  assert(
+    (at8?.intensity ?? 1) > 0.2 && (at8?.intensity ?? 1) < 0.7,
+    `8 小时后应在 0.2~0.7，实际 ${at8?.intensity}`,
+  )
+  // 两天后归零
+  assert(decayedMood(loadMood(), now + 48 * 3600_000) === null, '48 小时后应归零')
 })
 
 /* 9. 阶段 */

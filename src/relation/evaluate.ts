@@ -4,13 +4,15 @@ import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { loadMood, saveMood, type Mood, type MoodEntry } from '../persona/mood.ts'
 import { applyAnchor, loadRelation, saveRelation, todayStr } from './store.ts'
+import { loadEpisodes as loadEpisodesSafe, recentRaw as recentRawTurns } from '../memory/store.ts'
+import { sharedBigrams } from '../core/text.ts'
 import type { Dimension } from './types.ts'
 
 const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只输出 JSON，不要解释，不要代码块。
 
 {
   "anchor": {"事件": "一句话", "维度": "信任|亲密|好奇|依赖", "方向": "up|down", "幅度": 1, "理由": "为什么这件事让关系变了"} ,
-  "mood": {"情绪": "担心|平静|高兴|失落|好奇|烦躁", "强度": 0.5, "原因": "一句话说为什么是这个心情"}
+  "mood": {"情绪": "担心|平静|高兴|失落|好奇|烦躁", "强度": 0.5, "效价": -0.6, "原因": "一句话说为什么是这个心情"}
 }
 
 规则：
@@ -19,11 +21,24 @@ const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只�
 - 幅度只能是 1 或 2。理由必须具体，不能写"聊得很好"。
 - 这一轮没有变化，anchor 就返回 null。
 - mood 是聊完之后的心情；没变化就返回 null。
-- 原因要能看出「是谁的哪句话让我变成这样」，不超过 20 字。比如"他说不来了"、"他记得我怕黑"。`
+- 原因要能看出「是谁的哪句话让我变成这样」，不超过 20 字。比如"他说不来了"、"他记得我怕黑"。
+- 「效价」是 -1 到 +1 的一个数：-1 很难受，0 平淡，+1 很好受。
+  强度和效价是两回事：可以说"有点难受"（强度 0.4、效价 -0.5），也可以"特别难受"（强度 0.9、效价 -0.6）。
+
+## 判断强度时，先看「以前的事」
+
+（下面如果列了我记得的事，就对比着看）
+
+- 他说的事和以前**不一样**（尤其是相反）→ 情绪才该强（0.6 以上）
+- 他说的事和以前**一样**，或者**第三次**说同一件事 → 情绪该弱（0.3 以下）
+- 举不出"这次和以前哪里不一样" → 强度压在 0.3 以下
+
+**只对比事实层面，不要推论他的心理。**
+比如他两次都说累，就是"两次都说累"，不要写成"他一直在硬撑"。`
 
 interface EvalOutput {
   anchor?: { 事件?: string; 维度?: string; 方向?: string; 幅度?: number; 理由?: string } | null
-  mood?: { 情绪?: string; 强度?: number; 原因?: string } | null
+  mood?: { 情绪?: string; 强度?: number; 效价?: number; 原因?: string } | null
 }
 
 export interface NormalizedAnchor {
@@ -87,11 +102,91 @@ export interface EvaluateOptions {
   selfText: string
 }
 
+/**
+ * 捞几段"以前的事"，给「对比基准」用。
+ *
+ * 依据 Regan et al. 2024 (arXiv:2402.04232)：
+ * 情绪来自**新事件和过去记忆的对比**（appraisal theory of emotion）。
+ * 没有参照物，模型只能给一个笼统的"担心"或"平静"——这正是我们之前的毛病。
+ *
+ * 这里**不用 recall()**：那个会顺带记召回次数（markRecalled），
+ * 关系评估不该影响记忆的"被想起"统计。
+ *
+ * 实测坑（两个）：
+ *   1. bigram Jaccard 对「短 query vs 长 episode」天然很低 ——
+ *      9 条 episode 里最高才 0.030，用 0.05 当门槛等于一条都取不到。
+ *      改用 `sharedBigrams`（共同 bigram 数），对长度差不敏感。
+ *   2. **"他第三次说同一件事"这种事，episode 里查不到** ——
+ *      episode 是提炼过的（"凌晨两点他失眠说想看我成长"），
+ *      不带"四级没过"这种具体词。所以还要看**最近几轮原话**。
+ *
+ * 所以两块拼起来：最近的经历（提炼过的）+ 最近的原话（没提炼的）。
+ */
+function recentContext(personId: string, userText: string, limit = 3): string {
+  const parts: string[] = []
+
+  try {
+    const eps = loadEpisodesSafe()
+    if (eps.length) {
+      // 1. 按共同 bigram 数排，>= 2 个才算"话题相关"，最多 2 条
+      const byTopic = eps
+        .map((e) => ({ e, shared: sharedBigrams(userText, `${e.title} ${e.body}`) }))
+        .filter((x) => x.shared >= 2)
+        .sort((a, b) => b.shared - a.shared)
+        .slice(0, 2)
+        .map((x) => x.e)
+
+      // 2. 不够就用最近的补。越近的越可能和这次有关（他昨天说累，今天又说累）
+      const picked = [...byTopic]
+      for (const e of [...eps].reverse()) {
+        if (picked.length >= limit) break
+        if (!picked.includes(e)) picked.push(e)
+      }
+
+      if (picked.length) {
+        parts.push(
+          '【我记得的经历】',
+          ...picked
+            .slice(0, limit)
+            .map((e) => `- ${e.date}｜${e.title}${e.emotion ? `（当时：${e.emotion}）` : ''}`),
+        )
+      }
+    }
+  } catch {
+    /* 读不到就不给 */
+  }
+
+  // 最近几轮原话：用来判断"这事他说过没有"
+  try {
+    const recent = recentRawTurns(6)
+      .filter((t) => t.role === 'user' && t.text.trim())
+      .slice(-4)
+    if (recent.length) {
+      parts.push(
+        '',
+        '【他最近说过的原话】（判断"是不是说过"用）',
+        ...recent.map((t) => `- ${t.text.replace(/\s+/g, ' ').slice(0, 60)}`),
+      )
+    }
+  } catch {
+    /* 读不到就不给 */
+  }
+
+  return parts.join('\n')
+}
+
 async function evaluate(opts: EvaluateOptions): Promise<void> {
+  const past = recentContext(opts.personId, opts.userText)
+  const userBlock = [
+    `他：${opts.userText}`,
+    `我：${opts.selfText}`,
+    ...(past ? ['', '以前的事（判断强度时对比着看）：', past] : []),
+  ].join('\n')
+
   const res = await chat(
     [
       { role: 'system', content: SYSTEM },
-      { role: 'user', content: `他：${opts.userText}\n我：${opts.selfText}` },
+      { role: 'user', content: userBlock },
     ],
     { ...opts.llm, maxTokens: 300, temperature: 0.2 },
   )
@@ -128,9 +223,15 @@ async function evaluate(opts: EvaluateOptions): Promise<void> {
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 40)
+    // 效价：-1 很难受 ~ +1 很好受。没给或给了坏值就不写这个字段，
+    // 老逻辑（按平淡衰减）照样能用。
+    const rawV = Number(m?.效价)
     const entry: MoodEntry = {
       emotion,
       intensity: Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.3,
+      ...(m?.效价 !== undefined && Number.isFinite(rawV)
+        ? { valence: Math.min(1, Math.max(-1, rawV)) }
+        : {}),
       at: Date.now(),
       ...(why ? { reason: why } : {}),
     }

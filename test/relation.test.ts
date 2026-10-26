@@ -71,8 +71,15 @@ test('心情是全局的，随时间衰减', () => {
   const fresh = decayedMood(m, now)
   assert.ok(fresh && fresh.intensity > 0.9)
 
+  // 衰减从「一律 2 小时半衰期」改成按效价分两档：
+  //   负面 11 小时、其余 6 小时（依据 Frijda 1988：情绪会习惯化，
+  //   但不是两小时就消失）。所以 8 小时后还应该有相当一部分。
   const later = decayedMood(m, now + 8 * 3600_000)
-  assert.ok(!later || later.intensity < 0.1, '8 小时后应该几乎消失')
+  assert.ok(later && later.intensity > 0.2, '8 小时后应该还有残留，但明显弱了')
+  assert.ok(later!.intensity < 0.7, '8 小时后应该明显弱了')
+
+  // 两天后应该没了（强度低于 0.1 的阈值）
+  assert.equal(decayedMood(m, now + 48 * 3600_000), null, '48 小时后应该归零')
 })
 
 test('心情带多轮序列', () => {

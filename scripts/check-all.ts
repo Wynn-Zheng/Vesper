@@ -65,7 +65,8 @@ const STEPS: Step[] = [
   { name: '事实分档', cmd: 'node --env-file-if-exists=.env scripts/test-facts-tier.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '情节档位', cmd: 'node --env-file-if-exists=.env scripts/test-episode-tier.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '记忆优化四项', cmd: 'node --env-file-if-exists=.env scripts/test-memory-opt.ts', expect: /通过 \d+ \/ 失败 0/ },
-  { name: '边界扫描', cmd: 'node --env-file-if-exists=.env scripts/scan-bugs.ts', expect: /没发现 bug/ },
+  { name: '边界扫描', cmd: 'node --env-file-if-exists=.env scripts/scan-bugs.ts', expect: /没发现 bug/ },  { name: '情绪效价', cmd: 'node --env-file-if-exists=.env scripts/test-mood-valence.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '情绪对比基准', cmd: 'node --env-file-if-exists=.env scripts/test-mood-context.ts', expect: /通过 \d+ \/ 失败 0/ },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
