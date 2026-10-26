@@ -1,0 +1,9 @@
+node_modules/
+.npm-cache/
+.env
+data/
+persona/
+*.log
+.DS_Store
+.dev-memory/
+.dev-people/

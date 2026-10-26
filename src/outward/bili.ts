@@ -1,0 +1,167 @@
+/**
+ * B站只读接口。
+ *
+ * 为什么只用排行榜和热门榜：
+ * 推荐流要走 wbi 签名 + 登录 cookie，一旦 cookie 过期整个功能就哑了。
+ * 排行榜是公开的，稳定得多——而且"它自己挑一个看"比"算法推什么它看什么"更像有主见。
+ */
+import { warnAt } from '../core/log.ts'
+import type { VideoBrief, VideoDetail } from './types.ts'
+
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+
+/** 上次请求时间，用来限速 */
+let lastAt = 0
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms))
+}
+
+/** 相邻两次请求至少隔 400ms，别把 B站当靶子练 */
+async function throttle(): Promise<void> {
+  const gap = Date.now() - lastAt
+  if (gap < 400) await sleep(400 - gap)
+  lastAt = Date.now()
+}
+
+async function getJson<T>(url: string): Promise<T | null> {
+  await throttle()
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': UA, Referer: 'https://www.bilibili.com', Accept: 'application/json' },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) {
+      warnAt(`B站接口 ${res.status}`, { url: url.slice(0, 80) })
+      return null
+    }
+    const j = (await res.json()) as { code?: number; message?: string; data?: unknown }
+    if (j.code !== 0) {
+      warnAt('B站接口返回错误', { code: j.code, msg: j.message })
+      return null
+    }
+    return j.data as T
+  } catch (err) {
+    warnAt('B站请求失败', { err: String(err).slice(0, 80) })
+    return null
+  }
+}
+
+/** 分区 id → 名字。只列常用的，其余走热门榜 */
+export const ZONES: Record<string, number> = {
+  科技: 188,
+  数码: 95,
+  动物: 75,
+  音乐: 3,
+  美食: 76,
+  生活: 160,
+  知识: 36,
+  影视: 181,
+}
+
+interface RawVideo {
+  bvid?: string
+  title?: string
+  owner?: { name?: string }
+  stat?: { view?: number }
+  duration?: number
+}
+
+export interface HotOptions {
+  /** 分区名；不传就走总热门 */
+  zone?: string
+  /** 最多拿几个 */
+  limit?: number
+}
+
+/** 拿一批候选视频（只读公开榜） */
+export async function hot(opts: HotOptions = {}): Promise<VideoBrief[]> {
+  const limit = Math.min(50, Math.max(1, opts.limit ?? 20))
+  const rid = opts.zone ? ZONES[opts.zone] : undefined
+
+  const url = rid
+    ? `https://api.bilibili.com/x/web-interface/ranking/v2?rid=${rid}&type=all`
+    : `https://api.bilibili.com/x/web-interface/popular?ps=50&pn=1`
+
+  const data = await getJson<{ list?: RawVideo[] }>(url)
+  const list = data?.list ?? []
+  return list
+    .filter((v) => v.bvid && v.title)
+    .slice(0, limit)
+    .map((v) => ({
+      bvid: v.bvid!,
+      title: String(v.title).trim(),
+      up: String(v.owner?.name ?? '').trim(),
+      play: Number(v.stat?.view ?? 0),
+      duration: Number(v.duration ?? 0),
+    }))
+}
+
+/** 视频详情：简介 + 字幕（有的话） */
+export async function detail(bvid: string): Promise<VideoDetail | null> {
+  if (!/^BV[A-Za-z0-9]{8,12}$/.test(bvid)) return null
+
+  const info = await getJson<{
+    bvid?: string
+    title?: string
+    desc?: string
+    duration?: number
+    owner?: { name?: string }
+    stat?: { view?: number }
+    tname?: string
+    pages?: Array<{ cid?: number }>
+  }>(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`)
+
+  if (!info?.title) return null
+
+  const cid = info.pages?.[0]?.cid
+  const sub = cid ? await subtitleOf(bvid, cid) : ''
+
+  return {
+    bvid,
+    title: String(info.title).trim(),
+    up: String(info.owner?.name ?? '').trim(),
+    play: Number(info.stat?.view ?? 0),
+    duration: Number(info.duration ?? 0),
+    desc: String(info.desc ?? '').trim().slice(0, 500),
+    subtitle: sub,
+    zone: String(info.tname ?? '').trim(),
+  }
+}
+
+/**
+ * 拿字幕。
+ * B站的 AI 字幕要登录才给，所以经常是空的——空就空着，靠简介也能聊。
+ */
+async function subtitleOf(bvid: string, cid: number): Promise<string> {
+  const data = await getJson<{
+    subtitle?: { subtitles?: Array<{ lan?: string; subtitle_url?: string }> }
+  }>(`https://api.bilibili.com/x/player/v2?bvid=${bvid}&cid=${cid}`)
+
+  const tracks = data?.subtitle?.subtitles ?? []
+  if (!tracks.length) return ''
+
+  const picked = tracks.find((t) => t.lan?.startsWith('zh')) ?? tracks[0]
+  const url = picked?.subtitle_url
+  if (!url) return ''
+
+  const full = url.startsWith('//') ? `https:${url}` : url
+  try {
+    const res = await fetch(full, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) })
+    if (!res.ok) return ''
+    const body = (await res.json()) as { body?: Array<{ content?: string }> }
+    const text = (body.body ?? []).map((x) => x.content ?? '').join('')
+    return text.slice(0, 2000)
+  } catch {
+    return ''
+  }
+}
+
+/** 时长格式化：3474 → 58 分钟 */
+export function humanDuration(sec: number): string {
+  if (sec < 60) return `${sec} 秒`
+  const m = Math.round(sec / 60)
+  if (m < 60) return `${m} 分钟`
+  return `${Math.floor(m / 60)} 小时 ${m % 60} 分`
+}

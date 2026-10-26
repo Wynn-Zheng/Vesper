@@ -1,0 +1,34 @@
+{
+  "name": "qqbot",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "自研 QQ 陪伴 bot",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.ts",
+    "mock": "node dev/mock.ts",
+    "check": "node node_modules/typescript/bin/tsc --noEmit",
+    "check:strict": "node node_modules/typescript/bin/tsc --noEmit --noUnusedLocals",
+    "test": "node --test test/*.test.ts",
+    "smoke": "node scripts/smoke.ts",
+    "smoke:live": "node --env-file=.env scripts/smoke.ts",
+    "check-data": "node scripts/check-data.ts",
+    "check-config": "node scripts/check-config.ts",
+    "check-all": "node scripts/check-all.ts",
+    "clean-snapshots": "node scripts/clean-snapshots.ts",
+    "persona": "node --env-file=.env scripts/persona-check.ts",
+    "migrate": "node --env-file=.env scripts/migrate-people.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.7.0"
+  }
+}
