@@ -25,42 +25,56 @@ function factsFile(personId: string): string {
   return join(personDir(personId), 'facts.md')
 }
 
+/**
+ * 解析一行事实。兼容新格式（带可见性/确认日期）、老格式（没有可见性）和来源。
+ *
+ * 手工改坏的数据不能整份作废：
+ * - 空行、缺日期/置信、置信不是数字：跳过这一行
+ * - 可见性写错：按最保守的「私密」收下，别把文字也丢掉
+ */
+function parseFactLine(line: string): PersonFact | null {
+  const m =
+    /^-\s+(.+?)（(\d{4}-\d{2}-\d{2})，置信\s*([\d.]+)(?:，确认\s*(\d{4}-\d{2}-\d{2}))?(?:，([^）]*))?）(?:\｜(.*))?\s*$/.exec(
+      line,
+    )
+  if (!m) return null
+
+  const confidence = Number(m[3])
+  if (!Number.isFinite(confidence)) return null
+
+  const label = m[5]?.trim()
+  const visibility: Visibility =
+    label === '公开' ? 'public' : label === '私密' ? 'private' : label === '待确认' ? 'unsure' : 'private'
+  const date = m[2]!
+  const lastConfirmed = m[4]?.trim()
+  const source = m[6]?.trim()
+
+  return {
+    text: m[1]!,
+    date,
+    confidence: Math.min(1, Math.max(0, confidence)),
+    lastConfirmed: lastConfirmed || date,
+    visibility,
+    ...(source ? { source } : {}),
+  }
+}
+
 export function loadFacts(personId: string): PersonFact[] {
   const f = factsFile(personId)
   if (!existsSync(f)) return []
+
+  let raw: string
+  try {
+    raw = readFileSync(f, 'utf8')
+  } catch {
+    // 文件被占用 / 变成了目录：当作没有事实，别让一次读取失败炸掉整条链路
+    return []
+  }
+
   const out: PersonFact[] = []
-  for (const line of readFileSync(f, 'utf8').split(/\r?\n/)) {
-    // 兼容三种写法：带确认日期 / 不带确认日期 / 没有可见性（老数据）
-    const m =
-      /^-\s+(.+?)（(\d{4}-\d{2}-\d{2})，置信\s*([\d.]+)(?:，确认\s*(\d{4}-\d{2}-\d{2}))?，(公开|私密|待确认)）(?:\｜(.+))?\s*$/.exec(
-        line.trim(),
-      ) ??
-      /^-\s+(.+?)（(\d{4}-\d{2}-\d{2})，置信\s*([\d.]+)）(?:\｜(.+))?\s*$/.exec(line.trim())
-
-    if (!m) continue
-
-    // 第二种正则有 4 组，对齐成统一形状
-    const hasVisibility = m.length >= 6 && (m[5] === '公开' || m[5] === '私密' || m[5] === '待确认')
-    if (hasVisibility) {
-      out.push({
-        text: m[1]!,
-        date: m[2]!,
-        confidence: Number(m[3]),
-        lastConfirmed: m[4] ?? m[2]!,
-        visibility: (m[5] === '公开' ? 'public' : m[5] === '私密' ? 'private' : 'unsure') as Visibility,
-        ...(m[6] ? { source: m[6].trim() } : {}),
-      })
-    } else {
-      // 老格式：没有可见性，按私密处理
-      out.push({
-        text: m[1]!,
-        date: m[2]!,
-        confidence: Number(m[3]),
-        lastConfirmed: m[2]!,
-        visibility: 'private',
-        ...(m[4] ? { source: m[4].trim() } : {}),
-      })
-    }
+  for (const line of raw.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const fact = parseFactLine(line.trim())
+    if (fact) out.push(fact)
   }
   return out
 }
@@ -120,14 +134,27 @@ function rewrite(personId: string, fn: (f: PersonFact) => PersonFact): boolean {
   return true
 }
 
+function dayStart(s: string | undefined): number | null {
+  if (!s) return null
+  const t = Date.parse(`${s}T00:00:00`)
+  return Number.isNaN(t) ? null : t
+}
+
 /**
  * 有效置信度：越久没被提起，越不可信。
  * 30 天没提掉一半，90 天掉到 10%。
  */
 export function effectiveConfidence(f: PersonFact, now = Date.now()): number {
-  const base = Number.isFinite(f.confidence) ? f.confidence : 0
-  const ref = Date.parse(`${f.lastConfirmed ?? f.date}T00:00:00`)
-  const days = Number.isNaN(ref) ? 0 : Math.max(0, (now - ref) / 86_400_000)
+  // 置信度只该在 0-1 之间；坏值按 0 处理，别让 NaN 一路传下去
+  const raw = Number(f.confidence)
+  const base = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0
+
+  // 确认日期坏了就退回首次记录日期。都解析不了才按"今天"算，不做无意义的衰减。
+  const ref = dayStart(f.lastConfirmed) ?? dayStart(f.date)
+  if (ref === null) return base
+
+  const at = Number.isFinite(now) ? now : Date.now()
+  const days = Math.max(0, (at - ref) / 86_400_000)
   return base * Math.exp(-0.023 * days)
 }
 
@@ -177,14 +204,26 @@ function deletedFile(personId: string): string {
 export function loadDeleted(personId: string): string[] {
   const f = deletedFile(personId)
   if (!existsSync(f)) return []
+
+  let raw: string
+  try {
+    raw = readFileSync(f, 'utf8')
+  } catch {
+    // 黑名单坏了最多是少挡一条，不能让整个整理流程炸掉
+    return []
+  }
+
   const out: string[] = []
-  for (const line of readFileSync(f, 'utf8').split('\n')) {
+  for (const line of raw.split(/\r?\n/)) {
     if (!line.trim()) continue
     try {
-      const rec = JSON.parse(line) as { text?: string }
-      if (rec.text) out.push(rec.text)
+      const rec = JSON.parse(line) as unknown
+      if (rec && typeof rec === 'object' && typeof (rec as { text?: unknown }).text === 'string') {
+        const text = (rec as { text: string }).text
+        if (text) out.push(text)
+      }
     } catch {
-      /* skip */
+      /* 坏行跳过：不是 JSONL 也能继续读后面的行 */
     }
   }
   return out

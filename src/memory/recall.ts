@@ -22,15 +22,22 @@ export function visible(scope: Scope, current: Scope): boolean {
 
 const DAY = 86_400_000
 
+function finiteOr(value: unknown, fallback: number): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
 /**
  * 衰减速度由重要性决定：重要的事忘得慢。
  * 数值从 rules.yaml 的 记忆.衰减 读，不写死——不然改了配置不生效。
  */
 export function lambdaOf(importance: number, decay?: Record<string, number>): number {
-  const high = decay?.['高情绪'] ?? 0.005
-  const normal = decay?.['普通'] ?? 0.02
-  if (importance >= 8) return high
-  if (importance >= 5) return normal
+  const high = finiteOr(decay?.['高情绪'], 0.005)
+  const normal = finiteOr(decay?.['普通'], 0.02)
+  // 坏数据（NaN / 越界）按普通重要度算，至少还能正常排序
+  const imp = Number.isFinite(importance) ? Math.min(10, Math.max(0, importance)) : 5
+  if (imp >= 8) return high
+  if (imp >= 5) return normal
   return normal * 2
 }
 
@@ -79,16 +86,24 @@ function scoreOf(
   const days = Math.max(0, (now - refTs) / DAY)
   const recency = Math.exp(-lambda * days)
   const relevance = similarity(query, text)
-  const imp = Math.min(1, Math.max(0, importance / 10))
+  const impRaw = Number.isFinite(importance) ? importance : 5
+  const imp = Math.min(1, Math.max(0, impRaw / 10))
   return recency * w.新近 + relevance * w.相关 + imp * w.重要
 }
 
 // ---- 召回记账：内存里攒，定期落盘 ----
+// id 只在 scope 目录里唯一：同一天不同会话都可能叫 2026-10-26-01。
+// 只按 id 记账会把别的会话/别人的经历一起标成"刚想起"。
+function episodeKey(e: Episode): string {
+  return `${e.scope}\u0000${e.id}`
+}
+
 const pendingMarks = new Map<string, number>()
 let flushTimer: NodeJS.Timeout | null = null
 
 function markRecalled(eps: Episode[], now: number): void {
-  for (const e of eps) pendingMarks.set(e.id, now)
+  if (!eps.length) return
+  for (const e of eps) pendingMarks.set(episodeKey(e), now)
   if (flushTimer) return
   flushTimer = setTimeout(() => {
     flushTimer = null
@@ -101,7 +116,7 @@ export function flushRecalls(): void {
   if (!pendingMarks.size) return
   const all = loadEpisodes()
   for (const e of all) {
-    const ts = pendingMarks.get(e.id)
+    const ts = pendingMarks.get(episodeKey(e))
     if (ts) {
       e.lastRecalled = ts
       saveEpisode(e)
@@ -165,8 +180,13 @@ export function recall(opts: RecallOptions): Recalled {
     .slice(0, 3)
 
   const merged: Episode[] = []
+  const seen = new Set<string>()
   for (const e of [...picked, ...recentEps]) {
-    if (!merged.some((x) => x.id === e.id)) merged.push(e)
+    const key = episodeKey(e)
+    if (!seen.has(key)) {
+      seen.add(key)
+      merged.push(e)
+    }
   }
   const finalEps = merged.slice(0, Math.max(limit, 3))
 
