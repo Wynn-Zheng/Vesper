@@ -25,8 +25,29 @@ export function buildRelationBlock(rules: Rules, s: RelationState, mood: Mood | 
 
   if (m) {
     lines.push(`- 你现在的心情：${m.emotion}（强度 ${m.intensity.toFixed(1)}）`)
-    const seq = (m.recent ?? []).slice(-4).map((r) => r.emotion)
-    if (seq.length >= 2) lines.push(`- 最近这几轮你的情绪变化：${seq.join(' → ')}`)
+
+    // 多轮情感上下文：ZifaMem 论文实测比单轮快照 +39% 偏好。
+    // 光给情绪名不够——要知道是从多高掉下来的、为什么掉。
+    const seq = (m.recent ?? []).slice(-4)
+    if (seq.length >= 2) {
+      const parts = seq.map((r) => {
+        const lvl = r.intensity.toFixed(1)
+        return r.reason ? `${r.emotion} ${lvl}（${r.reason}）` : `${r.emotion} ${lvl}`
+      })
+      lines.push(`- 最近的情绪：${parts.join(' → ')}`)
+
+      // 涨还是跌，说清楚：模型容易把"一直平淡"和"剧烈波动"当成一回事
+      const first = seq[0]!
+      const last = seq[seq.length - 1]!
+      const delta = last.intensity - first.intensity
+      if (Math.abs(delta) >= 0.3) {
+        lines.push(
+          delta > 0
+            ? `- 情绪在往上走：从 ${first.intensity.toFixed(1)} 升到 ${last.intensity.toFixed(1)}`
+            : `- 情绪在往下掉：从 ${first.intensity.toFixed(1)} 降到 ${last.intensity.toFixed(1)}`,
+        )
+      }
+    }
   }
 
   const recent = s.anchors.slice(-3)

@@ -10,6 +10,12 @@ export interface MoodEntry {
   /** 0-1 */
   intensity: number
   at: number
+  /**
+   * 为什么变成这个情绪（一句话）。
+   * 有了它，模型才能理解"从很开心掉到很低落"是怎么回事，
+   * 而不是只看到两个词。
+   */
+  reason?: string
 }
 
 export interface Mood extends MoodEntry {
@@ -49,13 +55,19 @@ export function loadMood(): Mood | null {
       continue
     }
     if (inRecent) {
-      const m = /^-\s*\{?\s*情绪:\s*([^,}]+),?\s*强度:\s*([\d.]+),?\s*时间:\s*(.+?)\s*\}?$/.exec(line.trim())
+      // 现在多了可选的「因为: ...」段，老格式仍然要能读
+      const m = /^-\s*\{?\s*情绪:\s*([^,}]+),?\s*强度:\s*([\d.]+),?\s*时间:\s*([^,}]+?),?\s*(?:因为:\s*(.+?))?\s*\}?$/.exec(
+        line.trim(),
+      )
       if (m) {
-        recent.push({
+        const entry: MoodEntry = {
           emotion: m[1]!.trim(),
           intensity: Number(m[2]),
           at: Date.parse(m[3]!.trim()) || Date.now(),
-        })
+        }
+        const reason = m[4]?.trim()
+        if (reason) entry.reason = reason
+        recent.push(entry)
       }
       continue
     }
@@ -84,7 +96,15 @@ export function saveMood(m: Mood): void {
     `强度: ${m.intensity}`,
     `时间: ${new Date(m.at).toISOString()}`,
     ...(m.recent?.length
-      ? ['最近:', ...m.recent.map((r) => `- { 情绪: ${r.emotion}, 强度: ${r.intensity}, 时间: ${new Date(r.at).toISOString()} }`)]
+      ? [
+          '最近:',
+          ...m.recent.map((r) => {
+            const base = `- { 情绪: ${r.emotion}, 强度: ${r.intensity}, 时间: ${new Date(r.at).toISOString()}`
+            // reason 里可能有逗号/花括号，落盘前把会破坏解析的字符换掉
+            const why = r.reason?.replace(/[,}{]/g, ' ').trim().slice(0, 40)
+            return why ? `${base}, 因为: ${why} }` : `${base} }`
+          }),
+        ]
       : []),
   ]
   writeAtomic(FILE, `${lines.join('\n')}\n`)

@@ -112,6 +112,38 @@ function normVisibility(v: string | undefined): Visibility {
 }
 
 /** 把一批原文压成 episode / facts / open / insights，并落盘。 */
+
+/**
+ * 这两条说的是同一件事吗？
+ *
+ * 为什么需要它：字符相似度分不出「同一个意思换个说法」。
+ * 实测过——同一事实改写后 sim 只有 0.45，而「喜欢猫」vs「喜欢狗」有 0.50。
+ * 所以灰色地带（0.45-0.9）交给模型判断，比死抠阈值靠谱。
+ *
+ * 只在灰色地带调用：相似度很高直接判重、很低直接当新的，都不花钱。
+ */
+async function sameFact(a: string, b: string, llm: LlmOptions): Promise<boolean> {
+  try {
+    const res = await chat(
+      [
+        {
+          role: 'system',
+          content:
+            '你在判断两条关于同一个人的记录是不是同一件事。只输出 yes 或 no。\n' +
+            'yes = 说的是同一个事实，只是换了说法，或者后者更准确。\n' +
+            'no = 是两件不同的事，或者互相矛盾（比如一个说喜欢猫、一个说喜欢狗）。',
+        },
+        { role: 'user', content: `第一条：${a}\n第二条：${b}` },
+      ],
+      { ...llm, maxTokens: 4, temperature: 0 },
+    )
+    return /yes|是|同一/i.test(res.text.trim())
+  } catch {
+    // 判断不了就按"不同"处理：宁可多记一条，也别把新信息吞掉
+    return false
+  }
+}
+
 export async function distill(opts: DistillOptions): Promise<DistillResult> {
   const result: DistillResult = { episodes: 0, facts: 0, open: 0, insights: 0 }
   if (!opts.turns.length) return result
@@ -127,13 +159,21 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
 
   // 让模型知道已经记了什么，否则它每次从零提炼，必然重复
   const knownFacts = opts.scope.startsWith('private:') ? loadFacts(opts.personId).map((f) => f.text) : []
-  const res = await chat(
-    [
-      { role: 'system', content: systemPrompt(opts.rules, knownFacts) },
-      { role: 'user', content: `聊天记录：\n${transcript}` },
-    ],
-    { ...opts.llm, maxTokens: 1400, temperature: 0.3 },
-  )
+  // 定时任务里不能把异常抛出去：一次模型抖动不该让整轮整理变成 unhandled rejection，
+  // 更不该让调用方把"出错了"和"没东西可整理"混为一谈。
+  let res: { text: string }
+  try {
+    res = await chat(
+      [
+        { role: 'system', content: systemPrompt(opts.rules, knownFacts) },
+        { role: 'user', content: `聊天记录：\n${transcript}` },
+      ],
+      { ...opts.llm, maxTokens: 1400, temperature: 0.3 },
+    )
+  } catch (err) {
+    warnAt('整理的模型调用失败，这轮跳过', { scope: opts.scope, err: String(err).slice(0, 80) })
+    return result
+  }
 
   const data = parseJson(res.text)
   if (!data) {
@@ -187,7 +227,20 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
       touchFact(opts.personId, best.old.text, date)
       continue
     }
-    if (best && best.sim >= 0.55) {
+    // 灰色地带：字符相似度分不出「换个说法」和「另一件事」，问模型。
+    // 之前这里直接当冲突让用户确认，结果同一件事换个说法就被反复问。
+    if (best && best.sim >= 0.45) {
+      const same = await sameFact(best.old.text, text, opts.llm)
+      if (same) {
+        // 同一件事：刷新确认，顺便把更准确的说法留下
+        touchFact(opts.personId, best.old.text, date)
+        if (text.length > best.old.text.length && best.old.text.length < text.length * 0.8) {
+          // 新说法明显更详细，补一条（旧的会被 touch，不会重复计数）
+          accepted.push({ text, date, confidence, visibility, ...(source ? { source } : {}) })
+        }
+        continue
+      }
+      // 真是另一件事或互相矛盾：交给用户确认
       conflicts.push({
         text: `我记得「${best.old.text}」，这次听到「${text}」，想确认哪个对`,
         date,

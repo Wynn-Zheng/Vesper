@@ -2,7 +2,7 @@ import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
-import { loadMood, saveMood, type Mood } from '../persona/mood.ts'
+import { loadMood, saveMood, type Mood, type MoodEntry } from '../persona/mood.ts'
 import { applyAnchor, loadRelation, saveRelation, todayStr } from './store.ts'
 import type { Dimension } from './types.ts'
 
@@ -10,7 +10,7 @@ const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只�
 
 {
   "anchor": {"事件": "一句话", "维度": "信任|亲密|好奇|依赖", "方向": "up|down", "幅度": 1, "理由": "为什么这件事让关系变了"} ,
-  "mood": {"情绪": "担心|平静|高兴|失落|好奇|烦躁", "强度": 0.5}
+  "mood": {"情绪": "担心|平静|高兴|失落|好奇|烦躁", "强度": 0.5, "原因": "一句话说为什么是这个心情"}
 }
 
 规则：
@@ -18,11 +18,12 @@ const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只�
 - 寒暄、日常闲聊、单纯开玩笑不算。
 - 幅度只能是 1 或 2。理由必须具体，不能写"聊得很好"。
 - 这一轮没有变化，anchor 就返回 null。
-- mood 是聊完之后的心情；没变化就返回 null。`
+- mood 是聊完之后的心情；没变化就返回 null。
+- 原因要能看出「是谁的哪句话让我变成这样」，不超过 20 字。比如"他说不来了"、"他记得我怕黑"。`
 
 interface EvalOutput {
   anchor?: { 事件?: string; 维度?: string; 方向?: string; 幅度?: number; 理由?: string } | null
-  mood?: { 情绪?: string; 强度?: number } | null
+  mood?: { 情绪?: string; 强度?: number; 原因?: string } | null
 }
 
 export interface NormalizedAnchor {
@@ -121,10 +122,17 @@ async function evaluate(opts: EvaluateOptions): Promise<void> {
   const emotion = typeof m?.情绪 === 'string' ? m.情绪.trim() : ''
   if (emotion) {
     const raw = Number(m?.强度 ?? 0.3)
-    const entry = {
+    // 原因一句话就够：模型要的是「为什么变」，不是小作文。
+    // 有了它，"从 0.9 掉到 0.2"才不是两个孤立的数字。
+    const why = String(m?.原因 ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 40)
+    const entry: MoodEntry = {
       emotion,
       intensity: Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0.3,
       at: Date.now(),
+      ...(why ? { reason: why } : {}),
     }
     const prev = loadMood()
     const mood: Mood = { ...entry, recent: [...(prev?.recent ?? []), entry].slice(-5) }
