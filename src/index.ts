@@ -10,7 +10,7 @@ import { loadAccess } from './core/access.ts'
 import { generateReply } from './loop/chat.ts'
 import { pruneSessions } from './loop/session.ts'
 import type { LlmOptions } from './llm/types.ts'
-import { ensurePerson } from './people/store.ts'
+import { ensurePerson, loadPerson, personIdOf } from './people/store.ts'
 import { startDistiller } from './scheduler/distiller.ts'
 import { startProactive } from './scheduler/proactive.ts'
 import { loadSelf } from './self/store.ts'
@@ -73,9 +73,16 @@ const transport = new OnebotTransport({
 const apiKey = (process.env['DEEPSEEK_API_KEY'] ?? '').trim()
 let llm: LlmOptions | undefined
 
-// 主人先建档，后面谁来说话就自动建谁
+// 主人先建档，后面谁来说话就自动建谁。
+//
+// ⚠️ 只在**还没有档案**时建档。
+// 之前这里无条件调 ensurePerson(..., '主人')，每次启动都把名字
+// 强制改回"主人" —— 不管群名单里同步到的是什么。
+// 这就是"档案名怎么修都会变回去"的真凶。
 const ownerQQ = process.env['OWNER_QQ'] || undefined
-if (ownerQQ) ensurePerson('qq', ownerQQ, '主人')
+if (ownerQQ && !loadPerson(personIdOf('qq', ownerQQ))) {
+  ensurePerson('qq', ownerQQ, '主人')
+}
 
 if (apiKey) {
   llm = {
