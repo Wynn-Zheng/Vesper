@@ -405,21 +405,26 @@ export function renderRecalled(r: Recalled): string {
     // 理由是"平台 user_id 才是权威身份，名字只是标签"。
     // 我们折中一下：**只在群聊、且真的重名时才加**，不然每条挂一坨数字也太吵。
     //
-    // 为什么限定群聊：私聊里所有消息都是同一个人，那种"重名"是自己跟自己重，
-    // 加了 uid 反而让每条消息都变长。
+    // ⚠️ "重名" = 同一个名字对应**多个不同 QQ 号**。
+    //    不能只看"这个名字出现了几次"——同一个人说三句话也是三次，
+    //    那样每条都会挂上 uid（踩过）。
     const isGroup = r.recent.some((x) => x.scope.startsWith('group:'))
-    const nameCount = new Map<string, number>()
+    const idsOfName = new Map<string, Set<string>>()
     for (const t of r.recent) {
       if (!isGroup || t.role !== 'user') continue
       const n = t.speakerName || ''
-      if (n) nameCount.set(n, (nameCount.get(n) ?? 0) + 1)
+      const id = t.senderId || ''
+      if (!n || !id) continue
+      const set = idsOfName.get(n) ?? new Set<string>()
+      set.add(id)
+      idsOfName.set(n, set)
     }
 
     for (const t of r.recent) {
       // 用真名而不是"他"：群里两个人对话后突然 @ 你，
       // 必须能分清上一句是谁说的、上上句是谁说的。
       const who = t.role === 'user' ? t.speakerName || '他' : '我'
-      const dup = isGroup && t.role === 'user' && !!t.speakerName && (nameCount.get(t.speakerName) ?? 0) > 1
+      const dup = isGroup && t.role === 'user' && !!t.speakerName && (idsOfName.get(t.speakerName)?.size ?? 0) > 1
       const tag = dup && t.senderId ? `(${t.senderId})` : ''
       parts.push(`${who}${tag}：${t.text}`)
     }
