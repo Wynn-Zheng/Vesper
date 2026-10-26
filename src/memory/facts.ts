@@ -1,12 +1,24 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { similarity } from '../core/text.ts'
+import { warnAt } from '../core/log.ts'
 import { personDir } from '../people/store.ts'
 import { appendJsonl, writeAtomic } from '../store/fs.ts'
 import { serialized } from '../store/serialize.ts'
 
 /** 三档：能说 / 不能说 / 我也拿不准，得问问他 */
 export type Visibility = 'public' | 'private' | 'unsure'
+
+/**
+ * 事实的档位。
+ *
+ * 不是"重要程度"的连续分数，是**保留策略**：
+ *   major  → 衰减极慢（139 天半衰期）
+ *   normal → 正常衰减（35 天）
+ *
+ * 核心档（core）不在这里——它在 persona/core.md，只有人能改。
+ */
+export type FactTier = 'major' | 'normal'
 
 export interface PersonFact {
   text: string
@@ -17,6 +29,13 @@ export interface PersonFact {
   source?: string
   /** 最后一次被提起/确认的日期；没有就是首次记录的日期 */
   lastConfirmed?: string
+  /**
+   * 档位。老数据没有这个字段 → 一律当 normal（保守：正常衰减）。
+   *
+   * 为什么不用 1-10 的 importance：
+   * 实测模型打分区分度极低（24 条经验全给 8 分），二选一反而判断得准。
+   */
+  tier?: FactTier
 }
 
 const LABEL: Record<Visibility, string> = { public: '公开', private: '私密', unsure: '待确认' }
@@ -72,16 +91,66 @@ export function loadFacts(personId: string): PersonFact[] {
   }
 
   const out: PersonFact[] = []
+  // 跟踪当前在哪一段。老文件没有 ## 标题，就一直是 normal。
+  let curTier: FactTier = 'normal'
+
   for (const line of raw.replace(/^\uFEFF/, '').split(/\r?\n/)) {
-    const fact = parseFactLine(line.trim())
-    if (fact) out.push(fact)
+    const s = line.trim()
+
+    // 段落标题：认「重要」和「平常」，别的 # 不算（可能是人写的注释）
+    if (s.startsWith('#')) {
+      const m = /^#+\s*(重要|平常)/.exec(s)
+      if (m) curTier = m[1] === '重要' ? 'major' : 'normal'
+      continue
+    }
+
+    const fact = parseFactLine(s)
+    if (!fact) continue
+    // 文件里写死的段落优先；没分段就用 normal
+    out.push({ ...fact, tier: curTier })
   }
   return out
 }
 
-/** 文本里出现全角括号会破坏行格式，统一换成半角 */
+/**
+ * 写盘前的转义。
+ *
+ * **只转两样**，因为只有它们会破坏行格式：
+ *   换行 → 空格（会把一条拆成两行）
+ *   ｜   → |   （它是 source 的分隔符）
+ *
+ * **括号不转**。之前这里把全角括号转成半角，实测发现：
+ *   解析本身完全能处理正文里的括号（包括多层嵌套），
+ *   但转换会让"读 → 写 → 再读"改变原文。
+ *   一条"他作息很乱（他自称睡得早）"存一次就变成"他作息很乱(他自称睡得早)"。
+ */
 function safe(s: string): string {
-  return s.replace(/（/g, '(').replace(/）/g, ')').replace(/\｜/g, '|').replace(/\r?\n/g, ' ')
+  return s.replace(/\｜/g, '|').replace(/\r?\n/g, ' ')
+}
+
+const TIER_LABEL: Record<FactTier, string> = { major: '重要', normal: '平常' }
+
+/**
+ * 把一组事实施渲染成 markdown。
+ *
+ * 分两段：重要 / 平常。某一档为空就不写那段的标题。
+ * **所有写文件的路径都必须走这里**——不然分段会乱。
+ */
+export function renderFacts(facts: PersonFact[]): string {
+  const lines: string[] = ['# 关于这个人的事实', '']
+
+  for (const tier of ['major', 'normal'] as FactTier[]) {
+    const list = facts.filter((f) => (f.tier ?? 'normal') === tier)
+    if (!list.length) continue
+    lines.push(`## ${TIER_LABEL[tier]}`, '')
+    for (const f of list) lines.push(formatFact(f))
+    lines.push('')
+  }
+
+  // 一条都没有时也留个空段落，方便人手工加
+  if (!facts.length) lines.push('## 平常', '')
+
+  return lines.join('\n')
 }
 
 function formatFact(x: PersonFact): string {
@@ -100,9 +169,31 @@ export function appendFacts(personId: string, facts: PersonFact[]): void {
   // 读-改-写排队：并发时后写的会把先写的吃掉
   serialized(`facts:${personId}`, () => {
     const f = factsFile(personId)
-    const existing = existsSync(f) ? readFileSync(f, 'utf8') : '# 关于这个人的事实\n\n'
-    const lines = allowed.map(formatFact).join('\n')
-    writeAtomic(f, `${existing.trimEnd()}\n${lines}\n`)
+    const existing = existsSync(f) ? readFileSync(f, 'utf8') : ''
+
+    // ⚠️ 关键保护：重写前先确认解析没丢东西。
+    // 原来是"原文追加"，最坏只是多一行；现在是"读-合并-重写"，
+    // 解析错了会把老数据覆盖掉。所以宁可不写。
+    const parsed = loadFacts(personId)
+    const rawDashes = (existing.match(/^-\s+/gm) ?? []).length
+    if (parsed.length < rawDashes) {
+      warnAt('facts 解析条数少于原文行数，拒绝重写（怕丢数据）', {
+        person: personId,
+        解析出: parsed.length,
+        原文行数: rawDashes,
+      })
+      return
+    }
+
+    // 合并：同一条（文字完全一样）就更新，新的追加
+    const merged = [...parsed]
+    for (const item of allowed) {
+      const i = merged.findIndex((x) => x.text === item.text)
+      if (i >= 0) merged[i] = { ...merged[i]!, ...item }
+      else merged.push(item)
+    }
+
+    writeAtomic(f, renderFacts(merged))
   })
 }
 
@@ -129,8 +220,7 @@ function rewrite(personId: string, fn: (f: PersonFact) => PersonFact): boolean {
   const changed = JSON.stringify(next) !== JSON.stringify(facts)
   if (!changed) return false
 
-  const head = '# 关于这个人的事实\n\n'
-  writeAtomic(f, `${head}${next.map(formatFact).join('\n')}\n`)
+  writeAtomic(f, renderFacts(next))
   return true
 }
 
@@ -144,7 +234,7 @@ function dayStart(s: string | undefined): number | null {
  * 有效置信度：越久没被提起，越不可信。
  * 30 天没提掉一半，90 天掉到 10%。
  */
-export function effectiveConfidence(f: PersonFact, now = Date.now()): number {
+export function effectiveConfidence(f: PersonFact, now = Date.now(), decay = 0.023): number {
   // 置信度只该在 0-1 之间；坏值按 0 处理，别让 NaN 一路传下去
   const raw = Number(f.confidence)
   const base = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0
@@ -155,7 +245,7 @@ export function effectiveConfidence(f: PersonFact, now = Date.now()): number {
 
   const at = Number.isFinite(now) ? now : Date.now()
   const days = Math.max(0, (at - ref) / 86_400_000)
-  return base * Math.exp(-0.023 * days)
+  return base * Math.exp(-decay * days)
 }
 
 export function factsFilePath(personId: string): string {
@@ -169,7 +259,7 @@ export function deleteFact(personId: string, text: string): boolean {
   const facts = loadFacts(personId)
   const next = facts.filter((x) => x.text !== text && similarity(x.text, text) < 0.95)
   if (next.length === facts.length) return false
-  writeAtomic(f, `# 关于这个人的事实\n\n${next.map(formatFact).join('\n')}\n`)
+  writeAtomic(f, renderFacts(next))
   // 记下来，免得整理时又被提炼回来
   recordDeleted(personId, text)
   return true
@@ -188,7 +278,7 @@ export function editFact(personId: string, oldText: string, patch: { text?: stri
     return { ...x, text: (patch.text ?? x.text).trim() || x.text, confidence: conf }
   })
   if (!changed) return false
-  writeAtomic(f, `# 关于这个人的事实\n\n${next.map(formatFact).join('\n')}\n`)
+  writeAtomic(f, renderFacts(next))
   return true
 }
 /**

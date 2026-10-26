@@ -20,7 +20,13 @@ import type { Episode, Insight, RawTurn, Scope } from './types.ts'
 
 interface DistillOutput {
   episodes?: Array<{ title?: string; body?: string; importance?: number; emotion?: string }>
-  facts?: Array<{ text?: string; confidence?: number; source?: string; visibility?: string }>
+  facts?: Array<{
+    text?: string
+    confidence?: number
+    source?: string
+    visibility?: string
+    tier?: string
+  }>
   open?: Array<{ text?: string; kind?: 'todo' | 'pending' }>
   insights?: Array<{ text?: string; evidence?: string[] }>
   self?: { 自述?: string; 在想?: string; 取名?: string }
@@ -46,7 +52,7 @@ const SYSTEM_BASE = `你在整理一段聊天记录，把它变成长期记忆�
 输出格式：
 {
   "episodes": [{"title": "一句话概括", "body": "发生了什么 + 我当时怎么想", "importance": 1, "emotion": "当时的主要情绪"}],
-  "facts": [{"text": "稳定的事实", "confidence": 0.9, "source": "他说过的原话，尽量短", "visibility": "public|private|unsure"}],
+  "facts": [{"text": "稳定的事实", "confidence": 0.9, "source": "他说过的原话，尽量短", "visibility": "public|private|unsure", "tier": "major|normal"}],
   "open": [{"text": "还没做的事，或我想跟对方确认的事", "kind": "todo"}],
   "insights": [{"text": "我对他或对这段关系的一个看法", "evidence": ["依据"]}],
   "self": {"自述": "我最近对自己的一点认识", "在想": "我最近在想的一件事", "取名": "如果还没有名字且觉得时机到了，给自己取一个"},
@@ -59,6 +65,11 @@ const SYSTEM_BASE = `你在整理一段聊天记录，把它变成长期记忆�
 - 只记值得记的：对方的个人信息、情绪强烈的事、约定、我自己想明白的事。
 - 寒暄、重复、没有信息的话不要记。
 - facts 只写稳定的、以后还会用到的事实。
+- 档位（tier）判断——**二选一，别犹豫**：
+  · major = 约定、承诺、长期目标、他明确说过的边界或底线、会影响以后很多次对话的事
+  · normal = 其他所有（一次性偏好、当下状态、兴趣爱好、日常习惯）
+  · 拿不准就 normal。major 是用来标明"这条以后不能弄错"的，宁缺勿滥。
+  · 例：「他四级坚持要考」→ major；「他今天吃了面」→ 不该记；「他什么歌都听」→ normal。
 - 可见性（visibility）判断：
   · public = 说出去也没关系（工作、学业、爱好、公开行程、对某件事的看法、生活习惯）
   · private = 不能对别人讲（家人、健康、经济、感情细节、情绪脆弱的时候、他明确表示不想被外人知道的事）
@@ -207,48 +218,57 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
   // 群聊里不写 facts/open：那是公共场合，分不清哪句是谁的私事
   const isPrivate = opts.scope.startsWith('private:')
   const existing = isPrivate ? loadFacts(opts.personId) : []
-  const accepted: Array<{ text: string; date: string; confidence: number; visibility: Visibility; source?: string }> = []
+  const accepted: Array<{
+    text: string
+    date: string
+    confidence: number
+    visibility: Visibility
+    source?: string
+    tier?: 'major' | 'normal'
+  }> = []
   const conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
 
   if (isPrivate) {
     for (const raw of data.facts ?? []) {
-    const text = (raw.text ?? '').trim()
-    if (text.length < 2) continue
-    const confidence = Math.min(1, Math.max(0, Number(raw.confidence ?? 0.8)))
-    const source = (raw.source ?? '').trim().slice(0, 60) || undefined
-    const visibility = normVisibility(raw.visibility)
+      const text = (raw.text ?? '').trim()
+      if (text.length < 2) continue
+      const confidence = Math.min(1, Math.max(0, Number(raw.confidence ?? 0.8)))
+      const source = (raw.source ?? '').trim().slice(0, 60) || undefined
+      const visibility = normVisibility(raw.visibility)
+      // 档位：只认 major，其余一律 normal（宁缺勿滥）
+      const tier: 'major' | 'normal' = raw.tier === 'major' ? 'major' : 'normal'
 
-    const best = existing
-      .map((old) => ({ old, sim: similarity(old.text, text) }))
-      .sort((a, b) => b.sim - a.sim)[0]
+      const best = existing
+        .map((old) => ({ old, sim: similarity(old.text, text) }))
+        .sort((a, b) => b.sim - a.sim)[0]
 
-    if (best && best.sim > 0.9) {
-      // 这条又提到了：刷新确认日期，别让它慢慢过期
-      touchFact(opts.personId, best.old.text, date)
-      continue
-    }
-    // 灰色地带：字符相似度分不出「换个说法」和「另一件事」，问模型。
-    // 之前这里直接当冲突让用户确认，结果同一件事换个说法就被反复问。
-    if (best && best.sim >= 0.45) {
-      const same = await sameFact(best.old.text, text, opts.llm)
-      if (same) {
-        // 同一件事：刷新确认，顺便把更准确的说法留下
+      if (best && best.sim > 0.9) {
+        // 这条又提到了：刷新确认日期，别让它慢慢过期
         touchFact(opts.personId, best.old.text, date)
-        if (text.length > best.old.text.length && best.old.text.length < text.length * 0.8) {
-          // 新说法明显更详细，补一条（旧的会被 touch，不会重复计数）
-          accepted.push({ text, date, confidence, visibility, ...(source ? { source } : {}) })
-        }
         continue
       }
-      // 真是另一件事或互相矛盾：交给用户确认
-      conflicts.push({
-        text: `我记得「${best.old.text}」，这次听到「${text}」，想确认哪个对`,
-        date,
-        kind: 'pending',
-      })
-      continue
-    }
-      accepted.push({ text, date, confidence, visibility, ...(source ? { source } : {}) })
+      // 灰色地带：字符相似度分不出「换个说法」和「另一件事」，问模型。
+      // 之前这里直接当冲突让用户确认，结果同一件事换个说法就被反复问。
+      if (best && best.sim >= 0.45) {
+        const same = await sameFact(best.old.text, text, opts.llm)
+        if (same) {
+          // 同一件事：刷新确认，顺便把更准确的说法留下
+          touchFact(opts.personId, best.old.text, date)
+          if (text.length > best.old.text.length && best.old.text.length < text.length * 0.8) {
+            // 新说法明显更详细，补一条（旧的会被 touch，不会重复计数）
+            accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
+          }
+          continue
+        }
+        // 真是另一件事或互相矛盾：交给用户确认
+        conflicts.push({
+          text: `我记得「${best.old.text}」，这次听到「${text}」，想确认哪个对`,
+          date,
+          kind: 'pending',
+        })
+        continue
+      }
+      accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
     }
   }
 
