@@ -35,8 +35,20 @@ function countRecent(list: Array<{ at: number }>): number {
 export function listAbilities(rules: Rules): Ability[] {
   const out: Ability[] = []
 
-  out.push({ name: '想事情', available: true, hint: '能在脑子里推演、琢磨、产生自己的看法', usedRecently: 0 })
-  out.push({ name: '记事', available: true, hint: '会把人说过的事、约定、重要经历记下来，以后能想起来', usedRecently: 0 })
+  // 这三条是核心能力，但也要说清"是什么"：
+  // "想事情"靠的是模型 + 一轮反思，不是真有一个持续运转的脑子。
+  out.push({
+    name: '想事情',
+    available: true,
+    hint: '能琢磨、形成自己的看法；每天有两次专门用来反思（不是随时都在想）',
+    usedRecently: 0,
+  })
+  out.push({
+    name: '记事',
+    available: true,
+    hint: '把人说过的事实、发生过的事、约定记成文字，以后能翻出来',
+    usedRecently: 0,
+  })
   out.push({ name: '聊天', available: true, hint: '能跟人一来一回地说话', usedRecently: 0 })
 
   // 刷视频：开关真开着才算
@@ -50,18 +62,23 @@ export function listAbilities(rules: Rules): Ability[] {
   out.push({
     name: '刷视频',
     available: watchOn,
+    // 措辞要和实际一致：只有标题/UP主/简介，看不到画面。
+    // "今天已看 N 个"可能超过配置上限——控制台手动触发会绕过上限，说明一下。
     hint: watchOn
-      ? `每天自己挑一两个 B站视频看，看完写一句自己的想法（今天已看 ${watched} 个）`
+      ? `每天自己翻一两个 B站视频的标题和简介，写一句自己的想法` +
+        `（今天 ${watched} 个，上限 ${rules.外部?.刷视频?.每天最多 ?? '?'} 个；` +
+        `手动点的不占这个额度）`
       : '还没接上',
     usedRecently: watched,
   })
 
-  // 发空间
-  const qzoneOn = Boolean(rules.外部?.发空间?.开启)
+  // 发空间：**只有配置，没有实现代码**。
+  // 之前按开关算，用户一打开它就会说"能往 QQ 空间发说说"——那是撒谎。
+  // 等真接上了再把这里改回按开关。
   out.push({
     name: '发空间',
-    available: qzoneOn,
-    hint: qzoneOn ? '能往 QQ 空间发说说' : '还没接上',
+    available: false,
+    hint: '还没接上（配置能开，但代码没有，开了也发不出去）',
     usedRecently: 0,
   })
 
@@ -91,7 +108,23 @@ export function listAbilities(rules: Rules): Ability[] {
     hint: '只看得到标题和简介，看不到视频本身',
     usedRecently: 0,
   })
-  out.push({ name: '看图片/文件', available: false, hint: '看不见图，也打不开文件', usedRecently: 0 })
+  // 看图是真能看的（vision.ts），只是默认关着。
+  // 文件仍然打不开（只能读 src/ 下的 .ts，见 diagnose.ts 的 safePath）。
+  const visionOn = Boolean(rules.视觉?.开启)
+  out.push({
+    name: '看图片',
+    available: visionOn,
+    hint: visionOn
+      ? '对方发图时能用视觉模型看清图里是什么（你自己是纯文本模型，靠另一次调用"翻译"成文字）'
+      : '开了「视觉.开启」就能看图；现在关着',
+    usedRecently: 0,
+  })
+  out.push({
+    name: '打开文件',
+    available: false,
+    hint: '只能读自己 src/ 下的 .ts 源码，读不了别的文件（也看不到别人的私事）',
+    usedRecently: 0,
+  })
 
   return out
 }
