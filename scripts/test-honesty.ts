@@ -127,22 +127,44 @@ console.log('\n=== 3. 开关类能力 ===')
   check('刷视频: 说明提到上限和手动不占额度', on.hint.includes('上限') || on.hint.includes('不占'), on.hint)
 }
 {
-  const c = claim('发空间')
-  check('发空间: 声明不能（因为没实现）', c.found && !c.available, `${c.available} / ${c.hint}`)
-  // 逐个文件查，排除 abilities.ts 自己（它只是声明）
+  // 发空间：草稿模式。代码是真有了（qzone.ts），但**发出去要人点**。
+  // 所以它说的是"能写草稿"，不是"能发"。
+  const off = claim('发空间')
+  check('发空间: 存在', off.found)
+  check('发空间: DEFAULTS 关闭时应为 false', off.available === false, String(off.available))
+  check('发空间: 说明提到"草稿"或"人看过"', /草稿|人看过|人说了算/.test(off.hint), off.hint)
+
+  // 打开开关再看
+  const onRules = {
+    ...DEFAULTS,
+    外部: { ...DEFAULTS.外部, 发空间: { ...DEFAULTS.外部.发空间, 开启: true } },
+  }
+  const onList = abilities.listAbilities(onRules as typeof DEFAULTS)
+  const on = onList.find((a) => a.name === '发空间')!
+  check('发空间: 打开后为 true（能攒草稿）', on.available === true)
+  check('发空间: 说明讲清"要人点才发"', on.hint.includes('人') && /发出去|点/.test(on.hint), on.hint)
+
+  // 代码里确实有实现
   const files: string[] = []
   const walk = (dir: string): void => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name)
       if (e.isDirectory()) walk(p)
-      else if (e.name.endsWith('.ts') && e.name !== 'abilities.ts') files.push(p)
+      else if (e.name.endsWith('.ts')) files.push(p)
     }
   }
   walk('src')
-  const qzoneFiles = files.filter((f) => /send_story|send_qzone|发说说/.test(readFileSync(f, 'utf8')))
-  check('发空间: 代码里确实没有实现（abilities 之外）', qzoneFiles.length === 0, qzoneFiles.join(','))
-  check('发空间: 说明讲清"配置能开但代码没有"', c.hint.includes('代码没有') || c.hint.includes('还没接上'), c.hint)
+  const hasImpl = files.some((f) => f.includes('qzone.ts'))
+  check('发空间: 有 qzone.ts 实现', hasImpl)
+  check('发空间: onebot 里调了 send_qzone_msg', SRC.includes('send_qzone_msg'))
+  check('发空间: 有删除接口（发错能收回）', SRC.includes('delete_qzone_msg'))
+
+  // 关键：它自己调不到"发"这个动作
+  // 工具注册表里不该有 publish 类工具
+  const toolNames = abilities.listAbilities(DEFAULTS).filter((a) => a.name.startsWith('publish') || a.name.includes('发出去'))
+  check('发空间: 没有给模型注册"发出去"的工具', toolNames.length === 0, toolNames.map((x) => x.name).join(','))
 }
+
 {
   const c = claim('看图片')
   check('看图片: 存在（不再是笼统的"看图片/文件"）', c.found)
@@ -168,7 +190,7 @@ console.log('\n=== 4. 旧的错误说法 ===')
   check('prompt 不再说「不能上网查东西」', !prompt.includes('上网查东西'))
   check('prompt 说了「别说我上不了网」', prompt.includes('别说"我上不了网"'))
   check('prompt 说了「看不到视频画面」', prompt.includes('看不到视频画面'))
-  check('prompt 说了发空间还没接上', prompt.includes('发空间还没接上'))
+  check('prompt 说了发空间是草稿模式', prompt.includes('草稿模式'))
 }
 
 /* ============ 5. 措辞不夸大 ============ */

@@ -72,13 +72,15 @@ export function listAbilities(rules: Rules): Ability[] {
     usedRecently: watched,
   })
 
-  // 发空间：**只有配置，没有实现代码**。
-  // 之前按开关算，用户一打开它就会说"能往 QQ 空间发说说"——那是撒谎。
-  // 等真接上了再把这里改回按开关。
+  // 发空间：草稿模式。
+  // 能写草稿（qzone.ts 实现了），但**发出去要人点**——它自己没有这个工具。
+  const qzoneOn = Boolean(rules.外部?.发空间?.开启)
   out.push({
     name: '发空间',
-    available: false,
-    hint: '还没接上（配置能开，但代码没有，开了也发不出去）',
+    available: qzoneOn,
+    hint: qzoneOn
+      ? '能写说说草稿，但要人看过点「发出去」才真发（发出去收不回，虽然能删）'
+      : '还没开（开了就能写草稿；发不发还是人说了算）',
     usedRecently: 0,
   })
 
