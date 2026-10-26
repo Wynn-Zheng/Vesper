@@ -1,5 +1,4 @@
 import { loadRules, stageOf } from '../core/config.ts'
-import type { Transport } from '../core/transport.ts'
 import { recentRaw } from '../memory/store.ts'
 import { loadRelation } from '../relation/store.ts'
 import { personOfAccount, loadPerson } from './store.ts'
@@ -39,36 +38,23 @@ export function peopleInGroup(groupId: string, opts: { days?: number; limit?: nu
 
 /* ---------------- 群成员名单（含没说过话的人） ---------------- */
 
-interface MemberCache {
-  at: number
-  members: Array<{ id: string; name: string }>
-}
+// 名单缓存挪到 groupcache.ts：落盘、一小时、过期也返回旧数据。
+// 原来是内存 Map + 10 分钟，重启就空、安静十分钟就"忘了"，于是它以为群里只有两个人。
+import { groupMembers } from './groupcache.ts'
+export {
+  clearMemberCache,
+  groupMembers,
+  knownGroups,
+  resetMemberCacheEverywhere,
+  membersAreStale,
+  refreshGroupMembers,
+} from './groupcache.ts'
 
-const memberCache = new Map<string, MemberCache>()
-const MEMBER_TTL = 10 * 60_000
+/** 名单为空时的补救钩子：boot 里注入"去拉一次"，渲染这边只管踢一脚 */
+let onGroupMembersMissing: ((groupId: string) => Promise<void>) | null = null
 
-export function clearMemberCache(): void {
-  memberCache.clear()
-}
-
-/** 后台刷新群成员列表；失败就保持旧缓存 */
-export async function refreshGroupMembers(transport: Transport, groupId: string): Promise<void> {
-  if (!transport.listGroupMembers) return
-  const hit = memberCache.get(groupId)
-  if (hit && Date.now() - hit.at < MEMBER_TTL) return
-  try {
-    const members = await transport.listGroupMembers(groupId)
-    if (members.length) memberCache.set(groupId, { at: Date.now(), members })
-  } catch {
-    /* 拉不到就继续用旧的 */
-  }
-}
-
-/** 同步读缓存：群里有谁。没拉过就返回空 */
-export function groupMembers(groupId: string): Array<{ id: string; name: string }> {
-  const c = memberCache.get(groupId)
-  if (!c || Date.now() - c.at > MEMBER_TTL) return []
-  return c.members
+export function setGroupMembersMissingHook(fn: (groupId: string) => Promise<void>): void {
+  onGroupMembersMissing = fn
 }
 
 /** 把「群里都有谁」和「我熟的有谁」分开渲染 */
@@ -80,6 +66,18 @@ export function renderGroupContext(groupId: string): string {
   if (members.length) {
     const names = members.map((m) => m.name).slice(0, 25)
     lines.push(`这个群一共 ${members.length} 人：${names.join('、')}${members.length > 25 ? '……' : ''}`)
+    // 关键：名单里大部分人你没打过交道。不说这句，它会以为"群里就我们俩"。
+    const known = new Set(mates.map((m) => m.name))
+    const others = members.filter((m) => !known.has(m.name)).length
+    if (others > 0) {
+      lines.push(`这 ${members.length} 人里，你实际聊过的只有 ${mates.length} 个，另外 ${others} 个你还不认识。`)
+    }
+  } else {
+    // 没拉到名单，也要说清楚是"不知道"而不是"就我们俩"
+    lines.push('这个群有多少人你不清楚（名单还没拉到）。别以为群里只有你们俩。')
+    // 顺手踢一次后台刷新，下一轮就有了。
+    // 这里不能 await：渲染是同步的，等它会把回复拖慢好几秒。
+    void onGroupMembersMissing?.(groupId)
   }
 
   if (mates.length) {

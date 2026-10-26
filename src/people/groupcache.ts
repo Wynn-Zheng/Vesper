@@ -1,0 +1,201 @@
+/**
+ * 群成员名单：从"内存里凑合一下"改成"落盘 + 预热 + 过期不丢"。
+ *
+ * 修的问题：
+ *   1. 纯内存，重启就空 —— 重启后第一条群消息进来时读不到名单
+ *   2. TTL 只有 10 分钟，群里安静十分钟就"忘了"
+ *   3. 刷新失败静默 —— 用户看到"这儿就我们俩"也不知道为什么
+ */
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { warnAt } from '../core/log.ts'
+import { serialized } from '../store/serialize.ts'
+import { writeAtomic } from '../store/fs.ts'
+
+export interface CachedMember {
+  id: string
+  name: string
+}
+
+interface CacheFile {
+  /** groupId → { at, members } */
+  groups: Record<string, { at: number; members: CachedMember[] }>
+}
+
+const FILE = join('persona', 'groups.json')
+/** 落盘的名单用一小时：群里安静一小时也不至于"忘了有谁" */
+const DISK_TTL = 60 * 60_000
+/** 内存里更快过期的意义不大，和磁盘一致省得两套逻辑 */
+const MEM_TTL = DISK_TTL
+
+let disk: CacheFile | null = null
+
+/**
+ * 读磁盘缓存。
+ *
+ * forceReload：内存里那份可能是空的（刚被 clear 过），
+ * 这时候必须真去读文件，不能拿内存的空壳糊弄。
+ */
+function loadDisk(forceReload = false): CacheFile {
+  if (!forceReload && disk) return disk
+  if (!existsSync(FILE)) {
+    disk = { groups: {} }
+    return disk
+  }
+  try {
+    const raw = JSON.parse(readFileSync(FILE, 'utf8')) as unknown
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      disk = { groups: {} }
+      return disk
+    }
+    const groups = (raw as { groups?: unknown }).groups
+    disk =
+      groups && typeof groups === 'object' && !Array.isArray(groups)
+        ? (raw as CacheFile)
+        : { groups: {} }
+  } catch {
+    // 文件坏了就重来，但说一声，别静默
+    warnAt('群成员缓存读不出来，按空的重建', { file: FILE })
+    disk = { groups: {} }
+  }
+  return disk
+}
+
+function saveDisk(c: CacheFile): void {
+  disk = c
+  try {
+    writeAtomic(FILE, JSON.stringify(c, null, 2))
+  } catch (err) {
+    warnAt('群成员缓存写不进去', { err: String(err).slice(0, 60) })
+  }
+}
+
+/** 内存镜像，避免每次读都解析 JSON */
+const mem = new Map<string, { at: number; members: CachedMember[] }>()
+
+function hydrate(groupId: string): { at: number; members: CachedMember[] } | null {
+  const hit = mem.get(groupId)
+  if (hit) return hit
+  // 内存没有就一定去读文件（loadDisk 内部有 memo，但被 clear 过会重读）
+  const fromDisk = loadDisk(true).groups[groupId]
+  if (fromDisk) {
+    mem.set(groupId, fromDisk)
+    return fromDisk
+  }
+  return null
+}
+
+/**
+ * 清内存缓存。
+ *
+ * 注意：**不清盘**。盘上那份是重启后唯一的依靠，
+ * 把它一起清掉的话，"重启后还记得群里有谁"这件事就白做了。
+ * 想把盘也清掉用 resetMemberCacheEverywhere。
+ */
+export function clearMemberCache(): void {
+  mem.clear()
+  disk = null
+}
+
+/** 连盘一起清（测试或彻底重置时用） */
+export function resetMemberCacheEverywhere(): void {
+  mem.clear()
+  disk = { groups: {} }
+  try {
+    writeAtomic(FILE, JSON.stringify(disk, null, 2))
+  } catch {
+    /* 清不掉就算了 */
+  }
+}
+
+/**
+ * 后台刷新群成员列表。
+ *
+ * 和以前不一样：
+ *   - 拉到了就落盘，重启不丢
+ *   - 拉失败但盘里有旧的，继续用旧的（不返回空）
+ *   - 失败会 warn，不再静默
+ */
+export async function refreshGroupMembers(
+  transport: { listGroupMembers?: (gid: string) => Promise<CachedMember[]> },
+  groupId: string,
+): Promise<void> {
+  if (!transport.listGroupMembers) {
+    warnAt('当前通道不支持拉群成员，群名单用不了', { group: groupId })
+    return
+  }
+
+  const hit = hydrate(groupId)
+  if (hit && Date.now() - hit.at < MEM_TTL) return
+
+  try {
+    const members = await transport.listGroupMembers(groupId)
+    if (!members.length) {
+      warnAt('群成员拉回来是空的', { group: groupId, 用了旧缓存: !!hit })
+      return
+    }
+    const entry = { at: Date.now(), members }
+    mem.set(groupId, entry)
+
+    await serialized('groups', () => {
+      const c = loadDisk()
+      c.groups[groupId] = entry
+      // 别让它无限涨：只留最近 30 个群
+      const keys = Object.keys(c.groups)
+      if (keys.length > 30) {
+        const sorted = keys.sort((a, b) => (c.groups[a]!.at ?? 0) - (c.groups[b]!.at ?? 0))
+        for (const k of sorted.slice(0, keys.length - 30)) delete c.groups[k]
+      }
+      saveDisk(c)
+    })
+  } catch (err) {
+    warnAt('拉群成员失败', {
+      group: groupId,
+      err: String(err).slice(0, 80),
+      用了旧缓存: !!hit,
+    })
+  }
+}
+
+/**
+ * 同步读群里有谁。
+ *
+ * 过期也返回旧名单（标记 stale），不再返回空——
+ * 返回空会让它以为"群里就我们俩"，比数据旧一点糟糕得多。
+ */
+export function groupMembers(groupId: string): CachedMember[] {
+  const c = hydrate(groupId)
+  if (!c) return []
+  return c.members
+}
+
+/** 这份名单是不是已经旧了（一小时以上没更新） */
+export function membersAreStale(groupId: string): boolean {
+  const c = hydrate(groupId)
+  if (!c) return true
+  return Date.now() - c.at > DISK_TTL
+}
+
+/**
+ * 从记忆目录里猜出"有哪些群"。
+ * 预热用：不知道群号就没法提前拉名单。
+ */
+export function knownGroups(): string[] {
+  const out = new Set<string>()
+
+  // 1. 缓存里已有的
+  for (const gid of Object.keys(loadDisk().groups)) out.add(gid)
+
+  // 2. 记忆目录里有群聊记录的
+  try {
+    const dir = join('persona', 'memory', 'episodes')
+    for (const name of readdirSync(dir)) {
+      const m = /^group-(\d+)$/.exec(name)
+      if (m) out.add(m[1]!)
+    }
+  } catch {
+    /* 没有就算了 */
+  }
+
+  return [...out]
+}

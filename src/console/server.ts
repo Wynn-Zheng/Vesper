@@ -341,7 +341,10 @@ async function runAction(
       const gid = String(payload['groupId'] ?? '')
       if (!gid) throw new Error('缺少 groupId')
       if (!opts.transport.listGroupMembers) throw new Error('当前通道不支持拉群成员')
-      const members = await opts.transport.listGroupMembers(gid)
+      // 走缓存：拉到的会落盘，重启后还用得上
+      const { refreshGroupMembers, groupMembers } = await import('../people/group.ts')
+      await refreshGroupMembers(opts.transport, gid)
+      const members = groupMembers(gid)
       return { groupId: gid, count: members.length, members: members.slice(0, 100) }
     }
 

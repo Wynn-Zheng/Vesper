@@ -128,6 +128,38 @@ if (apiKey) {
 }
 
 await transport.start()
+
+// 群名单预热：不等第一条群消息。
+// 不预热的话，重启后第一条群消息进来时名单还没拉到，
+// 它会以为群里只有你们俩。
+//
+// 注意要等：NapCat 是反连过来的，transport.start() 只是开始监听，
+// 立刻拉会得到"NapCat 未连接"。所以等 45 秒，失败再等 90 秒重试一次。
+if (llm) {
+  void (async () => {
+    const { knownGroups, refreshGroupMembers, membersAreStale } = await import('./people/group.ts')
+    const groups = knownGroups()
+    if (!groups.length) return
+
+    for (const delay of [45_000, 90_000]) {
+      await new Promise((r) => setTimeout(r, delay))
+      let ok = 0
+      for (const gid of groups) {
+        if (!membersAreStale(gid)) {
+          ok += 1
+          continue
+        }
+        await refreshGroupMembers(transport, gid)
+        if (!membersAreStale(gid)) ok += 1
+      }
+      if (ok === groups.length) {
+        info(`群名单已预热：${ok} 个群`)
+        return
+      }
+    }
+    warnAt('群名单预热没成功（NapCat 可能一直没连上）', { 群数: groups.length })
+  })()
+}
 info('已启动')
 
 // 上次退出时如果有消息没处理完（多半是重启打断的），说一声，别让它静默消失

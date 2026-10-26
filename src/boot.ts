@@ -11,7 +11,7 @@ import { appendRaw } from './memory/store.ts'
 import { watchOne } from './outward/watch.ts'
 import { personOfMessage, scopeOf } from './memory/scope.ts'
 import { ensurePerson } from './people/store.ts'
-import { refreshGroupMembers, groupMembers } from './people/group.ts'
+import { refreshGroupMembers, groupMembers, setGroupMembersMissingHook } from './people/group.ts'
 import { evaluateTurn } from './relation/evaluate.ts'
 import { judgeReply } from './loop/judge.ts'
 import { recordPlayReviewed } from './learn/plays.ts'
@@ -346,6 +346,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
     clearTimeout(buf.timer)
     await handle(buf.last, buf.texts.join('\n'), buf.passive, opts.getRules())
   }
+
+  // 名单为空时让渲染那层能踢一脚刷新
+  setGroupMembersMissingHook((gid) => refreshGroupMembers(transport, gid))
 
   transport.onMessage((m) => {
     if (m.id) {
