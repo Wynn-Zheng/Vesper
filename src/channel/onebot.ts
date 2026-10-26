@@ -669,6 +669,27 @@ export class OnebotTransport implements Transport {
     }
   }
 
+  /**
+   * 显示/隐藏「正在输入」。
+   *
+   * event_type：1 = 开始输入，2 = 停止输入（参考 NapCat 的 sendShowInputStatusReq）。
+   *
+   * **只支持私聊**：NapCat 的这套 action 固定用 ChatType.KCHATTYPEC2C，
+   * 群里显示"正在输入"是另一套机制（且普通号没有权限）。
+   * 失败一律吞掉——打字状态是锦上添花，不能因为它坏了就发不出消息。
+   */
+  async setTyping(target: Target, on: boolean): Promise<void> {
+    if (target.kind !== 'private') return
+    try {
+      await this.callAction('set_input_status', {
+        user_id: String(target.id),
+        event_type: on ? 1 : 2,
+      })
+    } catch {
+      /* 静默失败 */
+    }
+  }
+
   async recall(messageId: string): Promise<boolean> {
     try {
       await this.callAction('delete_msg', { message_id: Number(messageId) })

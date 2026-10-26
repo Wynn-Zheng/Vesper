@@ -12,6 +12,10 @@ function nowText(d: Date): string {
 export interface PromptParts {
   /** 核心记忆（只能人改的那部分），优先级最高 */
   core?: string
+  /** 说话习惯（从它自己说过的话统计出来的） */
+  speech?: string
+  /** 成长的痕迹：它以前怎么看自己、现在怎么看 */
+  growth?: string
   /** 它自己的模块地图（精简版）：一共几块、各干什么 */
   codeMap?: string
   rules: Rules
@@ -200,8 +204,29 @@ export function buildSystem(parts: PromptParts): string {
     lines.push('你刚才已经说过类似的话了。别重复，换个说法，或者干脆别说。')
   }
 
+  // 说话习惯：长度、问句比例、口头禅。没信号时不占篇幅。
+  if (parts.speech) {
+    lines.push('', parts.speech)
+  }
+
+  // 成长的痕迹：只在真的变过时才有内容
+  if (parts.growth) {
+    lines.push('', parts.growth)
+  }
+
   lines.push('')
   lines.push(`现在是 ${nowText(now)}。`)
+  // 身体状态：人会困、会刚醒、会没精神。
+  // 只给"感觉"，不给硬规则——让模型自己决定回多短、要不要开新话题。
+  // 这几个时段是根据它自己的作息记录（凌晨两三点还在聊）定的，不是通用作息。
+  const h = now.getHours()
+  if (h >= 1 && h < 5) {
+    lines.push('这个点你困得厉害。回得短，别开新话题，别追问。')
+  } else if (h >= 5 && h < 8) {
+    lines.push('你刚醒，脑子还没转起来。说话会比平时钝一点。')
+  } else if (h >= 22 || h === 0) {
+    lines.push('快到睡觉的点了，有点困，但还没到撑不住。')
+  }
   lines.push('直接说你要说的话，不要加引号，不要解释你在做什么。')
 
   return lines.join('\n')

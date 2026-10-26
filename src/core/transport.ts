@@ -33,6 +33,14 @@ export interface QzonePost {
 }
 
 export interface Transport {
+  /**
+   * 显示「正在输入」。
+   *
+   * 只有私聊支持（NapCat 的 set_input_status 固定走 C2C）。
+   * 群聊、或者通道不支持时静默跳过——这个功能失败了也不该影响发消息。
+   */
+  setTyping?(target: Target, on: boolean): Promise<void>
+
   readonly kind: string
 
   /**

@@ -262,7 +262,22 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
     try {
       info(`← ${who}：${text.replace(/\n/g, ' / ')}`)
+      // 先亮"正在输入"，再慢慢想。
+      // 这一步的顺序很重要：如果先 sleep 再设，对方看到的是「半天没动静，然后突然冒出三条」；
+      // 先设再 sleep，对方看到的是「他一直在这儿打字」——后者才是人的样子。
+      await transport.setTyping?.(m.from, true)
       await sleep(rand(rules.说话.回复前延迟))
+
+      // 「已读不回」：看过了、想了想、决定不说。
+      //
+      // 和上面那个 SKIPPABLE 跳过不同：那个是"嗯""哦"这种从头就不值得看，
+      // 这个是**有意义的话**，但今天懒得接。
+      // 默认 0（关着）——开了之后对方可能以为它挂了，得自己想清楚要不要。
+      const leaveRead = rules.行为.已读不回概率 ?? 0
+      if (leaveRead > 0 && Math.random() < leaveRead) {
+        info(`看了没回：${text.slice(0, 12)}`)
+        return
+      }
 
       // 命中关键词就追加一段"反应提示"，不用改代码就能调整它的回应
     const hint = reactionFor(text, rules)
@@ -336,6 +351,10 @@ export function boot(transport: Transport, opts: BootOptions): void {
           /* 连兜底都发不出去就算了 */
         }
       }
+    } finally {
+      // 不管成没成，都要把「正在输入」收掉——
+      // 不然对方会一直看到"正在输入中"，比不回还怪。
+      await transport.setTyping?.(m.from, false)
     }
   }
 
