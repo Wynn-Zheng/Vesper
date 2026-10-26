@@ -383,7 +383,15 @@ export function boot(transport: Transport, opts: BootOptions): void {
     // 第一次见就建档（群里也建，这样它"记得"这个人）
     const senderKey = m.senderId ?? m.from.id
     if (senderKey && senderKey !== 'unknown') {
-      ensurePerson('qq', senderKey, m.senderName ?? m.from.name)
+      // 名字来源按可靠程度排：
+      //   1. 消息里带的（卡面 / 昵称）
+      //   2. 群名单里的（NapCat 给的最新昵称）
+      //   3. 不要用 m.from.name —— 群聊时那是群名，会把人叫成群名
+      let displayName = (m.senderName ?? '').trim()
+      if (!displayName && m.from.kind === 'group') {
+        displayName = groupMembers(m.from.id).find((x) => x.id === senderKey)?.name ?? ''
+      }
+      ensurePerson('qq', senderKey, displayName || undefined)
     }
 
     // 群聊里把 @QQ号 换成 @昵称：模型看到 @552388771 不知道那是谁。

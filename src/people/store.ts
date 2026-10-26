@@ -232,3 +232,35 @@ export function personOfScope(scope: string): string | null {
   }
   return personIdOf('qq', account)
 }
+
+/**
+ * 按群名单里看到的名字对齐档案。
+ *
+ * 和 ensurePerson 的区别：这个不要求"这个人正在说话"，
+ * 拉群名单时顺手调一遍就能把旧昵称改掉。
+ *
+ * **没有档案的会建一个**——只是 meta.json（名字+账号），
+ * 不会有 facts/episodes 那些。这样"群里有谁"能对上号，
+ * 等真聊过再往上长。
+ */
+export function syncPersonName(platform: Platform, accountId: string, name: string): boolean {
+  const display = name.trim()
+  if (!display) return false
+  if (!accountId.trim()) return false
+
+  const key = `${platform}:${accountId}`
+  const hit =
+    cache.get(key) ?? listPeople().find((p) => p.accounts.some((a) => a.platform === platform && a.id === accountId))
+
+  // 没档案：建一个（内容和 ensurePerson 一样，只是名字来自群名单）
+  if (!hit) {
+    ensurePerson(platform, accountId, display)
+    return true
+  }
+
+  if (hit.name === display) return false
+  hit.name = display
+  savePerson(hit)
+  cache.set(key, hit)
+  return true
+}

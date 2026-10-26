@@ -8,7 +8,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { warnAt } from '../core/log.ts'
+import { info, warnAt } from '../core/log.ts'
 import { serialized } from '../store/serialize.ts'
 import { writeAtomic } from '../store/fs.ts'
 
@@ -138,6 +138,20 @@ export async function refreshGroupMembers(
     }
     const entry = { at: Date.now(), members }
     mem.set(groupId, entry)
+
+    // 顺手把 people 里的名字同步成最新昵称。
+    // 不同步的话，不常说话的人会一直挂着建档时的旧名字（比如"群代肝"其实是"我是菜鸟"），
+    // 头像按名字首字画，看起来就"对不上"。
+    try {
+      const { syncPersonName } = await import('./store.ts')
+      let renamed = 0
+      for (const m of members) {
+        if (m.id && m.name && syncPersonName('qq', m.id, m.name)) renamed += 1
+      }
+      if (renamed) info(`群里 ${renamed} 个人的名字更新了`, { group: groupId })
+    } catch {
+      /* 同步失败不影响名单 */
+    }
 
     await serialized('groups', () => {
       const c = loadDisk()
