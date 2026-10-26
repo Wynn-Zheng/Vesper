@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs'
 import YAML from 'yaml'
+import { warn } from './log.ts'
 
 export interface StageRule {
   名: string
@@ -146,6 +147,21 @@ export interface Rules {
       每日上限: number | '由阶段决定'
     }
   }
+  /**
+   * 会话上下文压缩：
+   * 未压缩的历史消息超过 summaryThreshold 条时触发压缩，
+   * 压缩后最近 keepRecent 条消息保留原文。
+   */
+  context: {
+    summaryThreshold: number
+    keepRecent: number
+  }
+  /** 回复里的表情包 */
+  emoji: {
+    enabled: boolean
+    maxPerReply: number
+    libraryCap: number
+  }
 }
 
 export const DEFAULTS: Rules = {
@@ -223,6 +239,15 @@ export const DEFAULTS: Rules = {
     群每分钟上限: 6,
     主动消息: { 去重相似度: 0.6, 每日上限: '由阶段决定' },
   },
+  context: {
+    summaryThreshold: 20,
+    keepRecent: 6,
+  },
+  emoji: {
+    enabled: true,
+    maxPerReply: 1,
+    libraryCap: 200,
+  },
 }
 
 /** 只合并 DEFAULTS 里已有的键；未知键会被收集起来警告，防止拼错字段静默失效。 */
@@ -249,6 +274,72 @@ function merge<T>(base: T, override: unknown, path: string, unknown: string[]): 
   return override as T
 }
 
+/** 读取正整数环境变量；未设置返回 null，非法值 warn 后返回回退默认值。 */
+function readPositiveIntEnv(name: string, fallback: number): number | null {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return null
+  const n = Number(raw.trim())
+  if (!Number.isInteger(n) || n <= 0) {
+    warn(`环境变量 ${name} 非法（${raw.trim()}），回退默认值 ${fallback}`)
+    return fallback
+  }
+  return n
+}
+
+/** 读取数值环境变量并夹到 [min, max]；未设置返回 null，非法值 warn 后返回回退默认值。 */
+function readClampedNumberEnv(name: string, fallback: number, min: number, max: number): number | null {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return null
+  const n = Number(raw.trim())
+  if (!Number.isFinite(n)) {
+    warn(`环境变量 ${name} 不是数字（${raw.trim()}），回退默认值 ${fallback}`)
+    return fallback
+  }
+  return Math.min(max, Math.max(min, n))
+}
+
+/** 0 / false / off 视为关闭；未设置返回 null，其余取值一律视为开启。 */
+function readBoolEnv(name: string): boolean | null {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === '') return null
+  return !['0', 'false', 'off'].includes(raw.trim().toLowerCase())
+}
+
+/**
+ * 用环境变量覆盖 context / emoji 两组配置。
+ * 非法值不抛错：回退默认值，并在日志里 warn。
+ */
+function applyEnvOverrides(rules: Rules): Rules {
+  let summaryThreshold = rules.context.summaryThreshold
+  let keepRecent = rules.context.keepRecent
+
+  const envThreshold = readPositiveIntEnv('CTX_SUMMARY_THRESHOLD', DEFAULTS.context.summaryThreshold)
+  if (envThreshold !== null) summaryThreshold = envThreshold
+  const envKeepRecent = readPositiveIntEnv('CTX_KEEP_RECENT', DEFAULTS.context.keepRecent)
+  if (envKeepRecent !== null) keepRecent = envKeepRecent
+
+  if (keepRecent >= summaryThreshold) {
+    warn(
+      `上下文压缩配置非法（keepRecent=${keepRecent}，summaryThreshold=${summaryThreshold}），` +
+        `keepRecent 必须小于 summaryThreshold，回退默认值 ${DEFAULTS.context.summaryThreshold}/${DEFAULTS.context.keepRecent}`,
+    )
+    summaryThreshold = DEFAULTS.context.summaryThreshold
+    keepRecent = DEFAULTS.context.keepRecent
+  }
+
+  const enabled = readBoolEnv('EMOJI_ENABLED') ?? rules.emoji.enabled
+  const maxPerReply =
+    readClampedNumberEnv('EMOJI_MAX_PER_REPLY', DEFAULTS.emoji.maxPerReply, 0, 3) ?? rules.emoji.maxPerReply
+  const libraryCap =
+    readClampedNumberEnv('EMOJI_LIBRARY_CAP', DEFAULTS.emoji.libraryCap, 1, 5000) ?? rules.emoji.libraryCap
+
+  return {
+    ...rules,
+    context: { summaryThreshold, keepRecent },
+    emoji: { enabled, maxPerReply, libraryCap },
+  }
+}
+
 export interface LoadResult {
   rules: Rules
   warnings: string[]
@@ -259,7 +350,7 @@ export function loadRules(path = 'persona/rules.yaml'): LoadResult {
   const warnings: string[] = []
   if (!existsSync(path)) {
     warnings.push(`没找到 ${path}，全部使用默认值`)
-    return { rules: DEFAULTS, warnings, path }
+    return { rules: applyEnvOverrides(DEFAULTS), warnings, path }
   }
 
   let parsed: unknown
@@ -273,7 +364,7 @@ export function loadRules(path = 'persona/rules.yaml'): LoadResult {
   const rules = merge(DEFAULTS, parsed ?? {}, '', unknownKeys)
   for (const k of unknownKeys) warnings.push(`忽略未知配置项 ${k}（检查是否拼错）`)
 
-  return { rules, warnings, path }
+  return { rules: applyEnvOverrides(rules), warnings, path }
 }
 
 /** 用当前关系值查出所处阶段。 */
