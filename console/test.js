@@ -248,4 +248,7 @@ async function testAllTools() {
   window.loadToolTests = loadToolTests
   window.testAllTools = testAllTools
   window.loadRecallTest = loadRecallTest
+  // 这个文件整体在 IIFE 里，不挂 window 的话 onclick="installAiDesktop()"
+  // 会报 is not defined —— settings.js 那次也是这个坑，又踩了一遍。
+  window.installAiDesktop = installAiDesktop
 })()
