@@ -40,10 +40,14 @@ public class QQWin {
   }
 
   // 只看"控制台"类，并且要求可见性符合预期 ——
-  // QQ 内部有好几个隐藏的控制台，把它们也算进来的话计数就没意义了
+  // QQ 内部有好几个隐藏的控制台，把它们也算进来的话计数就没意义了。
+  //
+  // 三种类名：ConsoleWindowClass（传统 conhost）、
+  // CASCADIA_HOSTING_WINDOW_CLASS（Windows Terminal）、PseudoConsoleWindow（ConPTY）
   public static bool Match(IntPtr h, bool wantVisible) {
     var c = new StringBuilder(256); GetClassName(h, c, 256);
-    if (c.ToString() != "ConsoleWindowClass") return false;
+    var cls = c.ToString();
+    if (cls != "ConsoleWindowClass" && cls != "CASCADIA_HOSTING_WINDOW_CLASS" && cls != "PseudoConsoleWindow") return false;
     return IsWindowVisible(h) == wantVisible;
   }
 }
@@ -51,7 +55,9 @@ public class QQWin {
 
 $mode = $args[0]
 $n = 0
-foreach ($proc in @(Get-Process QQ -ErrorAction SilentlyContinue)) {
+# QQ 会被 NapCatWinBootMain 带出一个控制台；NapCatWinBootMain 自己是控制台程序，
+# 也会自己弹一个。两个都要藏 —— 只说"启动是无窗口的"就该真的没窗口。
+foreach ($proc in @(Get-Process QQ, NapCatWinBootMain -ErrorAction SilentlyContinue)) {
   foreach ($h in [QQWin]::Find($proc.Id)) {
     if ($mode -eq 'hide') {
       if ([QQWin]::Match($h, $true)) { [QQWin]::ShowWindow($h, 0) | Out-Null; $n++ }
