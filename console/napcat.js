@@ -491,6 +491,31 @@
     prog.style.cssText = 'font-size:12px;color:#8b949e;min-height:18px;max-width:460px;line-height:1.6'
     box.appendChild(prog)
 
+    // 进度条（只有真的在复制时才显示）
+    const barWrap = document.createElement('div')
+    barWrap.style.cssText = 'display:none;width:100%;max-width:460px;margin-top:2px'
+    barWrap.innerHTML =
+      '<div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">' +
+      '<div id="nc-inst-bar" style="height:100%;width:0;background:linear-gradient(90deg,#2dd4bf,#38bdf8);border-radius:3px;transition:width .25s ease-out"></div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:#8b949e;margin-top:5px">' +
+      '<span id="nc-inst-text">0%</span>' +
+      '<span id="nc-inst-size"></span>' +
+      '</div>'
+    box.appendChild(barWrap)
+
+    /** 更新进度条 */
+    function setProgress(percent, sizeText) {
+      barWrap.style.display = ''
+      const bar = document.getElementById('nc-inst-bar')
+      const txt = document.getElementById('nc-inst-text')
+      const size = document.getElementById('nc-inst-size')
+      const pct = Math.max(0, Math.min(100, Math.round((percent || 0) * 100)))
+      if (bar) bar.style.width = pct + '%'
+      if (txt) txt.textContent = pct + '%'
+      if (size && sizeText !== undefined) size.textContent = sizeText
+    }
+
     api('/api/napcat/install/status')
       .then((s) => {
         if (s && s.bundleAvailable) installBtn.style.display = ''
@@ -512,9 +537,10 @@
         return
       }
 
-      // 复制 1.2GB 要一两分钟，轮询进度
+      // 复制 1.2GB 要一两分钟（机械盘更久），轮询进度。
+      // 间隔 400ms：太慢的话条子一顿一顿地跳，太快又白刷接口。
       for (;;) {
-        await new Promise((r) => setTimeout(r, 1000))
+        await new Promise((r) => setTimeout(r, 400))
         let s
         try {
           s = await api('/api/napcat/install/status')
@@ -523,11 +549,18 @@
         }
         if (!s) continue
 
-        if (s.state === 'copying' || s.state === 'configuring') {
-          prog.textContent = s.message || '正在安装…'
+        if (s.state === 'copying') {
+          prog.textContent = '' // 细节交给进度条
+          setProgress(s.percent, s.message || '')
+          continue
+        }
+        if (s.state === 'configuring') {
+          setProgress(0.97, '')
+          prog.textContent = s.message || '正在写配置…'
           continue
         }
         if (s.state === 'done') {
+          setProgress(1, '')
           prog.textContent = '装好了：' + (s.shellDir || '') + '（可以点上面的「启动」了）'
           installBtn.textContent = '重新检查'
           installBtn.disabled = false

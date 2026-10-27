@@ -10,9 +10,9 @@
  *   resources 在安装目录（可能只读，而且升级会被覆盖）。
  *   NapCat 运行时会往自己目录里写 config/cache/logs，必须在可写的位置。
  */
-import { cp, mkdir, readdir } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, stat } from 'node:fs/promises'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { setConfigPath } from '../console/config-write.ts'
 
 export type InstallState = 'idle' | 'copying' | 'configuring' | 'done' | 'error'
@@ -69,9 +69,14 @@ function shouldSkip(p: string): boolean {
   return false
 }
 
-/** 递归数文件数，用来算进度 */
-async function countFiles(dir: string): Promise<number> {
-  let n = 0
+/**
+ * 收集要复制的文件（带大小），用来算按字节的进度。
+ *
+ * 为什么不用 fs.cp：它是一次性的，没有逐文件回调，只能报"开始/结束"，
+ * 对 1.2GB 这种量级等于没进度。
+ */
+async function collectFiles(dir: string): Promise<{ path: string; size: number }[]> {
+  const out: { path: string; size: number }[] = []
   const walk = async (p: string): Promise<void> => {
     let entries
     try {
@@ -82,12 +87,19 @@ async function countFiles(dir: string): Promise<number> {
     for (const e of entries) {
       const full = join(p, e.name)
       if (shouldSkip(full)) continue
-      if (e.isDirectory()) await walk(full)
-      else n++
+      if (e.isDirectory()) {
+        await walk(full)
+      } else {
+        try {
+          out.push({ path: full, size: (await stat(full)).size })
+        } catch {
+          /* 单个文件 stat 失败就跳过 */
+        }
+      }
     }
   }
   await walk(dir)
-  return n
+  return out
 }
 
 /** 在目标目录里找 <xxx>.Shell */
@@ -128,18 +140,47 @@ export function startInstall(options: {
 
   void (async () => {
     try {
-      // 1. 数一下有多少文件，好报进度
-      const total = await countFiles(options.bundleDir)
-      status.message = `正在复制（约 ${total} 个文件，1.2 GB，要一两分钟）…`
+      // 1. 先扫一遍：要复制哪些文件、总共多少字节
+      status.message = '正在统计文件…'
+      const files = await collectFiles(options.bundleDir)
+      const totalBytes = files.reduce((s, f) => s + f.size, 0)
+      const totalMB = totalBytes / (1024 * 1024)
+      if (files.length === 0) {
+        status = { state: 'error', percent: 0, message: '包里没有文件', error: '包里没有文件' }
+        return
+      }
 
       await mkdir(options.targetDir, { recursive: true })
 
-      // 2. 复制。cp 不支持逐文件回调，所以复制完直接跳到 90%
-      await cp(options.bundleDir, options.targetDir, {
-        recursive: true,
-        force: true,
-        filter: (src) => !shouldSkip(src),
-      })
+      // 2. 逐文件复制，按字节报进度
+      let doneBytes = 0
+      let doneFiles = 0
+      let lastPush = 0
+
+      for (const f of files) {
+        const rel = f.path.slice(options.bundleDir.length).replace(/^[\\/]+/, '')
+        const dst = join(options.targetDir, rel)
+        try {
+          await mkdir(dirname(dst), { recursive: true })
+          await copyFile(f.path, dst)
+        } catch (e) {
+          // 单个文件失败（被杀毒锁住之类）不算致命，继续，最后看总数
+          status.message = `跳过 ${rel}（${e instanceof Error ? e.message : String(e)}）`
+        }
+        doneBytes += f.size
+        doneFiles++
+
+        // 每 120ms 推一次，别把状态刷爆
+        const now = Date.now()
+        if (now - lastPush > 120 || doneFiles === files.length) {
+          lastPush = now
+          status.percent = Math.min(0.9, (doneBytes / totalBytes) * 0.9)
+          status.message =
+            `正在复制 ${(doneBytes / (1024 * 1024)).toFixed(0)} / ${totalMB.toFixed(0)} MB` +
+            `（${doneFiles} / ${files.length} 个文件）`
+        }
+      }
+
       status.percent = 0.9
 
       // 3. 找到真正的 Shell 目录，写进 rules.yaml
