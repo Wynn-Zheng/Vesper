@@ -650,41 +650,7 @@
     </section>
 
 
-    <section class="view" id="v-features">
-      <div class="cols2">
-        <div class="panel"><h3>表情包 <span class="r" id="feat-emoji-head"></span></h3>
-          <div class="body">
-            <div class="kv" id="feat-emoji-stats"></div>
-            <div class="hint" style="margin-top:12px">按情绪分布</div>
-            <div class="chips" id="feat-emoji-moods" style="margin-top:6px"></div>
-            <div class="hint" style="margin-top:12px">最近收的</div>
-            <div id="feat-emoji-recent" style="margin-top:6px"></div>
-          </div>
-        </div>
-        <div class="panel"><h3>看图 <span class="r">主模型是纯文本也能看</span></h3>
-          <div class="body"><div class="kv" id="feat-vision"></div></div>
-        </div>
-      </div>
-      <div class="cols2" style="margin-top:14px">
-        <div class="panel"><h3>上下文压缩</h3>
-          <div class="body"><div class="kv" id="feat-context"></div></div>
-        </div>
-        <div class="panel"><h3>情绪序列 <span class="r">多轮情感上下文</span></h3>
-          <div class="body">
-            <div class="kv" id="feat-mood-now"></div>
-            <div class="hint" style="margin-top:12px">最近的情绪变化</div>
-            <div id="feat-mood-seq" style="margin-top:6px"></div>
-          </div>
-        </div>
-      </div>
-      <div class="panel" style="margin-top:14px"><h3>表达学习 <span class="r" id="feat-expr-head"></span></h3>
-        <div class="body">
-          <div class="kv" id="feat-expr-stats"></div>
-          <div class="hint" style="margin-top:12px">最近学到的（点 ★ 标记精选）</div>
-          <div id="feat-expr-list" style="margin-top:6px"></div>
-        </div>
-      </div>
-    </section>
+    
 
     <section class="view" id="v-rules">
       <div class="panel"><h3>persona/rules.yaml <span class="r">保存后自动重载</span></h3>
@@ -1006,8 +972,8 @@ async function api(path, init) {
 // ---------- 导航：6 组，组内用 tab 切 ----------
 const GROUPS = {
   dashboard: [['v-dashboard', '总览']],
-  self: [['v-self', '自我'], ['v-qzone', '说说'], ['v-features', '新功能']],
-  ability: [['v-ability', '能力']],
+  self: [['v-self', '自我']],
+  ability: [['v-ability', '能力'], ['v-qzone', '说说']],
   people: [['v-people', '成员'], ['v-groups', '群'], ['v-person', '详情'], ['v-core', '核心'], ['v-memory', '记忆'], ['v-search', '搜索']],
   logs: [['v-logs', '运行日志'], ['v-desktop-log', '操作日志'], ['v-chat', '对话']],
   settings: [['v-health', '体检'], ['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
@@ -1066,7 +1032,6 @@ function runLoaders(viewId) {
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
   if (viewId === 'v-self') loadSelfV2()
-  if (viewId === 'v-features') loadFeatures()
   if (viewId === 'v-qzone') loadQzone()
   if (viewId === 'v-rules') loadRules()
   if (viewId === 'v-access') loadAccessPolicy()
