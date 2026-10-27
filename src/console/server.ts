@@ -1331,7 +1331,9 @@ function getPluginService(): ReturnType<typeof createPluginService> {
   if (!pluginService) {
     pluginService = createPluginService({
       pluginsRoot: 'plugins',
-      dataRoot: 'data/plugins',
+      // 注意是 'data' 不是 'data/plugins'：host 和 installer 都会自己拼
+      // join(dataRoot, 'plugins', id)，传 'data/plugins' 会变成 data/plugins/plugins/<id>
+      dataRoot: 'data',
     })
     // 首次创建时后台把「已启用」的插件都加载起来。
     // createHost 只有单个 load(id)，没人调的话 loaded 永远全是 false。

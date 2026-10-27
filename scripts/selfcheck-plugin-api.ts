@@ -61,7 +61,14 @@ async function main(): Promise<void> {
     )
     writeFileSync(join(source, 'index.mjs'), 'export function activate() {}\n', 'utf8')
 
-    const service = createPluginService({ pluginsRoot, dataRoot })
+    // 注意 settingsFile 一定要指向临时目录：
+    // 不传的话 createPluginService 会用真实的 persona/plugins.yaml，
+    // 这个测试里的卸载动作会把真配置清掉（已经踩过一次）。
+    const service = createPluginService({
+      pluginsRoot,
+      dataRoot,
+      settingsFile: join(root, 'plugins.yaml'),
+    })
     const routes: PluginRoute[] = pluginRoutes(service)
 
     /** 按 method + path 找路由，找不到直接抛错（由最外层统一处理） */

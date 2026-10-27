@@ -89,6 +89,8 @@ async function main(): Promise<void> {
     const host = createHost({
       pluginsRoot,
       dataRoot,
+      // 同上：别让测试读到（或将来写坏）真实的 persona/plugins.yaml
+      settingsFile: join(root, 'plugins.yaml'),
       logger: (level, message) => {
         logs.push(`${level}:${message}`)
       },

@@ -7,12 +7,15 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { scanPlugins } from './registry.ts'
+import { getPluginConfig } from './settings.ts'
 
 export type PluginLogger = (level: 'info' | 'warn' | 'error', message: string) => void
 
 export type PluginContext = {
   id: string
   dataDir: string
+  /** 这个插件在 persona/plugins.yaml 里的 config（激活时读一次快照） */
+  config: Record<string, unknown>
   log: (message: string) => void
   on: (event: string, handler: (payload: unknown) => void) => void
   emit: (event: string, payload?: unknown) => void
@@ -60,9 +63,12 @@ export function createHost(options: {
   pluginsRoot: string
   dataRoot: string
   logger?: PluginLogger
+  /** 插件配置文件。默认 persona/plugins.yaml（跟着数据目录走） */
+  settingsFile?: string
 }) {
   const pluginsRoot = options.pluginsRoot
   const dataRoot = options.dataRoot
+  const settingsFile = options.settingsFile ?? join('persona', 'plugins.yaml')
   const logger = options.logger ?? defaultLogger
 
   const errors: { id: string; message: string }[] = []
@@ -130,6 +136,9 @@ export function createHost(options: {
     return {
       id,
       dataDir,
+      // 激活时读一次快照：运行中改配置要 reload 才生效，
+      // 但比每次访问都读文件省事，也不会读到写了一半的 YAML
+      config: getPluginConfig(settingsFile, id),
       log: (message: string) => info(message),
       on: (event: string, handler: Handler) => subscribe(id, event, handler),
       emit: (event: string, payload?: unknown) => dispatch(id, event, payload),

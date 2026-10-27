@@ -9,6 +9,9 @@
  * （例如 path 为 '/list' 时实际响应 /api/plugins/list）。
  * 本节点不修改既有启动入口文件。
  */
+import { join } from 'node:path'
+import { errorAt, info as logInfo, warnAt } from '../core/log.ts'
+import { getPluginConfig, removePluginConfig, setPluginConfig } from '../plugins/settings.ts'
 import { createHost } from '../plugins/host.ts'
 import { checkUpdates, installPlugin, setEnabled, uninstallPlugin } from '../plugins/installer.ts'
 import { scanPlugins } from '../plugins/registry.ts'
@@ -33,6 +36,8 @@ type PluginListItem = {
   description: string
   enabled: boolean
   loaded: boolean
+  /** 这个插件在 persona/plugins.yaml 里的配置（没有就是空对象） */
+  config: Record<string, unknown>
 }
 
 /** 把任意异常转成可读文本 */
@@ -77,10 +82,26 @@ export function createPluginService(options: {
   pluginsRoot: string
   dataRoot: string
   host?: ReturnType<typeof createHost>
+  /** 插件配置文件。默认 persona/plugins.yaml */
+  settingsFile?: string
 }) {
   const pluginsRoot = options.pluginsRoot
   const dataRoot = options.dataRoot
-  const host = options.host ?? createHost({ pluginsRoot, dataRoot })
+  const settingsFile = options.settingsFile ?? join('persona', 'plugins.yaml')
+  const host =
+    options.host ??
+    createHost({
+      pluginsRoot,
+      dataRoot,
+      settingsFile,
+      // 插件里 ctx.log() 打到业务日志（data/logs/*.jsonl），
+      // 不然只会落在进程控制台，用户在控制台里看不到。
+      logger: (level, message) => {
+        if (level === 'error') errorAt(message, { where: 'plugin' })
+        else if (level === 'warn') warnAt(message, { where: 'plugin' })
+        else logInfo(message)
+      },
+    })
 
   /** 查一个插件当前是否已在宿主内存中加载 */
   function isLoaded(id: string): boolean {
@@ -107,6 +128,7 @@ export function createPluginService(options: {
           description: plugin.manifest.description ?? '',
           enabled: plugin.enabled,
           loaded: loadedIds.has(plugin.manifest.id),
+          config: getPluginConfig(settingsFile, plugin.manifest.id),
         }))
 
         return { ok: true, data: { plugins: list } }
@@ -164,6 +186,15 @@ export function createPluginService(options: {
           ...(purgeData === undefined ? {} : { purgeData }),
         })
         if (!result.ok) return { ok: false, error: result.error ?? '卸载失败' }
+
+        // 顺手清掉它在 persona/plugins.yaml 里的配置，
+        // 否则以后装一个同 id 的插件会读到上一任留下的配置。
+        try {
+          removePluginConfig(settingsFile, id)
+        } catch {
+          /* 配置清理失败不影响卸载本身 */
+        }
+
         return { ok: true, data: { id } }
       }),
     },
@@ -190,6 +221,23 @@ export function createPluginService(options: {
         const result = await setEnabled({ id, pluginsRoot, enabled })
         if (!result.ok) return { ok: false, error: result.error ?? '切换启用状态失败' }
         return { ok: true, data: { id, enabled } }
+      }),
+    },
+    {
+      method: 'POST',
+      path: '/config',
+      handler: safeHandler(async (body) => {
+        if (!isRecord(body)) return invalidBody('body')
+
+        const id = body['id']
+        if (typeof id !== 'string' || id.length === 0) return invalidBody('id')
+
+        const config = body['config']
+        if (!isRecord(config)) return invalidBody('config（要传对象）')
+
+        // 只写配置，不动插件文件；改完要 reload 才会被插件读到
+        setPluginConfig(settingsFile, id, config)
+        return { ok: true, data: { id, config, note: '重载插件后生效' } }
       }),
     },
     {
