@@ -169,6 +169,13 @@ export interface Rules {
   NapCat: {
     /** 是否记录 NapCat 的原始控制台日志。默认 false。 */
     记录日志: boolean
+    /**
+     * NapCat 的安装目录（那个 <版本>.Shell 目录）。
+     *
+     * 留空 = 自动探测常见位置（C:/NapCat、D:/NapCat、E:/NapCat、用户目录下的 NapCat）。
+     * 自动探测找不到时，在控制台「日志 → NapCat」里手动填。
+     */
+    Shell目录: string
   }
   /**
    * 电脑操作（看屏幕 / 点鼠标 / 打字）。
@@ -288,8 +295,9 @@ export const DEFAULTS: Rules = {
   },
   NapCat: {
     // 默认 false：启动完全无窗口，状态和二维码都在控制台里。
-    // 打开后走 启动NapCat.cmd（任务栏一个最小化窗口），能拿到原始日志。
     记录日志: false,
+    // 留空 = 自动探测常见位置
+    Shell目录: '',
   },
   电脑操作: {
     enabled: false,
