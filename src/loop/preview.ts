@@ -16,6 +16,13 @@ export interface PreviewOptions {
   llm: LlmOptions
   /** 用谁的身份说话 */
   accountId: string
+  /**
+   * 之前聊过的轮次（只用于试聊）。
+   *
+   * 不加这个的话，每句话都是独立单轮 —— 问完"你能看屏幕吗"，再说
+   * "那你刷个视频"，它根本不记得上一句，回答会显得割裂。
+   */
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>
 }
 
 export interface PreviewResult {
@@ -64,6 +71,12 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
   const res = await chat(
     [
       { role: 'system', content: system },
+      // 历史必须排在当前这句前面，而且只取最近几轮 ——
+      // 试聊场景不用太长，太多反而把当前问题淹了。
+      ...(opts.history ?? []).slice(-12).map((h) => ({
+        role: h.role,
+        content: h.text,
+      })),
       { role: 'user', content: text },
     ],
     opts.llm,

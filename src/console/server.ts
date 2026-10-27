@@ -1328,14 +1328,31 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       if (req.method === 'POST' && path === '/api/try') {
         if (!opts.llm) throw new Error('没有模型配置')
         const body = await readBody(req)
-        const data = JSON.parse(body || '{}') as { text?: string }
+        const data = JSON.parse(body || '{}') as {
+          text?: string
+          history?: Array<{ role?: string; text?: string }>
+        }
         const text = (data.text ?? '').trim()
         if (!text) throw new Error('说点什么')
-        const account = primaryAccount(personId)
+
+        // 谁来试聊：URL 里没带 person 时，别用 qq-console（那个档案不存在，
+        // 记忆全都取不到，界面上就是「注入 0/0/0/0」）。退回第一个真人。
+        let who = personId
+        if (!isValidPersonId(who) || who === 'qq-console') {
+          const first = listPeople()[0]
+          if (first) who = first.id
+        }
+
+        const history = (data.history ?? [])
+          .filter((h) => (h.role === 'user' || h.role === 'assistant') && typeof h.text === 'string')
+          .map((h) => ({ role: h.role as 'user' | 'assistant', text: String(h.text) }))
+
+        const account = primaryAccount(who)
         const result = await previewReply(text, {
           rules: opts.getRules(),
           llm: opts.llm,
           accountId: account,
+          history,
         })
         json(res, 200, result)
         return

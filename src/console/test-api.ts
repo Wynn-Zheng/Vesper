@@ -36,6 +36,22 @@ export async function handleTestApi(
     return true
   }
 
+  /* ============ 装 ai-desktop（截图/看窗口的后端） ============ */
+  //
+  // 它是个 Python 包，pip 就能装。做成异步：pip 要几十秒，同步会超时。
+  if (method === 'POST' && path === '/api/test/install-ai-desktop') {
+    const { startInstallAiDesktop } = await import('./tool-install.ts')
+    const r = await startInstallAiDesktop()
+    json(res, r.ok ? 200 : 400, r)
+    return true
+  }
+
+  if (method === 'GET' && path === '/api/test/install-ai-desktop/status') {
+    const { installStatus } = await import('./tool-install.ts')
+    json(res, 200, installStatus())
+    return true
+  }
+
   /* ============ 测一个工具 ============ */
   if (method === 'POST' && path === '/api/test/tool') {
     const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; args?: Record<string, unknown> }

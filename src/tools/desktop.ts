@@ -16,7 +16,7 @@
  *   - 只对主人开放（调用方在外面查过才放进这层）
  *   - 只读命令（截图/窗口列表）直接给；改状态的（点击/打字）由调用方决定要不要确认
  */
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { loadRules } from '../core/config.ts'
@@ -34,19 +34,34 @@ function ok(o: Record<string, unknown>): string {
 /**
  * ai-desktop.exe 的位置。找不到返回 ''（调用方给明确错误，而不是 spawn ENOENT）。
  *
- * 这是外部 Python 包（pip install ai-desktop），打包版不会自带 ——
- * 换台机器就得重新装，所以这里不做"猜不到就用 PATH"的兜底。
+ * 这是外部 Python 包（pip install ai-desktop），打包版不会自带。
+ * 三条路找一个：
+ *   1. 环境变量 AI_DESKTOP_EXE（最可靠，自己指定）
+ *   2. %LOCALAPPDATA%\Programs\Python\Python3xx\Scripts\（默认安装位置）
+ *   3. PATH 里的（conda / 系统 Python / 手动加过 PATH）
  */
 function exePath(): string {
   const fromEnv = process.env['AI_DESKTOP_EXE']
   if (fromEnv && existsSync(fromEnv)) return fromEnv
 
-  // Python 装在用户目录时 Scripts 在这儿。3.10~3.13 都试一遍。
   const local = process.env['LOCALAPPDATA'] ?? ''
   const guess = [313, 312, 311, 310].map(
     (v) => `${local}\\Programs\\Python\\Python${v}\\Scripts\\ai-desktop.exe`,
   )
   for (const p of guess) if (existsSync(p)) return p
+
+  // PATH 里找：where 是 Windows 自带命令，不会抛异常打断
+  try {
+    const out = execFileSync('where', ['ai-desktop'], { encoding: 'utf8', windowsHide: true, timeout: 4000 })
+    const first = out
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .find(Boolean)
+    if (first && existsSync(first)) return first
+  } catch {
+    /* where 找不到会退出码 1，正常 */
+  }
+
   return ''
 }
 

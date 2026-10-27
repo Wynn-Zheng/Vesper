@@ -73,7 +73,55 @@
     }
   }
 
-  async function testAllTools() {
+  /**
+ * 装 ai-desktop（截图/看窗口/操作电脑的后端）。
+ *
+ * 它是 Python 包，后端用 pip 装，这里轮询进度 —— pip 要几十秒，
+ * 不能让用户对着一个不动的按钮干等。
+ */
+async function installAiDesktop() {
+  const hint = document.getElementById('tt-install-hint')
+  const say = (msg, color) => {
+    if (!hint) return
+    hint.style.display = ''
+    hint.textContent = msg
+    hint.style.color = color || '#8b949e'
+  }
+
+  say('正在找 Python…')
+  try {
+    const r = await sendJson('/api/test/install-ai-desktop', {})
+    if (!r.ok) return say('启动失败：' + (r.error || '?'), '#f85149')
+  } catch (e) {
+    return say('启动失败：' + e.message, '#f85149')
+  }
+
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1500))
+    let s
+    try {
+      s = await api('/api/test/install-ai-desktop/status')
+    } catch {
+      continue
+    }
+    if (!s) continue
+    if (s.state === 'running') {
+      say(s.message || '装中…')
+      continue
+    }
+    if (s.state === 'done') {
+      say(s.message + '（重启程序后生效）', '#3fb950')
+      if (typeof loadToolTests === 'function') loadToolTests()
+      return
+    }
+    if (s.state === 'error') {
+      say(s.error || s.message || '装失败', '#f85149')
+      return
+    }
+  }
+}
+
+async function testAllTools() {
     const btns = [...document.querySelectorAll('#tt-list button')]
     for (const b of btns) {
       if (!b.disabled) {

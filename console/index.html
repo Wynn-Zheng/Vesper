@@ -887,7 +887,9 @@
           <span class="hint">每个工具单独跑一次，看能不能用</span>
           <button class="mini-btn" onclick="loadToolTests()">刷新</button>
           <button class="mini-btn" onclick="testAllTools()">全部测一遍</button>
+          <button class="mini-btn" onclick="installAiDesktop()">装 ai-desktop</button>
         </div>
+      <div class="hint" id="tt-install-hint" style="margin-top:8px;font-size:11.5px;line-height:1.7;display:none"></div>
       </div>
       <div class="card"><div id="tt-list"></div></div>
     </section>
@@ -3635,6 +3637,12 @@ async function saveAccessPolicy() {
 for (const { key } of ACC_KEYS) bindAccInput(key)
 
 // ---------- 试聊 ----------
+/**
+ * 试聊的历史。之前每次只发当前这一句，导致问完"能看屏幕吗"再说"刷个视频"
+ * 它完全不记得上一句，回答显得割裂。现在按角色攒着，每次一起发给后端。
+ */
+let TRY_HISTORY = []
+
 function tryBubble(role, text) {
   const log = $('try-log')
   const empty = $('try-empty')
@@ -3660,9 +3668,12 @@ async function doTry() {
     const r = await api('/api/try', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, history: TRY_HISTORY }),
     })
     b.querySelector('.bubble-text').textContent = r.reply
+    // 记住这一轮（只留最近 20 条，别无限涨）
+    TRY_HISTORY.push({ role: 'user', text }, { role: 'assistant', text: r.reply })
+    if (TRY_HISTORY.length > 20) TRY_HISTORY = TRY_HISTORY.slice(-20)
     $('ts-inject').textContent = `${r.stats.facts}/${r.stats.episodes}/${r.stats.insights}/${r.stats.open}`
     $('ts-size').textContent = `${r.stats.systemChars} 字`
     $('ts-token').textContent = r.usage ? r.usage.total : '—'
