@@ -9,6 +9,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
+/** 纯文本响应（二维码 404 之类用） */
+function text(res: ServerResponse, code: number, body: string): void {
+  res.writeHead(code, { 'content-type': 'text/plain; charset=utf-8' })
+  res.end(body)
+}
+
 /** NapCat WebUI 的 API 根（不带路径） */
 const NAPCAT_WEBUI = 'http://127.0.0.1:6099'
 /** WebUI 页面地址。注意必须带 /webui/，根路径 / 只是个空壳 */
@@ -36,6 +42,30 @@ export async function handleMiscApi(
       running = false
     }
     json(res, 200, { running, webui: NAPCAT_WEBUI, webuiPage: NAPCAT_WEBUI_PAGE })
+    return true
+  }
+
+  /* ============ NapCat 二维码图片 ============ */
+  // NapCat 自己会把二维码存成 <napcat>/cache/qrcode.png（启动脚本里也是这么用的）。
+  // 直接读它就行，不用拿 qrcodeurl 自己画。
+  if (method === 'GET' && path === '/api/napcat/qrcode.png') {
+    const f = findQrcodeFile()
+    if (!f) {
+      text(res, 404, '没有二维码文件')
+      return true
+    }
+    try {
+      const buf = readFileSync(f)
+      res.writeHead(200, {
+        'content-type': 'image/png',
+        'content-length': String(buf.length),
+        // 关键：不许缓存。二维码会变，缓存了扫不动
+        'cache-control': 'no-store, no-cache, must-revalidate',
+      })
+      res.end(buf)
+    } catch {
+      text(res, 500, '读不了二维码文件')
+    }
     return true
   }
 
@@ -171,10 +201,10 @@ async function napcatLoginStatus(): Promise<{
   reason?: string
   isLogin?: boolean
   phase?: string
-  qrcodeurl?: string
   account?: string
   nick?: string
   webui?: string
+  hasQrcode?: boolean
 }> {
   const cfgPath = findWebuiConfig()
   if (!cfgPath) return { available: false, reason: '找不到 NapCat 的 webui.json' }
@@ -188,20 +218,11 @@ async function napcatLoginStatus(): Promise<{
   }
   if (!token) return { available: false, reason: 'webui.json 里没有 token' }
 
-  const hash = createHash('sha256').update(token + '.napcat').digest('hex')
+  const got = await getCredential(token)
+  if (!got.cred) return { available: false, reason: got.error ?? '登录 NapCat 失败' }
 
   try {
-    const lr = await fetch(NAPCAT_WEBUI + '/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ hash }),
-      signal: AbortSignal.timeout(3000),
-    })
-    const lj = (await lr.json()) as { code?: number; data?: { Credential?: string } }
-    const cred = lj.data?.Credential
-    if (!cred) return { available: false, reason: '登录 NapCat 失败（token 可能变了）' }
-
-    const H = { 'content-type': 'application/json', Authorization: 'Bearer ' + cred }
+    const H = { 'content-type': 'application/json', Authorization: 'Bearer ' + got.cred }
 
     const sr = await fetch(NAPCAT_WEBUI + '/api/QQLogin/CheckLoginStatus', {
       method: 'POST',
@@ -214,7 +235,6 @@ async function napcatLoginStatus(): Promise<{
       data?: {
         isLogin?: boolean
         loginPhase?: string
-        qrcodeurl?: string
         isOffline?: boolean
       }
     }
@@ -239,17 +259,67 @@ async function napcatLoginStatus(): Promise<{
       }
     }
 
+    const qrFile = findQrcodeFile()
     return {
       available: true,
       isLogin: d.isLogin === true,
+      // 有图才显示；图可能过期（NapCat 登录后不一定删），
+      // 所以前端只在未登录时才用它
+      hasQrcode: Boolean(qrFile),
       webui: NAPCAT_WEBUI_PAGE,
       phase: d.loginPhase ?? '',
-      qrcodeurl: d.qrcodeurl ?? '',
       account,
       nick,
     }
   } catch (e) {
     return { available: false, reason: String(e).slice(0, 120) }
+  }
+}
+
+/**
+ * NapCat 的 Credential 缓存。
+ *
+ * 为什么必须缓存：NapCat 的 webui.json 里有 loginRate（默认 10 次/分钟）。
+ * 之前每次查状态都登录一次，前端 3 秒轮询 → 十几秒就超限，
+ * 表现为"突然查不到登录状态了"（login rate limit）。
+ *
+ * Credential 本身是 JWT，10 分钟换一次足够。
+ */
+let cachedCred = ''
+let cachedAt = 0
+const CRED_TTL = 10 * 60_000
+
+/**
+ * 拿一个能用的 Credential。
+ * 有缓存就用缓存；缓存过期或没有才真登录一次。
+ */
+async function getCredential(token: string): Promise<{ cred: string; error?: string }> {
+  if (cachedCred && Date.now() - cachedAt < CRED_TTL) return { cred: cachedCred }
+
+  const hash = createHash('sha256').update(token + '.napcat').digest('hex')
+  try {
+    const r = await fetch(NAPCAT_WEBUI + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hash }),
+      signal: AbortSignal.timeout(3000),
+    })
+    const j = (await r.json()) as { code?: number; message?: string; data?: { Credential?: string } }
+    const cred = j.data?.Credential
+    if (cred) {
+      cachedCred = cred
+      cachedAt = Date.now()
+      return { cred }
+    }
+    // 限流的话，如果手里还有旧的就先用旧的（总比没有强）
+    if (j.message?.includes('rate limit')) {
+      if (cachedCred) return { cred: cachedCred }
+      return { cred: '', error: 'NapCat 登录被限流了（loginRate），等一分钟再试' }
+    }
+    return { cred: '', error: '登录 NapCat 失败：' + (j.message ?? '没拿到 Credential') }
+  } catch (e) {
+    if (cachedCred) return { cred: cachedCred }
+    return { cred: '', error: String(e).slice(0, 100) }
   }
 }
 
@@ -268,6 +338,22 @@ function findWebuiConfig(): string | null {
     if (existsSync(base)) {
       for (const ver of readdirSync(base)) {
         const p = `${base}/${ver}/resources/app/napcat/config/webui.json`
+        if (existsSync(p)) return p
+      }
+    }
+  } catch {
+    /* 忽略 */
+  }
+  return null
+}
+
+/** 找 NapCat 存的二维码图片。启动脚本里用的是 <napcat>/cache/qrcode.png */
+function findQrcodeFile(): string | null {
+  const base = 'E:/NapCat/NapCat.52230.Shell/versions'
+  try {
+    if (existsSync(base)) {
+      for (const ver of readdirSync(base)) {
+        const p = `${base}/${ver}/resources/app/napcat/cache/qrcode.png`
         if (existsSync(p)) return p
       }
     }

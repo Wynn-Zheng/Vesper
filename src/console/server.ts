@@ -478,10 +478,21 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 也没法把 token 拼进 src（那是硬编码，刷新就失效）。
     // 这些文件是纯前端代码，不含数据；真正拿数据还得过 /api/* 的 token。
     // 只允许 console/ 下的 .js/.css，路径里不许有 ..，其余一律 404。
+    //
+    // 二维码图片也在这里放行：`<img src>` 同样带不了 header。
+    // 它只在**未登录**时存在，而且服务只听 127.0.0.1，没有额外暴露面。
     if (
       (req.method === 'GET' && /^\/(?:vendor\/)?[\w.-]+\.(js|css)$/.test(path)) ||
+      (req.method === 'GET' && path === '/api/napcat/qrcode.png') ||
       (req.method === 'GET' && (path === '/' || path === '/index.html'))
     ) {
+      // 二维码交给 misc-api（它知道 NapCat 装在哪）
+      if (path === '/api/napcat/qrcode.png') {
+        if (await handleMiscApi(req, res, path, url, json)) return
+        text(res, 404, '没有二维码')
+        return
+      }
+
       const rel = path === '/' || path === '/index.html' ? 'index.html' : path.slice(1)
       const full = resolve('console', rel)
       if (!full.startsWith(resolve('console')) || !existsSync(full)) {

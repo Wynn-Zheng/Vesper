@@ -45,7 +45,7 @@
         // 未登录 → 显示面板 + 二维码
         renderInfo(d, false)
         showPanel()
-        renderQrcode(d.qrcodeurl)
+        renderQrcode()
         const tag = document.getElementById('nc-state')
         if (tag) {
           tag.textContent = '待扫码'
@@ -155,53 +155,20 @@
   /* ============================================================
    * 二维码
    * ============================================================ */
-  function renderQrcode(url) {
+  /**
+   * 显示二维码。
+   *
+   * 用 NapCat 自己存的 cache/qrcode.png，不自己画。
+   * 加时间戳防止浏览器缓存旧图（二维码变了扫不出来）。
+   */
+  function renderQrcode() {
     const box = document.getElementById('nc-qr')
     if (!box) return
 
-    if (!url) {
-      box.innerHTML = '<div class="hint" style="text-align:center;padding:20px">还没生成二维码<br>点下面的「刷新」试试</div>'
-      return
-    }
-
-    // qrcode-generator 的全局名是 qrcode
-    if (typeof window.qrcode !== 'function') {
-      box.innerHTML =
-        '<div class="hint" style="padding:10px;font-size:11px">二维码库没加载上（/vendor/qrcode.js 404？）<br><br>' +
-        esc(url) +
-        '</div>'
-      return
-    }
-
-    try {
-      // 类型 0 = 自动选版本，'M' = 中等纠错（扫码够用）
-      const qr = window.qrcode(0, 'M')
-      qr.addData(url)
-      qr.make()
-
-      const n = qr.getModuleCount()
-      const cell = 5
-      const pad = 8
-      const size = n * cell + pad * 2
-
-      // 画成 SVG（矢量，任何缩放都清晰，不用 canvas）
-      let path = ''
-      for (let r = 0; r < n; r++) {
-        for (let c = 0; c < n; c++) {
-          if (qr.isDark(r, c)) {
-            path += `M${pad + c * cell} ${pad + r * cell}h${cell}v${cell}h-${cell}z`
-          }
-        }
-      }
-
-      box.innerHTML = `
-        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block;background:#fff;border-radius:8px">
-          <rect width="${size}" height="${size}" fill="#fff"/>
-          <path d="${path}" fill="#000"/>
-        </svg>`
-    } catch (e) {
-      box.innerHTML = '<div class="hint" style="padding:10px;font-size:11px">二维码生成失败：' + esc(e.message) + '</div>'
-    }
+    box.innerHTML =
+      '<img src="/api/napcat/qrcode.png?_=' +
+      Date.now() +
+      '" alt="二维码" style="width:200px;height:200px;border-radius:8px;background:#fff;padding:6px;object-fit:contain" onerror="this.parentNode.innerHTML=\'<div class=&quot;hint&quot; style=&quot;padding:20px;text-align:center;font-size:12px&quot;>还没有二维码<br>NapCat 生成后会自动出现</div>\'">'
   }
 
   /* ============================================================
