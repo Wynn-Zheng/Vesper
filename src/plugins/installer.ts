@@ -243,7 +243,11 @@ export async function checkUpdates(options: {
     try {
       raw = JSON.parse(await readFile(indexFile, 'utf8'))
     } catch (err) {
-      indexError = `读取或解析索引文件失败：${errorMessage(err)}`
+      const msg = errorMessage(err)
+      // ENOENT 是"还没建索引"，不是出错 —— 给一句人话，别甩 node 的报错
+      indexError = msg.includes('ENOENT')
+        ? '还没有 plugins/index.json。有这个文件才能对比版本；没有也不影响插件本身，只是检查不了更新。'
+        : `plugins/index.json 解析失败：${msg}`
     }
 
     // 索引里 id -> version 的映射；非法条目直接跳过
