@@ -34,6 +34,43 @@
       ).style.marginTop = '6px'
       box.appendChild(c1)
 
+      // 日志保留天数
+      const cLog = el('div', 'card')
+      cLog.style.marginTop = '12px'
+      cLog.appendChild(el('div', 'op-t', '日志保留'))
+      cLog.appendChild(
+        el('div', 'hint', '运行日志（它自己在干什么的记录）留多少天。每天约 500KB。'),
+      ).style.marginTop = '6px'
+
+      const logRow = el('div')
+      logRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:8px'
+      const logInput = el('input')
+      logInput.type = 'number'
+      logInput.min = '1'
+      logInput.max = '3650'
+      logInput.style.cssText =
+        'width:90px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 8px;font-size:12.5px;color:inherit'
+      const cur = await api('/api/settings/log-retention').catch(() => ({ 保留天数: 30 }))
+      logInput.value = String(cur.保留天数 ?? 30)
+      const logSave = el('button', 'mini-btn', '保存')
+      logSave.onclick = async () => {
+        try {
+          const r = await sendJson(
+            '/api/settings/log-retention',
+            { 保留天数: Number(logInput.value) },
+            'PUT',
+          )
+          toast('已保存' + (r.note ? '，' + r.note : ''))
+        } catch (e) {
+          alert('改不了：' + e.message)
+        }
+      }
+      logRow.appendChild(logInput)
+      logRow.appendChild(el('span', 'hint', '天'))
+      logRow.appendChild(logSave)
+      cLog.appendChild(logRow)
+      box.appendChild(cLog)
+
       // 磁盘占用
       const c2 = el('div', 'card')
       c2.style.marginTop = '12px'

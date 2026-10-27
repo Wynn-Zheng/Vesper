@@ -5,7 +5,7 @@
  *   misc-api     → NapCat 状态、余额（仪表盘在用）
  *   这个文件      → 数据目录、磁盘、备份、模型配置、版本（设置页在用）
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
@@ -56,6 +56,40 @@ export async function handleSettingsApi(
   const method = req.method ?? 'GET'
 
   /* ============ 数据：目录 / 磁盘 / 备份 ============ */
+  /* ============ 日志保留天数 ============ */
+  if (method === 'GET' && path === '/api/settings/log-retention') {
+    try {
+      const { loadRules } = await import('../core/config.ts')
+      json(res, 200, { 保留天数: loadRules().rules.日志?.保留天数 ?? 30 })
+    } catch (e) {
+      json(res, 200, { 保留天数: 30, error: String(e).slice(0, 100) })
+    }
+    return true
+  }
+
+  if (method === 'PUT' && path === '/api/settings/log-retention') {
+    const chunks: Buffer[] = []
+    for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { 保留天数?: number }
+    const days = Math.round(Number(body.保留天数))
+
+    if (!Number.isFinite(days) || days < 1 || days > 3650) {
+      json(res, 400, { error: '保留天数要在 1 ~ 3650 之间' })
+      return true
+    }
+
+    const { setConfigPath } = await import('./config-write.ts')
+    const raw = readFileSync('persona/rules.yaml', 'utf8')
+    const r = setConfigPath(raw, '日志.保留天数', days)
+    if (!r.ok) {
+      json(res, 400, { error: r.error ?? '改不了' })
+      return true
+    }
+    writeFileSync('persona/rules.yaml', r.text, 'utf8')
+    json(res, 200, { ok: true, 保留天数: days, note: '下次启动时生效' })
+    return true
+  }
+
   if (method === 'GET' && path === '/api/settings/data') {
     const cwd = process.cwd()
 

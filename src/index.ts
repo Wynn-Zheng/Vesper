@@ -236,8 +236,10 @@ startRateLimitSweeper()
 info('关系降温与限流清理已启动')
 
 // 内存和磁盘的定期清理：跑一个月也不会无限涨
-const prunedLogs = pruneLogs(90)
-if (prunedLogs) info(`清理了 ${prunedLogs} 个过期日志文件`)
+// 日志保留天数从配置读（默认 30，在 rules.yaml 的 日志.保留天数）
+const keepDays = rules.日志?.保留天数 ?? 30
+const prunedLogs = pruneLogs(Number.isFinite(keepDays) && keepDays > 0 ? keepDays : 30)
+if (prunedLogs) info(`清理了 ${prunedLogs} 个过期日志文件（保留 ${keepDays} 天）`)
 setInterval(() => {
   const n = pruneSessions()
   if (n) info(`清理了 ${n} 个不活跃会话`)

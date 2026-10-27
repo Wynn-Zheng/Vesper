@@ -211,29 +211,23 @@ export async function handleMiscApi(
     }
 
     try {
-      // 让 PowerShell 自己读。
+      // 直接读，和运行日志（/api/logs/recent）一样的写法。
       //
-      // 为什么不用 readFileSync + 自己解码：日志是 PowerShell 的 Tee-Object
-      // 写的 UTF-16LE，我在 Node 里按 BOM 判断再 toString('utf16le')，
-      // 试了几轮读出来都是"ㅛ㨷ㄴ〺"这种乱码（可能是字节序/对齐的问题）。
-      // PowerShell 天然认识自己写的格式，直接让它读、输出 UTF-8 最省事。
-      const { execFile } = await import('node:child_process')
-      const text = await new Promise<string>((resolve, reject) => {
-        execFile(
-          'powershell',
-          [
-            '-NoProfile',
-            '-Command',
-            // -Tail 取最后 N 行。
-            // -Encoding UTF8 是必须的：这个文件是我们自己用 appendFileSync('utf8')
-            // 写的，但 Get-Content 默认按系统 ANSI（中文环境是 GBK）读，
-            // 不指定的话中文会变成"鍚姩鑴氭湰"这种。
-            `Get-Content -LiteralPath '${f.replace(/'/g, "''")}' -Tail ${limit} -Encoding UTF8 | Out-String`,
-          ],
-          { maxBuffer: 4 * 1024 * 1024 },
-          (err, stdout) => (err ? reject(err) : resolve(stdout)),
-        )
-      })
+      // 为什么现在能直接读：以前这个文件是 .cmd 里 PowerShell 的 Tee-Object 写的
+      // （UTF-16LE），readFileSync(f,'utf8') 读出来全是乱码，只能让 PowerShell 自己读。
+      // 现在 manager.ts 捕获子进程 stdout 后自己 appendFileSync('utf8')，
+      // 文件已经是纯 UTF-8，直接读即可。
+      //
+      // 下面按 BOM 判断是为了兼容老版 .cmd 留下的 UTF-16LE 文件。
+      const buf = readFileSync(f)
+      let text: string
+      if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+        text = buf.subarray(2).toString('utf16le')
+      } else if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+        text = buf.subarray(3).toString('utf8')
+      } else {
+        text = buf.toString('utf8')
+      }
 
       // 去掉 ANSI 颜色码（NapCat 输出里有 \u001b[33m 这种）
       const cleaned = text.replace(/\u001b\[[0-9;]*m/g, '')
