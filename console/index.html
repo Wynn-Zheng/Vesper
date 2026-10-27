@@ -67,7 +67,38 @@
   .panel .body{padding:14px 16px}
   .bar{height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin:8px 0 6px}
   .bar i{display:block;height:100%;background:linear-gradient(90deg,#a0325f,#f778ba)}
-  .log{font:12.5px/1.85 ui-monospace,Consolas,monospace;max-height:calc(100vh - 190px);overflow-y:auto}
+  /* ===== 仪表盘 ===== */
+.dash-hero{display:grid;grid-template-columns:minmax(260px,1.35fr) 1fr;gap:12px;margin-bottom:14px}
+@media (max-width:840px){.dash-hero{grid-template-columns:1fr}}
+.dash-main::after{content:'';position:absolute;right:-50px;top:-60px;width:210px;height:210px;pointer-events:none;
+  background:radial-gradient(circle,rgba(56,139,253,.16),rgba(56,139,253,0) 68%)}
+.dash-main>*{position:relative;z-index:1}
+.dash-main{position:relative;overflow:hidden;border-radius:12px;padding:16px 18px 14px;display:flex;flex-direction:column;
+  background:linear-gradient(155deg,rgba(56,139,253,.13),rgba(56,139,253,.035) 52%,rgba(56,139,253,0));
+  border:1px solid rgba(56,139,253,.20)}
+.dash-label{font-size:11.5px;color:var(--dim);letter-spacing:.05em}
+.dash-value{font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1.05;margin-top:4px}
+.dash-delta{font-size:11.5px;color:var(--dim2);margin-top:2px}
+.dash-spark{display:block;margin-top:6px}
+.dash-foot{margin-top:auto;padding-top:10px;border-top:1px solid rgba(56,139,253,.14);font-size:11px;color:var(--dim2);display:flex;gap:14px;flex-wrap:wrap}
+.dash-foot b{color:var(--dim);font-weight:600;font-variant-numeric:tabular-nums}
+.dash-side{display:grid;grid-template-rows:repeat(3,1fr);gap:10px}
+.dash-mini{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 13px;display:flex;flex-direction:column;justify-content:center;min-height:0}
+.dash-mini .k{font-size:11px;color:var(--dim);letter-spacing:.04em}
+.dash-mini .v{font-size:16.5px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:1px;line-height:1.25}
+.dash-mini .s{font-size:10.5px;color:var(--dim2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-chart-card{margin-bottom:14px}
+.dash-chart-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.dash-health summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;font-size:14px}
+.dash-health summary::-webkit-details-marker{display:none}
+.dash-health summary::after{content:'';margin-left:auto;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--dim2);transition:transform .15s}
+.dash-health[open] summary::after{transform:rotate(180deg)}
+.dash-health summary:hover .op-t{color:var(--fg)}
+.dash-act{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.035)}
+.dash-act:last-child{border-bottom:0}
+.dash-act-t{font-size:11px;color:var(--dim2);flex-shrink:0;font-variant-numeric:tabular-nums;padding-top:1px}
+.dash-act-m{font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;padding-top:1px}
+.log{font:12.5px/1.85 ui-monospace,Consolas,monospace;max-height:calc(100vh - 190px);overflow-y:auto}
   .log div{display:flex;gap:10px;padding:1px 0}
   .log .ts{color:var(--dim2);flex-shrink:0}
   .log .lvl{flex-shrink:0;width:44px}
@@ -545,16 +576,34 @@
     </section>
 
     <section class="view on" id="v-dashboard">
-      <div class="cards" id="dash-cards" style="margin-bottom:16px"></div>
+      <!-- 主指标 + 三个陪衬。刻意做成不同大小 —— 八个一样大的卡片会让
+           眼睛不知道先看哪，视觉上就是"没设计"。 -->
+      <div class="dash-hero">
+        <div class="dash-main" id="dash-main"></div>
+        <div class="dash-side" id="dash-side"></div>
+      </div>
 
-      <div class="card" style="margin-bottom:16px">
-        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <b style="font-size:15px">体检</b>
+      <!-- 7 天趋势 -->
+      <div class="card dash-chart-card">
+        <div class="dash-chart-head">
+          <span class="op-t">最近 7 天</span>
+          <span class="hint" id="dash-chart-hint"></span>
+        </div>
+        <div id="dash-chart"></div>
+      </div>
+
+      <!-- 体检：正常时折叠成一行，有问题才值得展开看 -->
+      <details class="card dash-health" id="dash-health-box">
+        <summary>
+          <span class="op-t">体检</span>
           <span id="dash-health-tag" class="tag">—</span>
+          <span class="hint" id="dash-health-sum"></span>
+        </summary>
+        <div id="dash-health" style="margin-top:10px"></div>
+        <div style="margin-top:10px">
           <button class="mini-btn" onclick="loadDashboard()">重新体检</button>
         </div>
-        <div id="dash-health" style="margin-top:10px"></div>
-      </div>
+      </details>
 
       <div class="card">
         <div class="op-t" style="margin-bottom:8px">最近活动</div>
@@ -2428,56 +2477,328 @@ function renderHealth(r, box) {
   }
 }
 
+/**
+ * 小折线图（sparkline）。
+ *
+ * 32-40px 高的 polyline + 底下渐变的面积填充 —— 卡片里放这么一条，
+ * 比多写一个数字能多传达"最近在涨还是在跌"。
+ */
+function sparklineEl(vals, w = 200, h = 34) {
+  const svgNS = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(svgNS, 'svg')
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  svg.setAttribute('width', '100%')
+  svg.setAttribute('height', String(h))
+  svg.setAttribute('preserveAspectRatio', 'none')
+  svg.setAttribute('class', 'dash-spark')
+
+  const n = vals.length
+  if (!n) return svg
+
+  const max = Math.max(1, ...vals)
+  const pad = 3
+  const dx = n > 1 ? (w - pad * 2) / (n - 1) : 0
+  const pt = (i) => {
+    const x = pad + i * dx
+    const y = h - pad - (vals[i] / max) * (h - pad * 2)
+    return [x, y]
+  }
+
+  // 面积填充
+  const area = document.createElementNS(svgNS, 'path')
+  const pts = vals.map((_, i) => pt(i))
+  let d = `M ${pts[0][0]} ${h}`
+  for (const [x, y] of pts) d += ` L ${x.toFixed(2)} ${y.toFixed(2)}`
+  d += ` L ${pts[pts.length - 1][0]} ${h} Z`
+  area.setAttribute('d', d)
+  area.setAttribute('fill', 'rgba(88,166,255,.14)')
+  svg.appendChild(area)
+
+  // 折线
+  const line = document.createElementNS(svgNS, 'polyline')
+  line.setAttribute('points', pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' '))
+  line.setAttribute('fill', 'none')
+  line.setAttribute('stroke', '#58a6ff')
+  line.setAttribute('stroke-width', '1.6')
+  line.setAttribute('stroke-linejoin', 'round')
+  line.setAttribute('stroke-linecap', 'round')
+  line.setAttribute('vector-effect', 'non-scaling-stroke')
+  svg.appendChild(line)
+
+  return svg
+}
+
+/**
+ * 主指标 + 三个陪衬。
+ *
+ * Hero 是"今日消息"—— 它今天说了多少话，是这台机器有没有在干活的直接答案。
+ * 另外三个是花钱、跑了多久、什么心情。
+ */
+function renderDashHero(s, c, t) {
+  const main = $('dash-main')
+  if (!main) return
+  main.innerHTML = ''
+
+  const pts = (t && t.points ? t.points : []).map((p) => Number(p.turns) || 0)
+  const today = Number(s.today?.turns ?? pts[pts.length - 1] ?? 0)
+  const yest = pts.length >= 2 ? pts[pts.length - 2] : null
+
+  main.appendChild(el('div', 'dash-label', '今日消息'))
+  main.appendChild(el('div', 'dash-value', String(today)))
+
+  const d = el('div', 'dash-delta')
+  if (yest === null) d.textContent = '还没有对比数据'
+  else if (yest === 0 && today === 0) d.textContent = '今天还没说话'
+  else if (today === yest) d.textContent = '和昨天一样'
+  else d.textContent = (today > yest ? '比昨天多 ' : '比昨天少 ') + Math.abs(today - yest)
+  main.appendChild(d)
+
+  // 底部一行统计，把主卡撑满（不画 sparkline —— 下面已经有 7 天图了，重复）
+  const total7 = pts.reduce((a, b) => a + b, 0)
+  const foot = el('div', 'dash-foot')
+  const addFoot = (label, val) => {
+    const seg = el('span')
+    seg.appendChild(document.createTextNode(label + ' '))
+    seg.appendChild(el('b', '', val))
+    foot.appendChild(seg)
+  }
+  const mine = Number(s.today?.userMessages ?? 0)
+  addFoot('你发了', String(mine))
+  addFoot('它回了', String(today))
+  addFoot('最近 7 天', String(total7))
+  main.appendChild(foot)
+
+  // ---- 三个陪衬 ----
+  const side = $('dash-side')
+  if (!side) return
+  side.innerHTML = ''
+
+  const items = [
+    {
+      k: '今日花费',
+      v:
+        c && c.today != null
+          ? '¥' + Number(c.today).toFixed(4)
+          : s.cost && s.cost.cny != null
+            ? '¥' + Number(s.cost.cny).toFixed(4)
+            : '—',
+      s: (() => {
+        const parts = []
+        if (s.cost && s.cost.calls != null) parts.push(s.cost.calls + ' 次调用')
+        if (c && c.total != null) parts.push('余额 ¥' + Number(c.total).toFixed(2))
+        return parts.length ? parts.join(' · ') : '读不到账单'
+      })(),
+    },
+    {
+      k: '运行时长',
+      v: fmtDur(s.uptimeSec ?? 0),
+      s: s.connected ? '链路正常' : '链路断开',
+    },
+    {
+      k: '情绪',
+      v: s.mood?.emotion || '平稳',
+      s:
+        typeof s.mood?.intensity === 'number'
+          ? '强度 ' + Math.round(s.mood.intensity * 100) + '%'
+          : '没什么特别的',
+    },
+  ]
+
+  for (const it of items) {
+    const box = el('div', 'dash-mini')
+    box.appendChild(el('div', 'k', it.k))
+    box.appendChild(el('div', 'v', it.v))
+    box.appendChild(el('div', 's', it.s))
+    side.appendChild(box)
+  }
+}
+
+/**
+ * 7 天趋势（面积图）。
+ *
+ * 手写 SVG，不引图表库 —— 这个项目只依赖 ws + yaml，不想为了一个小图破例。
+ */
+function renderDashChart(t) {
+  const box = $('dash-chart')
+  if (!box) return
+  box.innerHTML = ''
+
+  const pts = (t && t.points) || []
+  if (!pts.length) {
+    box.innerHTML = '<div class="hint">还没有数据</div>'
+    return
+  }
+
+  const hint = $('dash-chart-hint')
+  if (hint) {
+    const total = pts.reduce((a, p) => a + (Number(p.turns) || 0), 0)
+    const cost = pts.reduce((a, p) => a + (Number(p.cny) || 0), 0)
+    hint.textContent = `共 ${total} 条 · ¥${cost.toFixed(3)}`
+  }
+
+  const W = 900
+  const H = 150
+  const PADL = 8
+  const PADR = 8
+  const PADT = 12
+  const PADB = 22
+
+  const vals = pts.map((p) => Number(p.turns) || 0)
+  const max = Math.max(1, ...vals)
+  const n = vals.length
+  const dx = n > 1 ? (W - PADL - PADR) / (n - 1) : 0
+  const px = (i) => PADL + i * dx
+  const py = (v) => PADT + (H - PADT - PADB) * (1 - v / max)
+
+  const svgNS = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(svgNS, 'svg')
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
+  svg.setAttribute('width', '100%')
+  svg.setAttribute('height', String(H))
+  svg.setAttribute('preserveAspectRatio', 'none')
+  svg.style.display = 'block'
+
+  // 横向网格线（只要横的）
+  for (let g = 0; g <= 2; g++) {
+    const y = PADT + ((H - PADT - PADB) * g) / 2
+    const ln = document.createElementNS(svgNS, 'line')
+    ln.setAttribute('x1', String(PADL))
+    ln.setAttribute('x2', String(W - PADR))
+    ln.setAttribute('y1', y.toFixed(1))
+    ln.setAttribute('y2', y.toFixed(1))
+    ln.setAttribute('stroke', 'rgba(255,255,255,.055)')
+    ln.setAttribute('stroke-width', '1')
+    ln.setAttribute('vector-effect', 'non-scaling-stroke')
+    svg.appendChild(ln)
+  }
+
+  // 渐变定义
+  const defs = document.createElementNS(svgNS, 'defs')
+  const gid = 'dashGrad'
+  const grad = document.createElementNS(svgNS, 'linearGradient')
+  grad.setAttribute('id', gid)
+  grad.setAttribute('x1', '0')
+  grad.setAttribute('y1', '0')
+  grad.setAttribute('x2', '0')
+  grad.setAttribute('y2', '1')
+  const stop1 = document.createElementNS(svgNS, 'stop')
+  stop1.setAttribute('offset', '0')
+  stop1.setAttribute('stop-color', '#58a6ff')
+  stop1.setAttribute('stop-opacity', '.28')
+  const stop2 = document.createElementNS(svgNS, 'stop')
+  stop2.setAttribute('offset', '1')
+  stop2.setAttribute('stop-color', '#58a6ff')
+  stop2.setAttribute('stop-opacity', '0')
+  grad.appendChild(stop1)
+  grad.appendChild(stop2)
+  defs.appendChild(grad)
+  svg.appendChild(defs)
+
+  // 面积
+  const ptsXY = vals.map((v, i) => [px(i), py(v)])
+  let d = `M ${ptsXY[0][0].toFixed(1)} ${H - PADB}`
+  for (const [x, y] of ptsXY) d += ` L ${x.toFixed(1)} ${y.toFixed(1)}`
+  d += ` L ${ptsXY[n - 1][0].toFixed(1)} ${H - PADB} Z`
+  const area = document.createElementNS(svgNS, 'path')
+  area.setAttribute('d', d)
+  area.setAttribute('fill', `url(#${gid})`)
+  svg.appendChild(area)
+
+  // 折线
+  const line = document.createElementNS(svgNS, 'polyline')
+  line.setAttribute('points', ptsXY.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '))
+  line.setAttribute('fill', 'none')
+  line.setAttribute('stroke', '#58a6ff')
+  line.setAttribute('stroke-width', '1.8')
+  line.setAttribute('stroke-linejoin', 'round')
+  line.setAttribute('stroke-linecap', 'round')
+  line.setAttribute('vector-effect', 'non-scaling-stroke')
+  svg.appendChild(line)
+
+  // 端点圆点去掉了：preserveAspectRatio="none" 会把圆拉成椭圆，看着别扭
+
+  // x 轴标签（日期）
+  for (let i = 0; i < n; i++) {
+    const tx = document.createElementNS(svgNS, 'text')
+    tx.setAttribute('x', String(px(i).toFixed(1)))
+    tx.setAttribute('y', String(H - 6))
+    tx.setAttribute('text-anchor', i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle')
+    tx.setAttribute('fill', 'rgba(139,148,158,.75)')
+    tx.setAttribute('font-size', '10')
+    tx.textContent = String(pts[i].label || '').replace(/^\d+\//, '')
+    svg.appendChild(tx)
+  }
+
+  box.appendChild(svg)
+}
+
+/** 体检摘要：展开前就知道"几项过了几项没过" */
+function renderDashHealthSum(h) {
+  // tag 自己设：renderHealth 里的选择器是 $('health-tag') || $('dash-health-tag')，
+  // 设置页那个 health-tag 优先，所以仪表盘这个一直是初始的 "—"。
+  const st = LEVEL_STYLE[h && h.level] || LEVEL_STYLE.warn
+  const tag = $('dash-health-tag')
+  if (tag && h && h.level) {
+    tag.textContent = st.text
+    tag.style.background = st.color + '22'
+    tag.style.color = st.color
+  }
+
+  const el2 = $('dash-health-sum')
+  if (!el2) return
+  const list = (h && h.items) || []
+  const bad = list.filter((x) => x.level !== 'ok')
+  if (!list.length) el2.textContent = ''
+  else if (!bad.length) el2.textContent = `${list.length} 项全部正常`
+  else el2.textContent = `${list.length} 项里有 ${bad.length} 项要看看`
+
+  // 有问题时自动展开，省得用户还要点一下
+  const box = $('dash-health-box')
+  if (box && bad.length) box.setAttribute('open', '')
+}
+
+/** 最近活动 */
+async function loadDashRecent() {
+  try {
+    const l = await api('/api/logs/recent?n=8')
+    // 这个接口返回的是数组（不是 {rows:[]}）—— 之前用 l.rows 导致这块一直是空的
+    const rows = Array.isArray(l) ? l : (l && l.rows) || []
+    const rb = $('dash-recent')
+    if (!rb) return
+    rb.innerHTML = ''
+    for (const x of rows.slice(-8).reverse()) {
+      const row = el('div', 'dash-act')
+      const dot = el('span', 'dot')
+      dot.style.cssText =
+        'width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:7px;background:' +
+        (x.level === 'error' ? 'var(--red)' : x.level === 'warn' ? 'var(--yellow)' : 'rgba(139,148,158,.5)')
+      row.appendChild(dot)
+      row.appendChild(el('span', 'dash-act-t', new Date(x.ts).toLocaleTimeString('zh-CN', { hour12: false })))
+      row.appendChild(el('span', 'dash-act-m', String(x.msg || '')))
+      rb.appendChild(row)
+    }
+  } catch {
+    /* 日志取不到不影响仪表盘 */
+  }
+}
+
 async function loadDashboard() {
   try {
-    const [s, h, c] = await Promise.all([
+    const [s, h, c, t] = await Promise.all([
       api('/api/status'),
       api('/api/health'),
       api('/api/balance').catch(() => null),
+      api('/api/trend?days=7').catch(() => null),
     ])
 
-    // 卡片：只放健康度，不放内容统计
-    const cards = [
-      ['链路', s.connected ? '已连接' : '没连上', s.connected ? '#3fb950' : '#f85149'],
-      ['余额', c && c.total !== null ? '¥' + Number(c.total).toFixed(2) : '—', c && c.total !== null && c.total < 5 ? '#d29922' : ''],
-      ['今日消息', String(s.today?.turns ?? 0), ''],
-      ['今日花费', c ? '¥' + Number(c.today ?? 0).toFixed(4) : '—', ''],
-      ['本周 / 本月', c ? '¥' + Number(c.week ?? 0).toFixed(3) + ' / ¥' + Number(c.month ?? 0).toFixed(3) : '—', ''],
-      ['情绪', s.mood?.emotion || '平稳', ''],
-      ['运行时长', fmtDur(s.uptimeSec ?? 0), ''],
-      ['体检', LEVEL_STYLE[h.level]?.text ?? '—', LEVEL_STYLE[h.level]?.color ?? ''],
-    ]
-    const box = $('dash-cards')
-    box.innerHTML = ''
-    for (const [k, v, color] of cards) {
-      const card = el('div', 'card')
-      card.style.cssText = 'padding:14px 16px;min-width:120px;flex:1'
-      card.appendChild(el('div', 'hint', k))
-      const val = el('div', '', v)
-      val.style.cssText = 'font-size:19px;font-weight:600;margin-top:4px' + (color ? ';color:' + color : '')
-      card.appendChild(val)
-      box.appendChild(card)
-    }
-
+    renderDashHero(s, c, t)
+    renderDashChart(t)
     renderHealth(h, $('dash-health'))
-
-    // 最近活动
-    try {
-      const l = await api('/api/logs/recent?n=6')
-      const rb = $('dash-recent')
-      rb.innerHTML = ''
-      for (const x of (l.rows || []).slice(0, 6)) {
-        const row = el('div', 'item')
-        row.style.cssText = 'padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)'
-        row.appendChild(el('div', 'sub', new Date(x.ts).toLocaleTimeString() + '  ' + String(x.msg || '').slice(0, 70)))
-        rb.appendChild(row)
-      }
-    } catch {
-      /* 日志取不到不影响仪表盘 */
-    }
+    renderDashHealthSum(h)
+    loadDashRecent()
   } catch (e) {
-    const box = $('dash-cards')
-    if (box) box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
+    const main = $('dash-main')
+    if (main) main.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
   }
 }
 
