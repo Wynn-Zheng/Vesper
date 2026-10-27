@@ -29,11 +29,16 @@ test('阶段越高，间隔越短、额度越大', () => {
   assert.ok(b.dailyMax > a.dailyMax)
 })
 
+// now 固定成"今天 15:00"，所以 lastTalkAt 也必须相对它算。
+// 之前写的是 Date.now() - 30h：真实时间过了 21:00 之后，
+// 今天15:00 减掉（现在-30h）就不够 24h 了，测试每天晚上九点后必挂。
+const testNow = at(15, 0)
+
 const base = {
   rules: DEFAULTS,
-  now: at(15, 0),
+  now: testNow,
   stageName: '朋友',
-  lastTalkAt: Date.now() - 30 * 3600_000,
+  lastTalkAt: testNow.getTime() - 30 * 3600_000,
   lastProactiveAt: 0,
   todayCount: 0,
   openCount: 1,

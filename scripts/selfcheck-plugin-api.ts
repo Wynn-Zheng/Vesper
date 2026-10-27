@@ -110,6 +110,22 @@ async function main(): Promise<void> {
         : undefined
     check('/updates 返回 items 数组', Array.isArray(updateItems), JSON.stringify(updatesData))
 
+    /* ============ 4b. 配置 ============ */
+    console.log('\n=== 4b. /config ===')
+    const cfgWrite = await route('POST', '/config').handler({ id: pluginId, config: { a: 1, b: 'x' } })
+    check('/config 写入成功', cfgWrite.ok === true, JSON.stringify(cfgWrite))
+
+    const afterCfg = await route('GET', '/list').handler({})
+    const cfgItem = listPlugins(afterCfg).find((p) => p['id'] === pluginId)
+    const cfgVal = cfgItem ? (cfgItem['config'] as Record<string, unknown> | undefined) : undefined
+    check('/list 带回刚写的配置', cfgVal !== undefined && cfgVal['a'] === 1, JSON.stringify(cfgVal))
+
+    const cfgBad = await route('POST', '/config').handler({ id: pluginId, config: 'nope' })
+    check('/config 拒绝非对象 config', cfgBad.ok === false, JSON.stringify(cfgBad))
+
+    const cfgNoId = await route('POST', '/config').handler({ config: {} })
+    check('/config 缺 id 被拒', cfgNoId.ok === false, JSON.stringify(cfgNoId))
+
     /* ============ 5. 卸载 ============ */
     console.log('\n=== 5. /uninstall ===')
     const removed = await route('POST', '/uninstall').handler({ id: pluginId })

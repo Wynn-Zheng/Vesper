@@ -13,7 +13,38 @@ export type PluginManifest = {
   author?: string
   permissions?: string[]
   minHostVersion?: string
+  /** 配置项声明。有它 → 控制台按类型渲染表单项；没有 → 退化成键值编辑器 */
+  configSchema?: PluginConfigSchema
 }
+
+/** 配置项能用的控件类型 */
+export type ConfigFieldType = 'string' | 'number' | 'boolean' | 'select'
+
+/**
+ * 一个配置项的声明。
+ *
+ * 参考 VS Code 的 configuration 贡献点：插件说清"有哪些项、什么类型、默认值多少"，
+ * 宿主照着渲染，用户就不会填出 `间隔秒数: "abc"` 这种。
+ */
+export type ConfigField = {
+  type: ConfigFieldType
+  /** 显示用的名字，不填就用键名 */
+  label?: string
+  /** 默认值，插件自己定 */
+  default?: unknown
+  /** 一行说明，显示在控件下面 */
+  hint?: string
+  /** type=number 时有效 */
+  min?: number
+  max?: number
+  /** type=select 时有效，必须非空 */
+  options?: string[]
+}
+
+export type PluginConfigSchema = Record<string, ConfigField>
+
+/** 合法的控件类型，校验和前端都用它 */
+export const CONFIG_FIELD_TYPES: ConfigFieldType[] = ['string', 'number', 'boolean', 'select']
 
 /** id：只允许小写字母、数字和连字符 */
 const ID_RE = /^[a-z0-9-]+$/
@@ -85,6 +116,46 @@ export function parseManifest(
     errors.push('字段 permissions 必须是字符串数组')
   }
 
+  // 配置项声明：可选，出现了就必须挑得出毛病
+  const configSchema = raw['configSchema']
+  if (configSchema !== undefined) {
+    if (!isPlainObject(configSchema)) {
+      errors.push('字段 configSchema 必须是对象')
+    } else {
+      for (const [fieldKey, field] of Object.entries(configSchema)) {
+        if (!isPlainObject(field)) {
+          errors.push(`configSchema.${fieldKey} 必须是一个对象`)
+          continue
+        }
+        const fieldType = field['type']
+        if (typeof fieldType !== 'string' || !CONFIG_FIELD_TYPES.includes(fieldType as ConfigFieldType)) {
+          errors.push(
+            `configSchema.${fieldKey}.type 只能是 ${CONFIG_FIELD_TYPES.join(' / ')}，现在是 ${JSON.stringify(fieldType)}`,
+          )
+          continue
+        }
+        if (fieldType === 'select') {
+          const opts = field['options']
+          if (!isStringArray(opts) || opts.length === 0) {
+            errors.push(`configSchema.${fieldKey} 是 select，必须带一个非空的 options 字符串数组`)
+          }
+        }
+        for (const numKey of ['min', 'max'] as const) {
+          const nv = field[numKey]
+          if (nv !== undefined && typeof nv !== 'number') {
+            errors.push(`configSchema.${fieldKey}.${numKey} 必须是数字`)
+          }
+        }
+        for (const strKey of ['label', 'hint'] as const) {
+          const sv = field[strKey]
+          if (sv !== undefined && typeof sv !== 'string') {
+            errors.push(`configSchema.${fieldKey}.${strKey} 必须是字符串`)
+          }
+        }
+      }
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors }
 
   // 必填字段已在上面逐一确认过类型，这里再收窄一次给类型检查器看
@@ -102,6 +173,8 @@ export function parseManifest(
   if (typeof raw['author'] === 'string') manifest.author = raw['author']
   if (typeof raw['minHostVersion'] === 'string') manifest.minHostVersion = raw['minHostVersion']
   if (isStringArray(permissions)) manifest.permissions = permissions
+  // 上面已经逐项校验过，这里直接收窄（校验不过不会走到这）
+  if (isPlainObject(configSchema)) manifest.configSchema = configSchema as PluginConfigSchema
 
   return { ok: true, manifest }
 }

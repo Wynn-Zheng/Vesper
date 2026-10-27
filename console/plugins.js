@@ -219,6 +219,9 @@
     const ops = el('td')
     ops.style.cssText = 'padding:8px;white-space:nowrap'
 
+    const btnConfig = el('button', 'mini-btn', '配置')
+    btnConfig.onclick = () => openConfigEditor(p)
+
     const btnUninstall = el('button', 'mini-btn danger', '卸载')
     btnUninstall.onclick = () => window.pluginUninstall(id)
 
@@ -228,7 +231,7 @@
     const btnReload = el('button', 'mini-btn', '重载')
     btnReload.onclick = () => window.pluginReload(id)
 
-    for (const b of [btnUninstall, btnToggle, btnReload]) {
+    for (const b of [btnConfig, btnUninstall, btnToggle, btnReload]) {
       b.style.marginRight = '4px'
       ops.appendChild(b)
     }
@@ -318,6 +321,280 @@
   /** 重载：只在已加载的插件上有实际效果，失败原因由后端给 */
   async function pluginReload(id) {
     await runAction('重载', () => postData('/api/plugins/reload', { id }))
+  }
+
+  /* ============================================================
+   * 配置弹窗
+   *
+   * 两种形态：
+   *   - 插件声明了 configSchema → 按 type 渲染 input / checkbox / select
+   *   - 没声明 → 通用键值编辑器（值按字面量试着还原成数字/布尔）
+   * 保存走 POST /api/plugins/config，写进 persona/plugins.yaml
+   * ============================================================ */
+
+  let CONFIG_MASK = null
+  let CONFIG_ONKEY = null
+
+  const INPUT_STYLE =
+    'width:100%;box-sizing:border-box;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 8px;color:inherit;font-size:13px;font-family:inherit'
+
+  function closeConfigEditor() {
+    if (CONFIG_ONKEY) {
+      document.removeEventListener('keydown', CONFIG_ONKEY)
+      CONFIG_ONKEY = null
+    }
+    if (CONFIG_MASK && CONFIG_MASK.parentNode) CONFIG_MASK.parentNode.removeChild(CONFIG_MASK)
+    CONFIG_MASK = null
+  }
+
+  /** 键值模式：把文本尽量还原成数字/布尔/null，其余保持字符串 */
+  function parseKV(raw) {
+    const t = String(raw).trim()
+    if (t === 'true') return true
+    if (t === 'false') return false
+    if (t === 'null') return null
+    if (t !== '' && /^-?\d+(?:\.\d+)?$/.test(t)) {
+      const n = Number(t)
+      if (Number.isFinite(n)) return n
+    }
+    return String(raw)
+  }
+
+  /** 按字段声明造一个控件，返回元素和读值函数 */
+  function makeField(key, field, current, hasValue) {
+    const type = typeof field.type === 'string' ? field.type : 'string'
+    const value = hasValue ? current[key] : field.default
+    let input
+
+    if (type === 'boolean') {
+      input = el('input')
+      input.type = 'checkbox'
+      input.checked = value === true
+      input.style.cssText = 'width:16px;height:16px;cursor:pointer'
+    } else if (type === 'select') {
+      input = el('select')
+      input.style.cssText = INPUT_STYLE + ';cursor:pointer'
+      const opts = Array.isArray(field.options) ? field.options.slice() : []
+      // 当前值不在 options 里也保留一项，别让用户已有的配置被悄悄丢掉
+      if (
+        hasValue &&
+        value !== undefined &&
+        value !== null &&
+        !opts.some((o) => String(o) === String(value))
+      ) {
+        opts.push(String(value))
+      }
+      for (const o of opts) {
+        const opt = el('option', '', String(o))
+        opt.value = String(o)
+        if (String(value) === String(o)) opt.selected = true
+        input.appendChild(opt)
+      }
+    } else if (type === 'number') {
+      input = el('input')
+      input.type = 'number'
+      if (typeof field.min === 'number') input.min = String(field.min)
+      if (typeof field.max === 'number') input.max = String(field.max)
+      input.value = value === undefined || value === null ? '' : String(value)
+      input.style.cssText = INPUT_STYLE
+    } else {
+      input = el('input')
+      input.type = 'text'
+      input.value = value === undefined || value === null ? '' : String(value)
+      input.style.cssText = INPUT_STYLE
+    }
+
+    return {
+      input,
+      type,
+      /** 数字留空返回 undefined（表示这一项不写入） */
+      read() {
+        if (type === 'boolean') return input.checked
+        if (type === 'number') {
+          const raw = String(input.value).trim()
+          if (raw === '') return undefined
+          const n = Number(raw)
+          return Number.isFinite(n) ? n : undefined
+        }
+        return input.value
+      },
+    }
+  }
+
+  function openConfigEditor(p) {
+    closeConfigEditor()
+
+    const schema = p && p.configSchema && typeof p.configSchema === 'object' ? p.configSchema : null
+    const current = p && p.config && typeof p.config === 'object' ? p.config : {}
+    const id = p && p.id ? String(p.id) : ''
+    const name = p && p.name ? String(p.name) : id
+    if (!id) return
+
+    const mask = el('div')
+    mask.style.cssText =
+      'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px'
+    mask.addEventListener('click', (e) => {
+      if (e.target === mask) closeConfigEditor()
+    })
+
+    const box = el('div', 'card')
+    box.style.cssText = 'width:min(560px,94vw);max-height:84vh;overflow:auto;padding:18px'
+
+    const head = el('div')
+    head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:2px'
+    const title = el('b', '', name + ' 的配置')
+    title.style.fontSize = '15px'
+    head.appendChild(title)
+    box.appendChild(head)
+
+    const sub = el(
+      'div',
+      'hint',
+      schema
+        ? '按插件声明的字段填。改完点「保存」，再重载这个插件才生效。'
+        : '这个插件没声明配置项，可以自己加键值（能识别数字和 true/false）。',
+    )
+    sub.style.cssText = 'font-size:12px;margin-bottom:14px;line-height:1.5'
+    box.appendChild(sub)
+
+    const form = el('div')
+    form.style.cssText = 'display:flex;flex-direction:column;gap:12px'
+    box.appendChild(form)
+
+    /** 每项返回 {key, value} 或 {key, raw} */
+    const readers = []
+
+    if (schema) {
+      for (const key of Object.keys(schema)) {
+        const field = schema[key] && typeof schema[key] === 'object' ? schema[key] : { type: 'string' }
+        const hasValue = Object.prototype.hasOwnProperty.call(current, key)
+        const label = typeof field.label === 'string' && field.label ? field.label : key
+
+        const row = el('div')
+        row.style.cssText = 'display:flex;flex-direction:column;gap:4px'
+
+        const lab = el('label', '', label)
+        lab.style.cssText = 'font-size:12px;opacity:.75'
+        row.appendChild(lab)
+
+        const made = makeField(key, field, current, hasValue)
+        row.appendChild(made.input)
+
+        if (typeof field.hint === 'string' && field.hint) {
+          const hint = el('div', '', field.hint)
+          hint.style.cssText = 'font-size:11px;opacity:.5;line-height:1.4'
+          row.appendChild(hint)
+        }
+
+        form.appendChild(row)
+        readers.push(() => ({ key, value: made.read() }))
+      }
+    } else {
+      const rowsBox = el('div')
+      rowsBox.style.cssText = 'display:flex;flex-direction:column;gap:8px'
+      form.appendChild(rowsBox)
+
+      function addKVRow(k, v) {
+        const row = el('div')
+        row.style.cssText = 'display:flex;gap:6px;align-items:center'
+
+        const keyIn = el('input')
+        keyIn.type = 'text'
+        keyIn.placeholder = '键'
+        keyIn.value = k === undefined ? '' : String(k)
+        keyIn.style.cssText = INPUT_STYLE + ';flex:0 0 38%'
+
+        const valIn = el('input')
+        valIn.type = 'text'
+        valIn.placeholder = '值'
+        valIn.value = v === undefined ? '' : String(v)
+        valIn.style.cssText = INPUT_STYLE + ';flex:1 1 auto'
+
+        const del = el('button', 'mini-btn', '删')
+        del.onclick = () => {
+          if (row.parentNode) row.parentNode.removeChild(row)
+        }
+
+        row.appendChild(keyIn)
+        row.appendChild(valIn)
+        row.appendChild(del)
+        rowsBox.appendChild(row)
+        readers.push(() => ({ key: keyIn.value.trim(), raw: valIn.value }))
+      }
+
+      const existing = Object.keys(current)
+      for (const k of existing) {
+        const v = current[k]
+        addKVRow(k, v === null || typeof v === 'object' ? JSON.stringify(v) : String(v))
+      }
+      if (existing.length === 0) addKVRow('', '')
+
+      const addBtn = el('button', 'mini-btn', '+ 加一项')
+      addBtn.onclick = () => addKVRow('', '')
+      form.appendChild(addBtn)
+    }
+
+    function collect() {
+      const out = {}
+      for (const r of readers) {
+        const item = r()
+        if (item.raw !== undefined) {
+          if (!item.key) continue
+          out[item.key] = parseKV(item.raw)
+        } else if (item.value !== undefined) {
+          out[item.key] = item.value
+        }
+      }
+      return out
+    }
+
+    const foot = el('div')
+    foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px'
+
+    const cancel = el('button', 'mini-btn', '取消')
+    cancel.onclick = () => closeConfigEditor()
+
+    const save = el('button', 'mini-btn', '保存')
+    const saveReload = el('button', 'mini-btn', '保存并重载')
+
+    async function doSave(thenReload) {
+      save.disabled = true
+      saveReload.disabled = true
+      clearError()
+      try {
+        await postData('/api/plugins/config', { id, config: collect() })
+        closeConfigEditor()
+        if (thenReload) {
+          await postData('/api/plugins/reload', { id })
+          await reloadList()
+          toast('已保存并重载')
+        } else {
+          await reloadList()
+          toast('已保存，重载后生效')
+        }
+      } catch (e) {
+        save.disabled = false
+        saveReload.disabled = false
+        showError(errText(e))
+      }
+    }
+
+    save.onclick = () => doSave(false)
+    saveReload.onclick = () => doSave(true)
+
+    foot.appendChild(cancel)
+    foot.appendChild(save)
+    foot.appendChild(saveReload)
+    box.appendChild(foot)
+
+    mask.appendChild(box)
+    document.body.appendChild(mask)
+    CONFIG_MASK = mask
+
+    CONFIG_ONKEY = (e) => {
+      if (e.key === 'Escape') closeConfigEditor()
+    }
+    document.addEventListener('keydown', CONFIG_ONKEY)
   }
 
   /** 检查更新：把 current → latest 标在版本列 */

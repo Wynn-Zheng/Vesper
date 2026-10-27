@@ -34,10 +34,13 @@ type PluginListItem = {
   name: string
   version: string
   description: string
+  author: string
   enabled: boolean
   loaded: boolean
   /** 这个插件在 persona/plugins.yaml 里的配置（没有就是空对象） */
   config: Record<string, unknown>
+  /** 插件声明的配置项（有它前端就渲染表单，没有就退化成键值编辑器） */
+  configSchema?: Record<string, unknown>
 }
 
 /** 把任意异常转成可读文本 */
@@ -126,9 +129,13 @@ export function createPluginService(options: {
           name: plugin.manifest.name,
           version: plugin.manifest.version,
           description: plugin.manifest.description ?? '',
+          author: plugin.manifest.author ?? '',
           enabled: plugin.enabled,
           loaded: loadedIds.has(plugin.manifest.id),
           config: getPluginConfig(settingsFile, plugin.manifest.id),
+          ...(plugin.manifest.configSchema === undefined
+            ? {}
+            : { configSchema: plugin.manifest.configSchema as Record<string, unknown> }),
         }))
 
         return { ok: true, data: { plugins: list } }

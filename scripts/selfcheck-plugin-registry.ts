@@ -108,6 +108,65 @@ async function main(): Promise<void> {
     )
     check('非对象输入不抛异常', parseManifest(null).ok === false)
 
+    /* ============ 2b. configSchema 校验 ============ */
+    console.log('\n=== 2b. configSchema ===')
+    const withSchema = parseManifest({
+      id: 'demo',
+      name: 'D',
+      version: '1.0.0',
+      entry: 'index.js',
+      configSchema: {
+        间隔: { type: 'number', default: 60, min: 1, max: 3600, label: '间隔（秒）' },
+        通知: { type: 'boolean', default: true },
+        模式: { type: 'select', options: ['宽松', '严格'], default: '宽松' },
+      },
+    })
+    check('接受合法 configSchema', withSchema.ok === true, withSchema.ok ? '' : withSchema.errors.join('; '))
+    check(
+      'configSchema 被带进结果',
+      withSchema.ok === true && withSchema.manifest.configSchema !== undefined,
+    )
+    check(
+      '拒绝未知 type',
+      parseManifest({
+        id: 'demo',
+        name: 'D',
+        version: '1.0.0',
+        entry: 'index.js',
+        configSchema: { x: { type: 'color' } },
+      }).ok === false,
+    )
+    check(
+      'select 缺 options 被拒',
+      parseManifest({
+        id: 'demo',
+        name: 'D',
+        version: '1.0.0',
+        entry: 'index.js',
+        configSchema: { x: { type: 'select' } },
+      }).ok === false,
+    )
+    check(
+      'min 不是数字被拒',
+      parseManifest({
+        id: 'demo',
+        name: 'D',
+        version: '1.0.0',
+        entry: 'index.js',
+        configSchema: { x: { type: 'number', min: '1' } },
+      }).ok === false,
+    )
+    check(
+      '缺 type 被拒',
+      parseManifest({
+        id: 'demo',
+        name: 'D',
+        version: '1.0.0',
+        entry: 'index.js',
+        configSchema: { x: { default: 1 } },
+      }).ok === false,
+    )
+
     /* ============ 3. compareVersions ============ */
     console.log('\n=== 3. compareVersions ===')
     check("('1.2.3','1.2.10') === -1", compareVersions('1.2.3', '1.2.10') === -1)
