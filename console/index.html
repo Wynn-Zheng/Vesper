@@ -1098,7 +1098,7 @@
     <section class="view" id="v-try">
       <div class="try-layout">
         <div class="panel try-panel">
-          <h3>试聊 <span class="r">不写 session、不落盘、不评估关系</span></h3>
+          <h3>试聊 <span class="r">不写 session、不落盘、不评估关系、<b style="color:#d29922">不带工具</b></span></h3>
           <div class="body try-body">
             <div class="try-log" id="try-log">
               <div class="try-empty" id="try-empty">
@@ -1109,6 +1109,11 @@
             <div class="try-input-row">
               <input id="try-input" class="try-input" placeholder="说点什么，回车发送" autocomplete="off">
               <button class="btn pri" onclick="doTry()">发送</button>
+            </div>
+            <!-- 说清楚为什么这里问「你能看屏幕吗」它会说没有：试聊不带工具。 -->
+            <div class="hint" style="padding:0 16px 12px;font-size:11.5px;line-height:1.7;color:#8b949e">
+              这里只预览 prompt，<b style="color:#d29922">不带工具</b> —— 问它「能不能看屏幕」它会说没有，那是正常的。
+              想验证工具：走上面的「工具连通性」，或者直接在 QQ 里跟它说。
             </div>
           </div>
         </div>
