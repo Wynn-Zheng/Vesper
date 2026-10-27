@@ -45,6 +45,19 @@ export interface HealthReport {
 function nodeVersion(): CheckItem {
   const v = process.versions.node
   const major = Number(v.split('.')[0])
+
+  // 桌面版（Electron 壳）跑的是 Electron 自带的 Node，用户机器上不需要装 Node。
+  // 这时候还提示"去装 Node 24"就是误导 —— 这条直接算正常。
+  const electron = process.versions['electron']
+  if (electron) {
+    return {
+      id: 'node',
+      name: 'Node 版本',
+      level: 'ok',
+      detail: `v${v}（Electron ${electron} 自带）`,
+    }
+  }
+
   if (major >= 24) {
     return { id: 'node', name: 'Node 版本', level: 'ok', detail: `v${v}` }
   }
