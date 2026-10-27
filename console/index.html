@@ -1966,7 +1966,6 @@ const SELF_TABS = [
   ['memory', '我的记忆'],
   ['core', '底线'],
   ['issues', '我觉得有问题'],
-  ['codemap', '代码地图'],
   ['plays', '学说话'],
 ]
 
@@ -2178,24 +2177,49 @@ function renderSelfV2() {
     body.appendChild(c)
   }
 
-  if (SELF_TAB === 'codemap') {
-    const c = el('div', 'card')
-    c.appendChild(el('span', 'tag', '自动生成')).style.cssText = 'background:rgba(255,255,255,.08);font-size:11px'
-    c.appendChild(el('div', 'op-t', '我对自己的代码的认知')).style.marginTop = '8px'
-    c.appendChild(el('div', 'txt', d.codemap || '（还没有代码地图）')).style.cssText = 'white-space:pre-wrap;font-size:12.5px;line-height:1.7;margin-top:8px'
-    body.appendChild(c)
-  }
-
   if (SELF_TAB === 'plays') {
     const c = el('div', 'card')
     c.appendChild(el('div', 'op-t', '我学到的说话方式'))
+    c.appendChild(
+      el('div', 'hint', '从"回得好的"那些对话里挑出来的。下次遇到类似场景，我会参考。'),
+    ).style.marginBottom = '10px'
+
+    // loadPlays() 返回的是 { score, scene, reply, date }，不是字符串。
+    // 之前直接 String(x) 所以显示成 [object Object]。
     const plays = d.plays || []
-    if (!plays.length) c.appendChild(el('div', 'empty', '还没学到'))
-    for (const x of plays.slice(0, 20)) {
-      const row = el('div', 'item')
-      row.appendChild(el('div', 'txt', x.text || String(x)))
-      if (x.score !== undefined) row.appendChild(el('div', 'sub', '评分 ' + x.score))
-      c.appendChild(row)
+    if (!plays.length) {
+      c.appendChild(el('div', 'empty', '还没学到'))
+    } else {
+      for (const x of plays.slice(0, 20)) {
+        const row = el('div', 'item')
+        row.style.cssText = 'padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+
+        // 场景
+        if (x.scene) {
+          const sc = el('div')
+          sc.style.cssText = 'font-size:11.5px;color:#8b949e;margin-bottom:3px'
+          sc.textContent = '他会说：' + x.scene
+          row.appendChild(sc)
+        }
+
+        // 我的回法
+        const rp = el('div')
+        rp.style.cssText = 'font-size:13px;line-height:1.5'
+        rp.textContent = x.reply || '（没有内容）'
+        row.appendChild(rp)
+
+        // 评分 + 日期
+        const meta = []
+        if (x.score !== undefined) meta.push('评分 ' + x.score)
+        if (x.date) meta.push(x.date)
+        if (meta.length) {
+          const m = el('div')
+          m.style.cssText = 'font-size:11px;opacity:.65;margin-top:3px'
+          m.textContent = meta.join(' · ')
+          row.appendChild(m)
+        }
+        c.appendChild(row)
+      }
     }
     body.appendChild(c)
   }
