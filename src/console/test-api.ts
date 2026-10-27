@@ -130,20 +130,34 @@ async function runToolTest(
     }
     case 'list_windows': {
       const { listWindowsTool } = await import('../tools/desktop.ts')
-      const r = JSON.parse(await listWindowsTool.run({}, {} as never)) as { ok?: boolean; count?: number; windows?: unknown[] }
-      return r.ok ? { ok: true, detail: `看到 ${r.count ?? 0} 个窗口` } : { ok: false, detail: '失败' }
+      const out = await listWindowsTool.run({}, {} as never)
+      const r = JSON.parse(String(out)) as { ok?: boolean; count?: number; error?: string }
+      // 失败时要把 error 带出来（比如"没装 ai-desktop"），只说"失败"等于没说
+      return r.ok
+        ? { ok: true, detail: `看到 ${r.count ?? 0} 个窗口` }
+        : { ok: false, detail: r.error ?? '失败' }
     }
     case 'read_code': {
       const { readCodeTool } = await import('../tools/code.ts')
-      const r = JSON.parse(await readCodeTool.run({ path: 'src/index.ts' }, {} as never)) as { ok?: boolean; error?: string }
-      return r.ok ? { ok: true, detail: '能读 src/index.ts' } : { ok: false, detail: r.error ?? '失败' }
+      // 参数名是 file/from/to（不是 path）。而且成功时它返回的是纯文本，
+      // 不是 JSON —— 之前这里 JSON.parse 直接炸。
+      const out = await readCodeTool.run({ file: 'src/index.ts', from: 1, to: 12 }, {} as never)
+      const text = String(out)
+      if (text.trimStart().startsWith('{')) {
+        // 失败分支返回的是 { error: ... }
+        const err = JSON.parse(text) as { error?: string }
+        return { ok: false, detail: err.error ?? '失败' }
+      }
+      return { ok: true, detail: '能读 src/index.ts', preview: text.slice(0, 200) }
     }
     case 'search_code': {
       const { searchCodeTool } = await import('../tools/code.ts')
-      const r = JSON.parse(
-        await searchCodeTool.run({ query: 'loadRules', limit: 3 }, {} as never),
-      ) as { ok?: boolean; hits?: unknown[]; error?: string }
-      return r.ok ? { ok: true, detail: `搜到 ${(r.hits || []).length} 处` } : { ok: false, detail: r.error ?? '失败' }
+      // 同样是纯文本返回（file:line: text），不是 JSON
+      const out = await searchCodeTool.run({ query: 'loadRules', limit: 3 }, {} as never)
+      const text = String(out)
+      if (text.includes('没搜到')) return { ok: true, detail: '没搜到（可能源码没一起打进来）' }
+      const n = text.split('\n').filter((l) => l.includes(':')).length
+      return { ok: true, detail: `搜到 ${n} 处`, preview: text.slice(0, 200) }
     }
     case 'hot_list': {
       const { hot } = await import('../outward/bili.ts')
@@ -169,15 +183,27 @@ async function runToolTest(
     }
     case 'recall': {
       const { recall } = await import('../memory/recall.ts')
+      const { listPeople, primaryAccount } = await import('../people/store.ts')
       const { loadRules } = await import('../core/config.ts')
+
+      // personId 不能拼 "qq-${OWNER_QQ}" —— 没配 OWNER_QQ 时就是 "qq-"，
+      // recall 会抛「非法的 personId」。改成取第一个真人，没有就不测。
+      const people = listPeople()
+      const first = people[0]
+      if (!first) return { ok: false, detail: '还没有任何人物档案（先聊几句）' }
+
+      const acc = primaryAccount(first.id)
       const r = recall({
-        personId: `qq-${process.env['OWNER_QQ'] ?? ''}`,
-        scope: `private:${process.env['OWNER_QQ'] ?? ''}`,
+        personId: first.id,
+        scope: `private:${acc}`,
         query: '测试',
         limit: 5,
         weights: loadRules().rules.记忆.检索.权重,
       })
-      return { ok: true, detail: `取回 ${r.facts.length} 事实 / ${r.episodes.length} 经历` }
+      return {
+        ok: true,
+        detail: `${first.name || first.id}：${r.facts.length} 事实 / ${r.episodes.length} 经历`,
+      }
     }
     default:
       return { ok: false, detail: '不认识这个工具' }

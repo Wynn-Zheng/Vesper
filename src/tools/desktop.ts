@@ -31,18 +31,27 @@ function ok(o: Record<string, unknown>): string {
   return JSON.stringify(o)
 }
 
-/** ai-desktop.exe 的位置。允许用环境变量覆盖（换机器时不用改代码）。 */
+/**
+ * ai-desktop.exe 的位置。找不到返回 ''（调用方给明确错误，而不是 spawn ENOENT）。
+ *
+ * 这是外部 Python 包（pip install ai-desktop），打包版不会自带 ——
+ * 换台机器就得重新装，所以这里不做"猜不到就用 PATH"的兜底。
+ */
 function exePath(): string {
   const fromEnv = process.env['AI_DESKTOP_EXE']
   if (fromEnv && existsSync(fromEnv)) return fromEnv
 
-  const guess = [
-    'C:\\Users\\Lenovo\\.dsh\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\python\\Scripts\\ai-desktop.exe',
-    `${process.env['LOCALAPPDATA'] ?? ''}\\Programs\\Python\\Python312\\Scripts\\ai-desktop.exe`,
-  ]
+  // Python 装在用户目录时 Scripts 在这儿。3.10~3.13 都试一遍。
+  const local = process.env['LOCALAPPDATA'] ?? ''
+  const guess = [313, 312, 311, 310].map(
+    (v) => `${local}\\Programs\\Python\\Python${v}\\Scripts\\ai-desktop.exe`,
+  )
   for (const p of guess) if (existsSync(p)) return p
-  return 'ai-desktop'
+  return ''
 }
+
+/** 没装 ai-desktop 时的统一说法 */
+const NO_EXE = '没装 ai-desktop（截图/看窗口/操作电脑都靠它）。装法：pip install ai-desktop，装完重启程序'
 
 /**
  * 跑一条 ai-desktop 命令，返回解析后的 JSON。
@@ -55,8 +64,13 @@ async function run(args: string[], timeoutMs = 20_000): Promise<Record<string, u
   const tool = args[0] ?? '?'
   let result: Record<string, unknown>
 
+  // 先确认程序在。不在就直接说清楚 ——
+  // 之前兜底成 'ai-desktop' 交给 PATH，报的是 spawn ENOENT，用户完全看不懂。
+  const exe = exePath()
+  if (!exe) return { ok: false, error: NO_EXE }
+
   try {
-    const { stdout } = await exec(exePath(), [...args, '--json'], {
+    const { stdout } = await exec(exe, [...args, '--json'], {
       timeout: timeoutMs,
       windowsHide: true,
       maxBuffer: 8 * 1024 * 1024,
