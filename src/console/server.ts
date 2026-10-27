@@ -25,6 +25,7 @@ import { loadDrifts, loadLife, loadSelf, listSelfVersions } from '../self/store.
 import { listSnapshots, restore } from '../persona/version.ts'
 import { loadProfile } from '../persona/profile.ts'
 import { handlePeopleApi } from './people-api.ts'
+import { handleDesktopApi } from './desktop-api.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -738,6 +739,17 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         // 人物：列表 / 详情 / 建档 / 改名 / 改画像 / 改印象 / 改关系 / 删除
         // 逻辑在 console/people-api.ts，这里只转交（返回 true = 已写响应）
         if (await handlePeopleApi(req, res, path, url, json, readBody)) return
+        if (await handleDesktopApi(req, res, path, url, json, readBody)) return
+
+      // 电脑操作日志：模型点了什么、什么时候、成没成。
+      // 不和 /api/logs/recent 混在一起 —— 那是运行日志（info/warn），
+      // 这是"它动了你的鼠标"的记录，性质不一样。
+      if (req.method === 'GET' && path === '/api/desktop/log') {
+        const { readDesktopLog } = await import('../tools/desktop-log.ts')
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 50)))
+        json(res, 200, { rows: readDesktopLog(limit) })
+        return
+      }
 
       if (req.method === 'GET' && path === '/api/groups') {
         const { knownGroups, groupMembers, membersAreStale } = await import('../people/group.ts')

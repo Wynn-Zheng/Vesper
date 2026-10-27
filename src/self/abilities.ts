@@ -98,6 +98,27 @@ export function listAbilities(rules: Rules): Ability[] {
     usedRecently: 0,
   })
   out.push({ name: '执行代码', available: false, hint: '跑不了程序', usedRecently: 0 })
+
+  // 电脑操作：能不能看屏幕、能不能动手，都取决于配置。
+  const deskOn = rules.电脑操作?.enabled === true
+  const deskCanDo = deskOn && rules.电脑操作?.允许操作 === true
+  out.push({
+    name: '看他的屏幕',
+    available: deskOn,
+    hint: deskOn ? '能截图（带坐标刻度）、能看开了哪些窗口、能问屏幕多大' : '电脑操作没开，看不到屏幕',
+    usedRecently: 0,
+  })
+  out.push({
+    name: '操作他的电脑',
+    available: deskCanDo,
+    hint: deskCanDo
+      ? '能点鼠标、打字、按键、滚轮、切窗口'
+      : deskOn
+        ? '能看但动不了手（允许操作 关着）'
+        : '电脑操作没开',
+    usedRecently: 0,
+  })
+
   out.push({
     name: '打开网页/搜索',
     available: false,

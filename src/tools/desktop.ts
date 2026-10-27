@@ -19,6 +19,9 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
+import { loadRules } from '../core/config.ts'
+import { logDesktopAction } from './desktop-log.ts'
+import { queueAction } from './desktop-pending.ts'
 import type { Tool } from './types.ts'
 
 const exec = promisify(execFile)
@@ -48,6 +51,10 @@ function exePath(): string {
  * 但超过 20 秒基本是卡住了，不该让整个回复等下去。
  */
 async function run(args: string[], timeoutMs = 20_000): Promise<Record<string, unknown>> {
+  const t0 = Date.now()
+  const tool = args[0] ?? '?'
+  let result: Record<string, unknown>
+
   try {
     const { stdout } = await exec(exePath(), [...args, '--json'], {
       timeout: timeoutMs,
@@ -55,29 +62,80 @@ async function run(args: string[], timeoutMs = 20_000): Promise<Record<string, u
       maxBuffer: 8 * 1024 * 1024,
     })
     const line = stdout.trim().split('\n').pop() ?? ''
-    return JSON.parse(line) as Record<string, unknown>
+    result = JSON.parse(line) as Record<string, unknown>
   } catch (err) {
     const e = err as { code?: number; stdout?: string; stderr?: string; message?: string }
 
     // ai-desktop 的 failsafe 中止是 exit code 3。
     // 要把它和"真出错"分开，不然模型会以为是自己调用错了。
     if (e.code === 3) {
-      return { ok: false, failsafe: true, error: '操作被紧急停止（鼠标被推到屏幕角落）。把鼠标挪开再试。' }
-    }
-
-    // 它出错时也会打一行 JSON，捞出来用
-    const out = (e.stdout ?? '').trim().split('\n').pop() ?? ''
-    if (out.startsWith('{')) {
-      try {
-        return JSON.parse(out) as Record<string, unknown>
-      } catch {
-        /* 落到下面 */
+      result = { ok: false, failsafe: true, error: '操作被紧急停止（鼠标被推到屏幕角落）。把鼠标挪开再试。' }
+    } else {
+      // 它出错时也会打一行 JSON，捞出来用
+      const out = (e.stdout ?? '').trim().split('\n').pop() ?? ''
+      let parsed: Record<string, unknown> | null = null
+      if (out.startsWith('{')) {
+        try {
+          parsed = JSON.parse(out) as Record<string, unknown>
+        } catch {
+          /* 不是 JSON */
+        }
       }
+      result = parsed ?? { ok: false, error: (e.stderr || e.message || '执行失败').slice(0, 200) }
     }
-    return { ok: false, error: (e.stderr || e.message || '执行失败').slice(0, 200) }
   }
+
+  // 统一记一笔：所有命令都过这里，写工具就不用各自记了。
+  // 参数只留前 3 个（够看出是什么命令），截图路径这类长字段会撑爆日志。
+  logDesktopAction({
+    ts: t0,
+    tool,
+    args: { argv: args.slice(1, 4), ms: Date.now() - t0 },
+    outcome: result['ok'] === false ? 'failed' : 'ok',
+    ...(result['error'] ? { detail: String(result['error']).slice(0, 120) } : {}),
+  })
+
+  return result
 }
 
+/**
+ * 屏幕上有敏感窗口吗？有就返回它的标题。
+ *
+ * 只看**前台**那个窗口：截图是全屏的，但用户此刻在看的东西才是最可能
+ * 敏感的。后台窗口被前面挡着，风险低得多，而且一屏七个窗口全查一遍要
+ * 多一次进程调用。
+ *
+ * 敏感词来自 rules.yaml 的 电脑操作.敏感窗口，改配置就能调。
+ */
+async function blockedWindow(): Promise<string> {
+  const words = currentSensitiveWords()
+  if (!words.length) return ''
+
+  const r = await run(['windows'], 8_000)
+  const list = Array.isArray(r['windows']) ? (r['windows'] as Array<Record<string, unknown>>) : []
+  const fg = list.find((w) => w['active'] === true)
+  if (!fg) return ''
+
+  const hay = `${String(fg['title'] ?? '')} ${String(fg['app'] ?? '')}`.toLowerCase()
+  for (const w of words) {
+    if (w && hay.includes(w.toLowerCase())) return String(fg['title'] ?? w)
+  }
+  return ''
+}
+
+/**
+ * 敏感词从 rules.yaml 现读，不用缓存。
+ *
+ * 为什么现读：你在控制台改了规则之后，不该还要重启才生效。
+ * 这个函数一轮只调一次（截图前），读一次 yaml 是几毫秒的事。
+ */
+function currentSensitiveWords(): string[] {
+  try {
+    return loadRules().rules.电脑操作?.敏感窗口 ?? []
+  } catch {
+    return []
+  }
+}
 /* ============================================================
  * 只读：不改任何状态
  * ============================================================ */
@@ -93,6 +151,21 @@ export const screenshotTool: Tool = {
     },
   },
   async run(args) {
+    // 截图前先看前台是什么窗口。屏幕上可能开着银行/支付/密码管理器，
+    // 一旦截下来就会被传给视觉模型——这一步是最后一道闸。
+    //
+    // 为什么用"拒绝"而不是"打码"：ai-desktop 只能截全屏或整块显示器，
+    // 没有"只截某个窗口"的能力；打码要自己算窗口区域再抠图，
+    // 而窗口可能被遮挡、可能半透明，算错了反而更糟。直接不截最稳。
+    const blocked = await blockedWindow()
+    if (blocked) {
+      return ok({
+        ok: false,
+        blocked: true,
+        error: `屏幕上有敏感窗口（${blocked}），这次不截图。先把它关掉或者切到别的窗口再试。`,
+      })
+    }
+
     const grid = args['grid'] !== false
     const cmd = ['screenshot']
     if (grid) cmd.push('--grid', '--spacing', '200')
@@ -156,6 +229,34 @@ export const clipReadTool: Tool = {
  * 改状态：会影响电脑
  * ============================================================ */
 
+/**
+ * 危险操作不直接执行，先排队等人批。
+ *
+ * 为什么不用"模型自己带 confirm 参数"：模型完全可以自己加上然后重试，
+ * 那等于没确认。真正的确认得由**人**在控制台点。
+ *
+ * 返回值告诉模型"已经排队了"，它应该转告用户去控制台点。
+ */
+function enqueue(tool: string, args: Record<string, unknown>, preview: string): string {
+  const item = queueAction(tool, args, preview)
+  logDesktopAction({
+    ts: Date.now(),
+    tool,
+    args: { ...args, id: item.id },
+    outcome: 'need-confirm',
+    detail: preview,
+  })
+  return ok({
+    ok: false,
+    needConfirm: true,
+    id: item.id,
+    preview,
+    hint:
+      '这个操作会改变电脑状态，已经排队等你批。' +
+      '告诉用户"要我在控制台点一下才执行"，不要说"已经点了"。',
+  })
+}
+
 export const clickTool: Tool = {
   name: 'click',
   description:
@@ -178,13 +279,13 @@ export const clickTool: Tool = {
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       return ok({ ok: false, error: '要给出数字坐标 x 和 y' })
     }
-    const cmd = ['click', '--x', String(Math.round(x)), '--y', String(Math.round(y))]
     const btn = String(args['button'] ?? 'left')
-    if (btn === 'right' || btn === 'middle') cmd.push('--button', btn)
-    if (args['double'] === true) cmd.push('--double')
-    const r = await run(cmd)
-    if (r['ok'] === false) return ok({ ok: false, error: r['error'] ?? '点击失败' })
-    return ok({ ok: true, x: r['x'], y: r['y'] })
+    const dbl = args['double'] === true
+    return enqueue(
+      'click',
+      { x: Math.round(x), y: Math.round(y), button: btn, double: dbl },
+      `在 (${Math.round(x)}, ${Math.round(y)}) ${btn === 'left' ? '左' : btn === 'right' ? '右' : '中'}键${dbl ? '双击' : '单击'}`,
+    )
   },
 }
 
@@ -199,9 +300,7 @@ export const typeTool: Tool = {
   async run(args) {
     const text = String(args['text'] ?? '')
     if (!text) return ok({ ok: false, error: '没有要打的字' })
-    const r = await run(['type', '--text', text])
-    if (r['ok'] === false) return ok({ ok: false, error: r['error'] ?? '打字失败' })
-    return ok({ ok: true, chars: text.length })
+    return enqueue('type_text', { text }, `打字：${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`)
   },
 }
 
@@ -220,9 +319,7 @@ export const keyTool: Tool = {
     const one = String(args['key'] ?? '').trim()
     const combo = String(args['keys'] ?? '').trim()
     if (!one && !combo) return ok({ ok: false, error: '要指定 key 或 keys' })
-    const r = one ? await run(['key', '--key', one]) : await run(['hotkey', '--keys', combo])
-    if (r['ok'] === false) return ok({ ok: false, error: r['error'] ?? '按键失败' })
-    return ok({ ok: true })
+    return enqueue('press_key', one ? { key: one } : { keys: combo }, `按键：${one || combo}`)
   },
 }
 
@@ -237,12 +334,10 @@ export const scrollTool: Tool = {
     },
   },
   async run(args) {
-    const cmd = ['scroll', '--direction', String(args['direction'] ?? 'down')]
+    const dir = String(args['direction'] ?? 'down')
     const n = Number(args['amount'] ?? 3)
-    if (Number.isFinite(n) && n > 0) cmd.push('--amount', String(Math.min(20, Math.round(n))))
-    const r = await run(cmd)
-    if (r['ok'] === false) return ok({ ok: false, error: r['error'] ?? '滚动失败' })
-    return ok({ ok: true })
+    const amount = Number.isFinite(n) && n > 0 ? Math.min(20, Math.round(n)) : 3
+    return enqueue('scroll', { direction: dir, amount }, `滚轮：${dir === 'up' ? '上' : '下'} ${amount} 格`)
   },
 }
 
@@ -257,15 +352,81 @@ export const focusWindowTool: Tool = {
   async run(args) {
     const title = String(args['title'] ?? '').trim()
     if (!title) return ok({ ok: false, error: '要给出标题' })
-    const r = await run(['focus', '--title', title])
-    if (r['ok'] === false) return ok({ ok: false, error: r['error'] ?? '切窗口失败' })
-    return ok({ ok: true })
+    return enqueue('focus_window', { title }, `切窗口：${title}`)
   },
 }
 
 /* ============================================================
  * 分组：只读的一组、改状态的一组
  * ============================================================ */
+
+/**
+ * 真正执行一条排队的操作（控制台点「允许」时调）。
+ *
+ * 这里是唯一真正动鼠标/键盘的地方——写工具的 run() 只排队。
+ * 参数从队列里读，不经过模型，所以模型没法在审批之后改参数。
+ */
+export async function executePending(id: string): Promise<{ ok: boolean; error?: string; result?: string }> {
+  const { getAction, settleAction } = await import('./desktop-pending.ts')
+  const item = getAction(id)
+  if (!item) return { ok: false, error: '没有这条记录' }
+  if (item.status !== 'pending') return { ok: false, error: `这条已经 ${item.status} 了` }
+
+  const a = item.args
+  let cmd: string[] | null = null
+
+  switch (item.tool) {
+    case 'click': {
+      const x = Number(a['x'])
+      const y = Number(a['y'])
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, error: '坐标不对' }
+      cmd = ['click', '--x', String(Math.round(x)), '--y', String(Math.round(y))]
+      const btn = String(a['button'] ?? 'left')
+      if (btn === 'right' || btn === 'middle') cmd.push('--button', btn)
+      if (a['double'] === true) cmd.push('--double')
+      break
+    }
+    case 'type_text': {
+      const text = String(a['text'] ?? '')
+      if (!text) return { ok: false, error: '没有文字' }
+      cmd = ['type', '--text', text]
+      break
+    }
+    case 'press_key': {
+      const one = String(a['key'] ?? '')
+      const combo = String(a['keys'] ?? '')
+      cmd = one ? ['key', '--key', one] : ['hotkey', '--keys', combo]
+      break
+    }
+    case 'scroll': {
+      cmd = ['scroll', '--direction', String(a['direction'] ?? 'down')]
+      const n = Number(a['amount'] ?? 3)
+      if (Number.isFinite(n) && n > 0) cmd.push('--amount', String(Math.min(20, Math.round(n))))
+      break
+    }
+    case 'focus_window': {
+      const title = String(a['title'] ?? '')
+      if (!title) return { ok: false, error: '没有标题' }
+      cmd = ['focus', '--title', title]
+      break
+    }
+    default:
+      return { ok: false, error: `不认识的操作：${item.tool}` }
+  }
+
+  const r = await run(cmd)
+  const ok = r['ok'] !== false
+  const detail = ok ? '成功' : String(r['error'] ?? '失败')
+
+  settleAction(id, ok ? 'done' : 'rejected', detail)
+  return { ok, ...(ok ? { result: detail } : { error: detail }) }
+}
+
+/** 拒绝一条（控制台点「拒绝」时调） */
+export async function rejectPending(id: string): Promise<boolean> {
+  const { settleAction } = await import('./desktop-pending.ts')
+  return settleAction(id, 'rejected', '用户拒绝') !== null
+}
 
 export const desktopReadTools: Tool[] = [
   screenshotTool,
