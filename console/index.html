@@ -687,6 +687,17 @@
       <div id="rt-body"></div>
     </section>
 
+    <section class="view" id="v-desktop-log">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center">
+          <b style="font-size:15px">电脑操作日志</b>
+          <span class="hint">它点了什么、什么时候、成没成</span>
+          <button class="mini-btn" onclick="loadDesktopLog()">刷新</button>
+        </div>
+      </div>
+      <div class="card"><div id="dl-list"></div></div>
+    </section>
+
     <section class="view" id="v-people">
       <div class="card" style="margin-bottom:14px">
         <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -1172,6 +1183,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-core') loadCore()
   if (viewId === 'v-logs') loadStatus()
   if (viewId === 'v-napcat') loadNapcat()
+  if (viewId === 'v-desktop-log') loadDesktopLog()
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
   if (viewId === 'v-self') loadSelfV2()
@@ -2186,6 +2198,51 @@ async function intentAction(action, text) {
     loadSelfV2()
   } catch (e) {
     alert('失败：' + e.message)
+  }
+}
+
+// ============================================================
+// 电脑操作日志
+// ============================================================
+
+async function loadDesktopLog() {
+  const box = $('dl-list')
+  if (!box) return
+  box.innerHTML = '<div class="hint">读取中…</div>'
+
+  try {
+    const r = await api('/api/desktop/log?limit=100')
+    const rows = r.rows || []
+    box.innerHTML = ''
+
+    if (!rows.length) {
+      box.appendChild(el('div', 'empty', '还没有操作记录'))
+      return
+    }
+
+    for (const x of rows) {
+      const color =
+        x.outcome === 'ok' ? '#3fb950' : x.outcome === 'need-confirm' ? '#d29922' : '#f85149'
+      const label =
+        x.outcome === 'ok' ? '成功' : x.outcome === 'need-confirm' ? '待确认' : '失败'
+
+      const row = el('div', 'item')
+      row.style.cssText =
+        'padding:6px 0 6px 10px;border-bottom:1px solid rgba(255,255,255,.04);border-left:2px solid ' + color
+      const head = el('div')
+      head.style.cssText = 'display:flex;gap:8px;align-items:baseline'
+      head.appendChild(el('b', '', x.tool)).style.fontSize = '12.5px'
+      const tag = el('span', '', label)
+      tag.style.cssText = 'font-size:10.5px;color:' + color
+      head.appendChild(tag)
+      head.appendChild(el('span', 'hint', x.ago || '')).style.fontSize = '10.5px'
+      if (x.args && x.args.ms) head.appendChild(el('span', 'hint', x.args.ms + 'ms')).style.fontSize = '10.5px'
+      row.appendChild(head)
+      if (x.detail) row.appendChild(el('div', 'sub', x.detail)).style.fontSize = '11px'
+      box.appendChild(row)
+    }
+  } catch (e) {
+    box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
   }
 }
 

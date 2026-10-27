@@ -69,6 +69,7 @@ const STEPS: Step[] = [
   { name: '情绪对比基准', cmd: 'node --env-file-if-exists=.env scripts/test-mood-context.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '拟人化', cmd: 'node --env-file-if-exists=.env scripts/test-humanlike.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '改口', cmd: 'node --env-file-if-exists=.env scripts/test-retract.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '控制台自查', cmd: 'node --env-file-if-exists=.env scripts/selfcheck-console.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群聊发言人', cmd: 'node --env-file-if-exists=.env scripts/test-speaker.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群名单恢复', cmd: 'node --env-file-if-exists=.env scripts/test-restore-groups.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '名字一致性', cmd: 'node --env-file-if-exists=.env scripts/test-name-consistency.ts', expect: /通过 \d+ \/ 失败 0/ },
