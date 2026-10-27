@@ -1,0 +1,41 @@
+{
+  "name": "qqbot-desktop",
+  "version": "0.1.0",
+  "description": "QQ Bot 控制台的桌面壳",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.qqbot.console",
+    "productName": "QQBot",
+    "directories": {
+      "output": "dist"
+    },
+    "files": ["main.js", "preload.js", "icon.png", "!node_modules/**/*"],
+    "extraResources": [
+      { "from": "../src", "to": "app/src" },
+      { "from": "../console", "to": "app/console" },
+      { "from": "../package.json", "to": "app/package.json" },
+      { "from": "../node_modules", "to": "app/node_modules" },
+      { "from": "../.env", "to": "app/.env" },
+      { "from": "../persona", "to": "app/persona", "filter": ["**/*"] }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
