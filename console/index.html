@@ -464,6 +464,31 @@
       </div>
     </section>
 
+    <section class="view" id="v-desktop">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <b style="font-size:15px">电脑操作</b>
+          <span id="dk-state" class="tag">—</span>
+          <button class="mini-btn" onclick="loadDesktop()">刷新</button>
+          <button class="mini-btn" onclick="showGroup('tools', 1)">← 返回</button>
+        </div>
+        <div class="hint" id="dk-hint" style="margin-top:6px"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <div class="op-t" style="margin-bottom:8px">待你点头的操作</div>
+        <div class="hint" style="margin-bottom:8px">
+          点击、打字、按键这类会改变电脑状态的操作，先排在这里。点「允许」才真执行。
+        </div>
+        <div id="dk-pending"></div>
+      </div>
+
+      <div class="card">
+        <div class="op-t" style="margin-bottom:8px">最近的操作</div>
+        <div id="dk-log"></div>
+      </div>
+    </section>
+
     <section class="view" id="v-people">
       <div class="card" style="margin-bottom:14px">
         <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -841,6 +866,11 @@
           <div class="op-t">从快照恢复群名单</div>
           <div class="op-d">名单被清空时用这个救回来</div>
         </div>
+        <div class="op" onclick="openDesktopPanel()">
+          <div class="op-ico">🖥</div>
+          <div class="op-t">电脑操作</div>
+          <div class="op-d">看屏幕 / 待确认的点击 / 操作日志</div>
+        </div>
         <div class="op" onclick="refreshGroupMembers()">
           <div class="op-ico">👥</div>
           <div class="op-t">刷新群成员</div>
@@ -921,13 +951,14 @@ const GROUPS = {
   state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
   people: [['v-people', '人物'], ['v-person', '详情']],
   groups: [['v-groups', '群成员']],
+  desktop: [['v-desktop', '电脑操作']],
   memory: [['v-memory', '记忆'], ['v-core', '核心'], ['v-search', '搜索']],
   comm: [['v-logs', '日志'], ['v-chat', '对话']],
   self: [['v-self', '自我'], ['v-qzone', '说说'], ['v-features', '新功能']],
   settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
   tools: [['v-try', '试聊'], ['v-ops', '操作']],
 }
-const TITLES = { state: '状态', people: '人物', groups: '群组', memory: '记忆', comm: '对话', self: '自我', settings: '设置', tools: '工具' }
+const TITLES = { desktop: '电脑操作', state: '状态', people: '人物', groups: '群组', memory: '记忆', comm: '对话', self: '自我', settings: '设置', tools: '工具' }
 
 let currentGroup = 'state'
 let currentViewId = 'v-state'
@@ -967,6 +998,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-overview') { loadStatus(); loadTrend() }
   if (viewId === 'v-relation') loadRelation()
   if (viewId === 'v-people') loadPeople()
+  if (viewId === 'v-desktop') loadDesktop()
   if (viewId === 'v-person') renderPersonDetail()
   if (viewId === 'v-memory') loadMemory()
   if (viewId === 'v-search') $('search-input')?.focus()
@@ -1721,6 +1753,100 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 })
+
+// ---------- 电脑操作 ----------
+function openDesktopPanel() {
+  currentGroup = 'desktop'
+  location.hash = ''
+  showGroup('desktop', 0)
+  loadDesktop()
+}
+
+async function loadDesktop() {
+  try {
+    const d = await api('/api/desktop/state')
+
+    const st = $('dk-state')
+    if (st) {
+      st.textContent = d.可操作 ? '能看 + 能操作' : d.开 ? '只能看' : '关着'
+      st.style.background = d.可操作 ? '#238636' : d.开 ? '#9e6a03' : ''
+      st.style.color = d.可操作 || d.开 ? '#fff' : ''
+    }
+
+    const hint = $('dk-hint')
+    if (hint) {
+      hint.textContent = d.开
+        ? d.可操作
+          ? '它现在能截图、能看窗口；点击/打字要你在这里点「允许」。'
+          : '它现在只能看，动不了手。要放开操作，把 rules.yaml 的 允许操作 改成 true。'
+        : '电脑操作关着。把 rules.yaml 的 电脑操作.enabled 改成 true 才有这些工具。'
+    }
+
+    // 待确认
+    const box = $('dk-pending')
+    box.innerHTML = ''
+    if (!d.待确认.length) {
+      box.appendChild(el('div', 'empty', '没有待确认的操作'))
+    } else {
+      for (const item of d.待确认) {
+        const row = el('div', 'item')
+        row.style.cssText = 'display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)'
+        const mid = el('div')
+        mid.style.cssText = 'flex:1;min-width:0'
+        mid.appendChild(el('div', 'txt', item.preview))
+        mid.appendChild(el('div', 'sub', item.tool + ' · ' + new Date(item.ts).toLocaleTimeString()))
+        row.appendChild(mid)
+
+        const yes = el('button', 'mini-btn', '允许')
+        yes.onclick = async () => {
+          try {
+            const r = await sendJson('/api/desktop/approve', { id: item.id })
+            toast(r.ok ? '已执行' : '执行失败：' + r.error)
+            loadDesktop()
+          } catch (e) {
+            alert('失败：' + e.message)
+          }
+        }
+        const no = el('button', 'mini-btn danger', '拒绝')
+        no.onclick = async () => {
+          try {
+            await sendJson('/api/desktop/reject', { id: item.id })
+            toast('已拒绝')
+            loadDesktop()
+          } catch (e) {
+            alert('失败：' + e.message)
+          }
+        }
+        row.appendChild(yes)
+        row.appendChild(no)
+        box.appendChild(row)
+      }
+    }
+
+    // 日志
+    const logBox = $('dk-log')
+    logBox.innerHTML = ''
+    if (!d.日志.length) {
+      logBox.appendChild(el('div', 'empty', '还没有操作记录'))
+    } else {
+      for (const r of d.日志) {
+        const row = el('div', 'item')
+        row.style.cssText = 'padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+        const color = r.outcome === 'ok' ? '#3fb950' : r.outcome === 'need-confirm' ? '#d29922' : '#f85149'
+        row.appendChild(
+          el('div', 'txt', `${r.tool} · ${r.outcome === 'ok' ? '成功' : r.outcome === 'need-confirm' ? '待确认' : '失败'}${r.detail ? ' — ' + r.detail : ''}`),
+        )
+        row.appendChild(el('div', 'sub', r.ago))
+        row.style.borderLeft = '3px solid ' + color
+        row.style.paddingLeft = '8px'
+        logBox.appendChild(row)
+      }
+    }
+  } catch (e) {
+    const st = $('dk-state')
+    if (st) st.textContent = '加载失败：' + e.message
+  }
+}
 
 // ---------- 群成员页跳转到人物详情 ----------
 function openPersonFromGroup(personId) {
