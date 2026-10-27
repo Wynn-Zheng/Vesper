@@ -632,6 +632,61 @@
       <div id="md-body" style="flex:1;overflow:auto;padding:14px 18px"></div>
     </div>
 
+    <section class="view" id="v-data">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center">
+          <b style="font-size:15px">数据</b>
+          <span class="hint">数据在哪、占多少、怎么备份</span>
+          <button class="mini-btn" onclick="loadData()">刷新</button>
+        </div>
+      </div>
+      <div id="data-body"></div>
+    </section>
+
+    <section class="view" id="v-model">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center">
+          <b style="font-size:15px">模型</b>
+          <span class="hint">DeepSeek 的接入配置</span>
+          <button class="mini-btn" onclick="loadModel()">刷新</button>
+        </div>
+      </div>
+      <div id="model-body"></div>
+    </section>
+
+    <section class="view" id="v-about">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center">
+          <b style="font-size:15px">关于</b>
+          <span class="hint">版本、运行时、重启</span>
+          <button class="mini-btn" onclick="loadAbout()">刷新</button>
+        </div>
+      </div>
+      <div id="about-body"></div>
+    </section>
+
+    <section class="view" id="v-tools-test">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <b style="font-size:15px">工具连通性</b>
+          <span class="hint">每个工具单独跑一次，看能不能用</span>
+          <button class="mini-btn" onclick="loadToolTests()">刷新</button>
+          <button class="mini-btn" onclick="testAllTools()">全部测一遍</button>
+        </div>
+      </div>
+      <div class="card"><div id="tt-list"></div></div>
+    </section>
+
+    <section class="view" id="v-recall-test">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center">
+          <b style="font-size:15px">记忆检索</b>
+          <span class="hint">输入一句话，只看会回忆起什么（不生成回复）</span>
+        </div>
+      </div>
+      <div id="rt-body"></div>
+    </section>
+
     <section class="view" id="v-people">
       <div class="card" style="margin-bottom:14px">
         <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -1050,8 +1105,15 @@ const GROUPS = {
   ability: [['v-ability', '能力'], ['v-qzone', '说说']],
   people: [['v-members', '成员'], ['v-groups', '群'], ['v-search', '搜索']],
   logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志']],
-  settings: [['v-health', '体检'], ['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
-  test: [['v-try', '试聊']],
+  settings: [
+    ['v-health', '体检'],
+    ['v-data', '数据'],
+    ['v-model', '模型'],
+    ['v-rules', '规则'],
+    ['v-access', '权限'],
+    ['v-about', '关于'],
+  ],
+  test: [['v-try', '试聊'], ['v-tools-test', '工具连通性'], ['v-recall-test', '记忆检索']],
 }
 const TITLES = { dashboard: '仪表盘', self: '自我', ability: '能力', people: '成员', logs: '日志', settings: '设置', test: '测试' }
 
@@ -1092,6 +1154,11 @@ function runLoaders(viewId) {
   if (viewId === 'v-dashboard') { loadDashboard(); loadStatus() }
   if (viewId === 'v-health') loadHealth()
   if (viewId === 'v-ability') loadAbility()
+  if (viewId === 'v-data') window.loadData?.()
+  if (viewId === 'v-model') window.loadModel?.()
+  if (viewId === 'v-about') window.loadAbout?.()
+  if (viewId === 'v-tools-test') window.loadToolTests?.()
+  if (viewId === 'v-recall-test') window.loadRecallTest?.()
   if (viewId === 'v-state') { loadStatus(); loadState() }
   if (viewId === 'v-overview') { loadStatus(); loadTrend() }
   if (viewId === 'v-relation') loadRelation()
@@ -1864,6 +1931,7 @@ const SELF_TABS = [
   ['card', '角色卡'],
   ['mind', '心事'],
   ['mood', '情绪'],
+  ['memory', '我的记忆'],
   ['core', '底线'],
   ['issues', '我觉得有问题'],
   ['codemap', '代码地图'],
@@ -2006,6 +2074,47 @@ function renderSelfV2() {
       }
     }
     body.appendChild(c)
+  }
+
+  if (SELF_TAB === 'memory') {
+    // 它自己的经历和洞察。只显示 shared scope —— 那些不属于某个人/某个群。
+    const eBox = el('div', 'card')
+    eBox.appendChild(el('div', 'op-t', '我经历过的事'))
+    eBox.appendChild(el('div', 'hint', '这些是我自己记得的，不是谁跟我说的')).style.marginBottom = '8px'
+    const eps = d.episodes || []
+    if (!eps.length) {
+      eBox.appendChild(el('div', 'empty', '还没有属于自己的经历'))
+    } else {
+      for (const e of eps) {
+        const row = el('div', 'item')
+        row.style.cssText = 'padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+        row.appendChild(el('div', 'txt', e.title || '（没有标题）'))
+        if (e.body) row.appendChild(el('div', 'sub', e.body)).style.cssText = 'color:#8b949e;font-size:12px;margin-top:2px'
+        const meta = [e.date, '重要度 ' + e.importance, e.emotion].filter(Boolean).join(' · ')
+        if (meta) row.appendChild(el('div', 'sub', meta)).style.cssText = 'font-size:11px;opacity:.7;margin-top:2px'
+        eBox.appendChild(row)
+      }
+    }
+    body.appendChild(eBox)
+
+    const iBox = el('div', 'card')
+    iBox.style.marginTop = '12px'
+    iBox.appendChild(el('div', 'op-t', '我形成的一些看法'))
+    const ins = d.insights || []
+    if (!ins.length) {
+      iBox.appendChild(el('div', 'empty', '还没有自己的看法'))
+    } else {
+      for (const x of ins) {
+        const row = el('div', 'item')
+        row.style.cssText = 'padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+        row.appendChild(el('div', 'txt', x.text))
+        if ((x.evidence || []).length) {
+          row.appendChild(el('div', 'sub', '依据：' + x.evidence.slice(0, 2).join('、'))).style.fontSize = '11px'
+        }
+        iBox.appendChild(row)
+      }
+    }
+    body.appendChild(iBox)
   }
 
   if (SELF_TAB === 'core') {
@@ -3503,5 +3612,7 @@ setInterval(loadStatus, 15000)
   </defs>
 </svg>
   <script src="/members.js"></script>
+  <script src="/settings.js"></script>
+  <script src="/test.js"></script>
 </body>
 </html>

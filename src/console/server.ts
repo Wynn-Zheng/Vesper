@@ -28,6 +28,8 @@ import { handlePeopleApi } from './people-api.ts'
 import { handleDesktopApi } from './desktop-api.ts'
 import { handleMiscApi } from './misc-api.ts'
 import { handleMemberApi } from './member-api.ts'
+import { handleSettingsApi } from './settings-api.ts'
+import { handleTestApi } from './test-api.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -758,6 +760,8 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         if (await handleDesktopApi(req, res, path, url, json, readBody)) return
         if (await handleMiscApi(req, res, path, url, json)) return
         if (await handleMemberApi(req, res, path, url, json)) return
+        if (await handleSettingsApi(req, res, path, url, json)) return
+        if (await handleTestApi(req, res, path, url, json, readBody)) return
 
       // 体检：一眼看出哪里坏了
       // 每项独立跑，API 挂了不影响查磁盘；最慢的一项 3 秒超时。
@@ -855,6 +859,37 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
         const traits = Object.entries(self.traits ?? {}).filter(([, v]) => v && String(v).trim())
 
+        // 「我的记忆」：它自己的经历和洞察。
+        // 现实中几乎没有 scope === 'shared' 的记录 —— 全都在 private:/group: 下面。
+        // 所以不按 scope 过滤，改为**取全部 + 标上来历**：
+        // 这是"它经历过什么"的完整视图，不是某一个人的记忆。
+        const { loadEpisodes, loadInsights } = await import('../memory/store.ts')
+        let episodes: Array<{ date: string; title: string; body: string; importance: number; emotion: string; scope: string }> = []
+        let insights: Array<{ text: string; evidence: string[]; scope: string }> = []
+        try {
+          episodes = loadEpisodes()
+            .slice(-60)
+            .reverse()
+            .map((e) => ({
+              date: e.date || '',
+              title: e.title || '',
+              body: (e.body || '').slice(0, 200),
+              importance: e.importance ?? 0,
+              emotion: e.emotion || '',
+              scope: e.scope,
+            }))
+        } catch {
+          /* 读不到 */
+        }
+        try {
+          insights = loadInsights()
+            .slice(-40)
+            .reverse()
+            .map((i) => ({ text: i.text || '', evidence: i.evidence || [], scope: i.scope }))
+        } catch {
+          /* 读不到 */
+        }
+
         json(res, 200, {
           name: self.name || '',
           selfText: self.about || '',
@@ -867,6 +902,8 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           issues,
           codemap,
           plays,
+          episodes,
+          insights,
         })
         return
       }
