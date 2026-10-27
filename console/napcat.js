@@ -37,6 +37,7 @@
           tag.style.color = '#fff'
         }
         renderInfo(d, false, d.reason)
+        loadWebuiFrame()
         loadNapcatConsole()
         return
       }
@@ -51,11 +52,13 @@
           tag.style.color = '#fff'
         }
         renderInfo(d, true)
+        loadWebuiFrame(d.webui)
         loadNapcatConsole()
         stopPoll()
       } else {
         // 未登录 → 显示面板 + 二维码
-        renderInfo(d, false)
+        renderInfo(d, false, d.reason)
+        loadWebuiFrame(d.webui)
         showPanel()
         loadNapcatConsole()
         renderQrcode()
@@ -252,10 +255,6 @@
    * （Tee-Object 把 cmd 窗口的输出同时写一份）。
    */
   async function loadNapcatConsole() {
-    // 开关关着就别费劲读了（文件可能压根没有）
-    const card = document.getElementById('nc-console-card')
-    if (card && card.style.display === 'none') return
-
     const box = document.getElementById('nc-console')
     const hint = document.getElementById('nc-console-hint')
     const meta = document.getElementById('nc-console-meta')
@@ -345,10 +344,11 @@
       await sendJson('/api/napcat/logsetting', { 记录日志: on }, 'PUT')
       toast(on ? '已开启日志记录，重启 NapCat 后生效' : '已关闭日志记录，重启 NapCat 后生效')
       updateLogHint(on)
-      // 日志卡片只有在"开着 + 有文件"时才有意义
-      const card = document.getElementById('nc-console-card')
-      if (card) card.style.display = on ? '' : 'none'
-      if (on) loadNapcatConsole()
+      // 开关打开 → 出现 WebUI/日志 两个 tab；关掉 → 藏起来并强制切回 WebUI
+      const tabs = document.getElementById('nc-view-tabs')
+      if (tabs) tabs.style.display = on ? '' : 'none'
+      if (!on) switchNapcatView('webui')
+      else loadNapcatConsole()
     } catch (e) {
       alert('改不了：' + e.message)
       // 失败就把勾选还原
@@ -373,15 +373,56 @@
       const cb = document.getElementById('nc-log-toggle')
       if (cb) cb.checked = on
       updateLogHint(on)
-      const card = document.getElementById('nc-console-card')
-      if (card) card.style.display = on ? '' : 'none'
+      const tabs = document.getElementById('nc-view-tabs')
+      if (tabs) tabs.style.display = on ? '' : 'none'
+      // 没开日志就一定是 WebUI
+      if (!on) switchNapcatView('webui')
       return on
     } catch {
       return false
     }
   }
 
+  /* ============================================================
+   * WebUI / 日志 切换
+   *
+   * 默认显示 WebUI —— 它就是普通网页，iframe 嵌进来就行。
+   * 勾了"记录日志"之后，多出这两个 tab，可以切到日志看原始输出。
+   * ============================================================ */
+
+  let NC_VIEW = 'webui'
+
+  function switchNapcatView(view) {
+    NC_VIEW = view
+
+    const webuiCard = document.getElementById('nc-webui-card')
+    const logCard = document.getElementById('nc-console-card')
+    const tabs = document.querySelectorAll('#nc-view-tabs .gtab')
+
+    // 高亮
+    tabs.forEach((b) => {
+      const isWebui = b.textContent.trim() === 'WebUI'
+      b.classList.toggle('on', (view === 'webui' && isWebui) || (view === 'log' && !isWebui))
+    })
+
+    if (webuiCard) webuiCard.style.display = view === 'webui' ? '' : 'none'
+    if (logCard) logCard.style.display = view === 'log' ? '' : 'none'
+
+    if (view === 'log') loadNapcatConsole()
+  }
+
+  /** 把 iframe 指到 WebUI。地址必须带 /webui/（根路径是空壳） */
+  function loadWebuiFrame(webuiUrl) {
+    const frame = document.getElementById('nc-frame')
+    if (!frame) return
+    const want = webuiUrl || 'http://127.0.0.1:6099/webui/'
+    if (frame.getAttribute('data-src') === want) return
+    frame.src = want
+    frame.setAttribute('data-src', want)
+  }
+
   window.loadNapcatLogin = loadNapcatLogin
+  window.switchNapcatView = switchNapcatView
   window.toggleNapcatLog = toggleNapcatLog
   window.loadLogSetting = loadLogSetting
   window.napcatAction = napcatAction

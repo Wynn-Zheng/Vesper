@@ -575,9 +575,8 @@
     </section>
 
     <section class="view" id="v-napcat">
-      <!-- 主区：登录状态。不再嵌 WebUI —— 那个还要再登一次 token，纯多余。
-           所有信息（状态/账号/二维码）后端都能直接给。 -->
       <div id="nc-main" style="transition:margin-right .2s ease-out">
+        <!-- 状态卡 -->
         <div class="card">
           <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
             <b style="font-size:15px">NapCat</b>
@@ -589,20 +588,32 @@
             <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开 WebUI</button>
           </div>
 
-          <!-- 日志开关。默认关：启动完全无窗口，状态和二维码都在界面里。
-               打开后会走 .cmd 启动（多一个最小化窗口），但能拿到 NapCat 的原始日志。 -->
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);margin-top:4px">
+          <div style="display:flex;align-items:center;gap:14px;padding:8px 0;border-top:1px solid var(--line);margin-top:4px;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
               <input type="checkbox" id="nc-log-toggle" onchange="toggleNapcatLog(this.checked)">
               记录 NapCat 日志
             </label>
+
+            <!-- 显示切换：只有开了日志才有意义（否则只有 WebUI 一个） -->
+            <div id="nc-view-tabs" class="group-tabs" style="display:none;margin:0;padding:0;border:0">
+              <button class="gtab on" onclick="switchNapcatView('webui')">WebUI</button>
+              <button class="gtab" onclick="switchNapcatView('log')">日志</button>
+            </div>
+
             <span id="nc-log-hint" class="hint" style="font-size:11px"></span>
           </div>
 
           <div id="nc-info"></div>
         </div>
 
-        <!-- NapCat 控制台输出。它自己不写日志，靠启动脚本的 Tee 落到 napcat-console.log -->
+        <!-- WebUI（默认显示）。它是普通网页，直接 iframe 嵌进来就行。
+             注意地址必须是 /webui/ —— 根路径 / 只是个 1365 字节的空壳。 -->
+        <div class="card" id="nc-webui-card" style="margin-top:14px;padding:0;overflow:hidden">
+          <iframe id="nc-frame" src="about:blank"
+            style="width:100%;height:calc(100vh - 330px);min-height:400px;border:0;background:#fff"></iframe>
+        </div>
+
+        <!-- 日志（切换才显示） -->
         <div class="card" id="nc-console-card" style="margin-top:14px;display:none">
           <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <b style="font-size:13.5px">NapCat 日志</b>
@@ -611,7 +622,7 @@
           </div>
           <div class="hint" id="nc-console-hint" style="margin-top:6px"></div>
           <pre id="nc-console"
-            style="margin-top:8px;max-height:340px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all"></pre>
+            style="margin-top:8px;max-height:calc(100vh - 400px);overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all"></pre>
         </div>
       </div>
 

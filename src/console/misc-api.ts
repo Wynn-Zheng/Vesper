@@ -691,8 +691,10 @@ function startNapcatViaCmd(): { ok: boolean; detail: string } {
       detached: true,
       // 接 stdout/stderr —— 这是拿到日志的关键
       stdio: ['ignore', 'pipe', 'pipe'],
-      // 窗口最小化（不是完全隐藏：.cmd 里的 start 会另开窗口，藏不掉）
-      windowsHide: false,
+      // QUIET=1 让 .cmd 不要自己弹浏览器和二维码图片（控制台里已经有了）
+      env: { ...process.env, NAPCAT_QUIET: '1' },
+      // 隐藏 .cmd 自己的窗口
+      windowsHide: true,
     })
 
     const onData = (d: Buffer): void => {
