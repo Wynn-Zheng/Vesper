@@ -22,11 +22,19 @@
     try {
       const d = await api('/api/napcat/login')
 
-      // 拿不到（token 变了 / 配置找不到）→ 面板不显示，主页面照常
+      // 拿不到 —— 通常是 NapCat 没跑（fetch failed），也可能是 token 变了。
+      // 这种情况也要走 renderInfo：
+      //   否则「启动」按钮永远不显示，用户只能自己去命令行开 NapCat。
       if (!d.available) {
         hidePanel()
-        const hint = document.getElementById('nc-hint')
-        if (hint) hint.textContent = '查不到登录状态：' + (d.reason || '未知原因')
+        const tag = document.getElementById('nc-state')
+        if (tag) {
+          tag.textContent = '没在跑'
+          tag.style.background = '#f85149'
+          tag.style.color = '#fff'
+        }
+        renderInfo(d, false, d.reason)
+        loadNapcatConsole()
         return
       }
 
@@ -67,20 +75,49 @@
    * 为什么不再嵌 WebUI：那个页面还要再输一次 token，而我们要的信息
    * （登录状态/账号/昵称/二维码）后端已经直接能给了 —— 嵌进去纯多余。
    */
-  function renderInfo(d, isLogin) {
+  function renderInfo(d, isLogin, reason) {
     const box = document.getElementById('nc-info')
     if (!box) return
+
+    // 按钮显示规则：
+    //   压根连不上（NapCat 没跑）→ 只显示「启动」
+    //   连上了（在跑）→ 显示「重启」「停止」
+    const btnStart = document.getElementById('nc-btn-start')
+    const btnRestart = document.getElementById('nc-btn-restart')
+    const btnStop = document.getElementById('nc-btn-stop')
+    const running = d.available === true
+    if (btnStart) btnStart.style.display = running ? 'none' : ''
+    if (btnRestart) btnRestart.style.display = running ? '' : 'none'
+    if (btnStop) btnStop.style.display = running ? '' : 'none'
 
     if (!isLogin) {
       box.innerHTML = ''
       const wrap = el('div')
       wrap.style.cssText = 'padding:20px 0;text-align:center'
-      const t1 = el('div', '', '还没登录')
+
+      // 压根连不上（NapCat 没跑）和"连上了但没登录"是两种情况，文案要分开
+      const notRunning = d.available === false
+      const t1 = el('div', '', notRunning ? 'NapCat 没在跑' : '还没登录')
       t1.style.cssText = 'font-size:14px;margin-bottom:6px'
       wrap.appendChild(t1)
-      const t2 = el('div', 'hint', '右边扫码，或者点上面的「在浏览器打开 WebUI」')
+
+      const t2 = el(
+        'div',
+        'hint',
+        notRunning
+          ? '点上面的「启动」。会弹 UAC 确认框，点「是」就行。'
+          : '右边扫码，或者点上面的「在浏览器打开 WebUI」',
+      )
       t2.style.cssText = 'font-size:12px'
       wrap.appendChild(t2)
+
+      // 具体原因（fetch failed 之类）用更小的字附在下面
+      if (reason) {
+        const t3 = el('div', 'hint', reason)
+        t3.style.cssText = 'font-size:10.5px;opacity:.6;margin-top:8px'
+        wrap.appendChild(t3)
+      }
+
       box.appendChild(wrap)
       return
     }
@@ -241,7 +278,55 @@
     }
   }
 
+  /**
+   * 启动 / 停止 / 重启 NapCat。
+   *
+   * 启动会弹 UAC（脚本自己要提权）—— 这是 Windows 的限制，绕不过去。
+   * 停止只杀 NapCatWinBootMain，不动你自己日常用的 QQ.exe。
+   */
+  async function napcatAction(action) {
+    const labels = { start: '启动', stop: '停止', restart: '重启' }
+    const label = labels[action] || action
+
+    if (action === 'stop') {
+      if (!confirm('停止 NapCat？QQ 那边会掉线。')) return
+    }
+
+    // 按钮全禁用，防止连点
+    for (const id of ['nc-btn-start', 'nc-btn-restart', 'nc-btn-stop']) {
+      const b = document.getElementById(id)
+      if (b) b.disabled = true
+    }
+
+    try {
+      const r = await sendJson('/api/napcat/' + action, {}, 'POST')
+      if (r.ok) {
+        toast(label + '已发起，等几秒…')
+        // 启动/重启要多等一会（脚本要弹 UAC、QQ 要起）
+        const wait = action === 'stop' ? 1500 : 6000
+        setTimeout(() => {
+          loadNapcatLogin()
+          loadNapcatConsole()
+        }, wait)
+        setTimeout(() => {
+          loadNapcatLogin()
+          loadNapcatConsole()
+        }, wait + 6000)
+      } else {
+        alert(label + '失败：' + (r.detail || '未知原因'))
+      }
+    } catch (e) {
+      alert(label + '失败：' + e.message)
+    } finally {
+      for (const id of ['nc-btn-start', 'nc-btn-restart', 'nc-btn-stop']) {
+        const b = document.getElementById(id)
+        if (b) b.disabled = false
+      }
+    }
+  }
+
   window.loadNapcatLogin = loadNapcatLogin
+  window.napcatAction = napcatAction
   window.loadNapcatConsole = loadNapcatConsole
   window.refreshNapcatQrcode = () => {
     loadNapcatLogin()

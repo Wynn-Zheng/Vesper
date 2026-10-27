@@ -3,6 +3,7 @@
  *
  * 单独一个文件——server.ts 已经 1200 行，往里加东西风险太大（改坏过两次）。
  */
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -69,6 +70,30 @@ export async function handleMiscApi(
     return true
   }
 
+  /* ============ NapCat 启动 / 停止 / 重启 ============ */
+  // 为什么能做：NapCat 是独立进程，不是我们服务的一部分。
+  // 启动脚本自己会处理提权（net session 判断 + Start-Process -Verb RunAs）。
+  if (method === 'POST' && path === '/api/napcat/start') {
+    const r = startNapcat()
+    json(res, 200, r)
+    return true
+  }
+
+  if (method === 'POST' && path === '/api/napcat/stop') {
+    const r = await stopNapcat()
+    json(res, 200, r)
+    return true
+  }
+
+  if (method === 'POST' && path === '/api/napcat/restart') {
+    const stopped = await stopNapcat()
+    // 等进程真退干净再启动，不然会抢端口
+    await new Promise((r) => setTimeout(r, 2500))
+    const started = startNapcat()
+    json(res, 200, { ok: started.ok, stopped: stopped.detail, started: started.detail })
+    return true
+  }
+
   /* ============ NapCat 控制台输出 ============ */
   // NapCat 自己不写日志文件（logs/ 目录一直是空的），cmd 窗口的输出只在屏幕上。
   // 启动脚本里加了 Tee-Object，会同时写一份到 <NapCat目录>/napcat-console.log。
@@ -86,8 +111,23 @@ export async function handleMiscApi(
     }
 
     try {
-      const raw = readFileSync(f, 'utf8')
-      const all = raw.split('\n').filter((l) => l.trim())
+      // PowerShell 的 Tee-Object 默认写 UTF-16LE（带 BOM），
+      // 直接 readFileSync(f, 'utf8') 读出来是一堆 \u0000 夹着的乱码。
+      // 这里按 BOM 判断编码。
+      const buf = readFileSync(f)
+      let raw = ''
+      if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+        raw = buf.subarray(2).toString('utf16le')
+      } else if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+        raw = buf.subarray(3).toString('utf8')
+      } else {
+        raw = buf.toString('utf8')
+      }
+
+      // 去掉 ANSI 颜色码（NapCat 输出里有 \u001b[33m 这种）
+      raw = raw.replace(/\u001b\[[0-9;]*m/g, '')
+
+      const all = raw.split(/\r?\n/).filter((l) => l.trim())
       json(res, 200, {
         available: true,
         path: f,
@@ -415,4 +455,68 @@ function findConsoleLog(): string | null {
     if (existsSync(c)) return c
   }
   return null
+}
+
+/** 启动脚本的位置。找不到就试旁边几个可能的名字。 */
+function findLauncher(): string | null {
+  const candidates = [
+    'E:/NapCat/启动NapCat.cmd',
+    'E:/NapCat/start-napcat.bat',
+  ]
+  for (const c of candidates) {
+    if (existsSync(c)) return c
+  }
+  return null
+}
+
+/**
+ * 启动 NapCat。
+ *
+ * detached + stdio:'ignore' 是必须的：
+ *   不 detach 的话，我们的服务退出会把 NapCat 一起带走。
+ *   ignore stdio 是因为脚本自己会弹 UAC 窗口，我们不想被它的输出堵住。
+ *
+ * 脚本里有提权逻辑（net session 判断 + Start-Process -Verb RunAs），
+ * 所以会弹一个 UAC 确认框 —— 这是 Windows 的限制，绕不过去。
+ */
+function startNapcat(): { ok: boolean; detail: string } {
+  const launcher = findLauncher()
+  if (!launcher) return { ok: false, detail: '找不到启动脚本（E:/NapCat/启动NapCat.cmd）' }
+
+  try {
+    const child = spawn('cmd.exe', ['/c', launcher], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    })
+    child.unref()
+    return {
+      ok: true,
+      detail: '已发起启动。如果弹了 UAC 确认框，点「是」；几秒后刷新看状态。',
+    }
+  } catch (e) {
+    return { ok: false, detail: String(e).slice(0, 150) }
+  }
+}
+
+/**
+ * 停掉 NapCat。
+ *
+ * 只杀 NapCatWinBootMain —— 不动 QQ.exe：那可能是你日常用的 QQ，
+ * 杀掉就太粗暴了。NapCat 注入的那个 QQ 会跟着 NapCatWinBootMain 一起退。
+ */
+async function stopNapcat(): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const { execFile } = await import('node:child_process')
+    await new Promise<void>((resolve, reject) => {
+      execFile('taskkill', ['/IM', 'NapCatWinBootMain.exe', '/F'], (err) => {
+        // 进程本来就不存在也算成功（422 = 没找到进程）
+        if (err && !String(err).includes('not found')) reject(err)
+        else resolve()
+      })
+    })
+    return { ok: true, detail: '已停止' }
+  } catch (e) {
+    return { ok: false, detail: String(e).slice(0, 150) }
+  }
 }
