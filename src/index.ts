@@ -2,6 +2,7 @@ import { OnebotTransport } from './channel/onebot.ts'
 import { boot } from './boot.ts'
 import { ToolRegistry } from './tools/registry.ts'
 import { codeTools } from './tools/code.ts'
+import { sendImageTool } from './tools/image.ts'
 import { refreshCodeMap } from './self/codemap.ts'
 import { startConsole } from './console/server.ts'
 import { loadRules } from './core/config.ts'
@@ -93,6 +94,10 @@ if (apiKey) {
   // 它能读自己的代码了：这 4 个工具只读、只碰 src/ 下的 .ts
   const registry = new ToolRegistry()
   for (const tool of codeTools) registry.register(tool)
+
+  // 发图：截图工具只返回本地 path，模型有路径却没手段发出去 ——
+  // 于是出现「截到了」但对方什么也没收到。
+  registry.register(sendImageTool)
 
   // 电脑操作：默认关。开了才把工具放进注册表——
   // 不放进去的话模型根本不知道有这些工具，谈不上"误用"。
