@@ -367,7 +367,7 @@
     <nav id="nav">
     <button class="on" data-v="dashboard"><span class="ico">◎</span>仪表盘</button>
     <button data-v="self"><span class="ico">✦</span>自我</button>
-    <button data-v="ability"><span class="ico">⚡</span>能力</button>
+    <button data-v="ability"><span class="ico">🧩</span>插件</button>
     <button data-v="people"><span class="ico">◉</span>成员</button>
     <button data-v="logs"><span class="ico">≡</span>日志</button>
     <button data-v="settings"><span class="ico">⚙</span>设置</button>
@@ -620,8 +620,8 @@
     <section class="view" id="v-ability">
       <div class="card" style="margin-bottom:16px">
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <b style="font-size:15px">能力</b>
-          <span class="hint">它跟外界打交道的方式。开关立刻生效，不用重启。</span>
+          <b style="font-size:15px">插件</b>
+          <span class="hint">内置能力 + 以后装的。开关立刻生效，不用重启。</span>
           <button class="mini-btn" onclick="loadAbility()">刷新</button>
         </div>
       </div>
@@ -1243,15 +1243,15 @@ async function api(path, init) {
 const GROUPS = {
   dashboard: [['v-dashboard', '总览']],
   self: [['v-self', '自我']],
-  ability: [['v-ability', '能力'], ['v-qzone', '说说']],
+  ability: [['v-ability', '插件']],
   people: [['v-members', '成员'], ['v-groups', '群'], ['v-search', '搜索']],
-  logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志']],
+  logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志'], ['v-qzone', '说说']],
   // 设置是一页滚到底，所以只有一个入口。
   // 页内用 set-head 分块：连接 / 规则 / 权限 / 数据 / 关于 / 健康检查
   settings: [['v-settings', '设置']],
   test: [['v-try', '试聊'], ['v-tools-test', '工具连通性'], ['v-recall-test', '记忆检索']],
 }
-const TITLES = { dashboard: '仪表盘', self: '自我', ability: '能力', people: '成员', logs: '日志', settings: '设置', test: '测试' }
+const TITLES = { dashboard: '仪表盘', self: '自我', ability: '插件', people: '成员', logs: '日志', settings: '设置', test: '测试' }
 
 let currentGroup = 'dashboard'
 let currentViewId = 'v-dashboard'
@@ -2869,8 +2869,27 @@ function abilityCard(c) {
   head.appendChild(ico)
 
   const nm = el('b', '', c.name)
-  nm.style.cssText = 'font-size:13.5px;flex:1'
+  nm.style.cssText = 'font-size:13.5px'
   head.appendChild(nm)
+
+  // 版本号（小字，跟在名字后面）
+  if (c.version) {
+    const ver = el('span', 'hint', 'v' + c.version)
+    ver.style.cssText = 'font-size:10.5px;flex:none'
+    head.appendChild(ver)
+  }
+
+  if (c.builtin) {
+    const badge = el('span', '', '内置')
+    badge.style.cssText =
+      'font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(139,148,158,.14);color:#8b949e;flex:none'
+    head.appendChild(badge)
+  }
+
+  // 把开关推到最右
+  const spacer = el('span')
+  spacer.style.cssText = 'flex:1'
+  head.appendChild(spacer)
 
   if (c.toggleKey) {
     const sw = el('button', '', c.on ? '开' : '关')

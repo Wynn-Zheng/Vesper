@@ -43,6 +43,18 @@ export interface AbilityCard {
   toggleKey?: string
   /** 参数 */
   params: AbilityParam[]
+
+  /* ---- 插件元数据 ---- */
+  /** 版本号。内置的暂时统一 1.0.0，以后各插件自己维护 */
+  version: string
+  /** 作者。内置的写「内置」 */
+  author: string
+  /** true = 内置（不能卸载）；false = 从 plugins/ 装的 */
+  builtin: boolean
+  /** 来源：内置 / 本地目录 / 仓库地址 */
+  source: string
+  /** 有更新时填新版本号（检查更新后才有） */
+  updateTo?: string
   /** 最近 7 天用了几次 */
   uses7d: number
   /** 最近一次用是什么时候（0 = 没用过） */
@@ -113,6 +125,9 @@ function readKey(rules: Rules, key: string): unknown {
   return cur
 }
 
+/** 内部用：还没补插件元数据的卡片 */
+type CardBase = Omit<AbilityCard, 'version' | 'author' | 'builtin' | 'source' | 'updateTo'>
+
 export function abilityCards(rules: Rules): AbilityCard[] {
   const usage = usageStats()
   const stat = (tool: string) => {
@@ -124,7 +139,7 @@ export function abilityCards(rules: Rules): AbilityCard[] {
     }
   }
 
-  const cards: AbilityCard[] = []
+  const cards: CardBase[] = []
 
   /* ---------------- 交流 ---------------- */
 
@@ -286,5 +301,12 @@ export function abilityCards(rules: Rules): AbilityCard[] {
     ...stat('qzone'),
   })
 
-  return cards
+  // 内置插件统一补上元数据（版本先都写 1.0.0，等各插件自己维护再说）
+  return cards.map((c) => ({
+    ...c,
+    version: '1.0.0',
+    author: '内置',
+    builtin: true,
+    source: '内置',
+  }))
 }
