@@ -31,6 +31,7 @@ const DIRS: Record<string, string> = {
   llm: '模型调用：DeepSeek 接口、看图',
   loop: '聊天主线：打分、会话历史、压缩、自评、提示词',
   memory: '记忆：事实、情节、召回、整理',
+  napcat: 'NapCat：定位安装目录、启动/停止、读二维码和日志',
   outward: '朝外看：B 站、刷视频',
   people: '人：账号、建档、群成员、待问的事',
   persona: '它自己：情绪、画像、快照',

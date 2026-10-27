@@ -44,7 +44,7 @@ export function locate(override?: string): NapcatPaths | { error: string } {
   return {
     error:
       '找不到 NapCat。请在控制台「日志 → NapCat → 安装目录」里填一个，' +
-      '或者从 https://github.com/NapNeko/NapCatQQ/releases 装 OneKey 版（推荐）。',
+      '或者装一个 OneKey 版的 NapCat（下载地址见 docs/NapCat安装.md）。',
   }
 }
 
