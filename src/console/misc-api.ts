@@ -163,8 +163,11 @@ export async function handleMiscApi(
           [
             '-NoProfile',
             '-Command',
-            // -Tail 取最后 N 行；不给 -Encoding，让它按 BOM 自动判断
-            `Get-Content -LiteralPath '${f.replace(/'/g, "''")}' -Tail ${limit} | Out-String`,
+            // -Tail 取最后 N 行。
+            // -Encoding UTF8 是必须的：这个文件是我们自己用 appendFileSync('utf8')
+            // 写的，但 Get-Content 默认按系统 ANSI（中文环境是 GBK）读，
+            // 不指定的话中文会变成"鍚姩鑴氭湰"这种。
+            `Get-Content -LiteralPath '${f.replace(/'/g, "''")}' -Tail ${limit} -Encoding UTF8 | Out-String`,
           ],
           { maxBuffer: 4 * 1024 * 1024 },
           (err, stdout) => (err ? reject(err) : resolve(stdout)),
@@ -507,7 +510,10 @@ function findQrcodeFile(): string | null {
  * 它不受"有没有窗口"影响，NapCat 想怎么写就怎么写。
  */
 function findConsoleLog(): string | null {
-  // 优先：NapCat 自己的日志目录里最新的那个
+  // 优先：我们捕获 .cmd 输出写的那个（最全）
+  if (existsSync('E:/NapCat/napcat-console.log')) return 'E:/NapCat/napcat-console.log'
+
+  // 其次：NapCat 自己的日志目录里最新的那个
   const dir = findNapcatDir()
   if (dir) {
     // 日志目录：NapCat 里是 logPath = <binaryPath>/logs
@@ -658,22 +664,60 @@ function startNapcat(): { ok: boolean; detail: string } {
   }
 }
 
-/** 官方路径：跑启动脚本，窗口最小化 */
+/**
+ * 带日志的启动：跑启动脚本，但**自己接 stdout**。
+ *
+ * 为什么不让 .cmd 自己写日志：
+ *   脚本里那行 `| powershell -Command "$input | Tee-Object ..."` 实测跑不出文件
+ *   （$input 在 cmd 管道里是空的）。所以改成我们 spawn 时接管 stdout。
+ *
+ * 代价：会有一个 cmd 窗口（用户勾了"记录日志"就是接受这个）。
+ */
 function startNapcatViaCmd(): { ok: boolean; detail: string } {
   const launcher = findLauncher()
   if (!launcher) return { ok: false, detail: '找不到启动脚本（E:/NapCat/启动NapCat.cmd）' }
 
+  const logFile = 'E:/NapCat/napcat-console.log'
+
   try {
-    // /min 让窗口最小化到任务栏，不挡视线，但日志照常走脚本里的 Tee
-    const child = spawn('cmd.exe', ['/c', 'start', '', '/min', launcher], {
+    // 先清空上次的日志，免得新旧混在一起
+    try {
+      writeFileSync(logFile, '', 'utf8')
+    } catch {
+      /* 清不掉也无所谓 */
+    }
+
+    const child = spawn('cmd.exe', ['/c', launcher], {
       detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
+      // 接 stdout/stderr —— 这是拿到日志的关键
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // 窗口最小化（不是完全隐藏：.cmd 里的 start 会另开窗口，藏不掉）
+      windowsHide: false,
     })
+
+    const onData = (d: Buffer): void => {
+      try {
+        appendFileSync(logFile, d.toString('utf8'), 'utf8')
+      } catch {
+        /* 写不进去就算了 */
+      }
+    }
+    child.stdout?.on('data', onData)
+    child.stderr?.on('data', onData)
+
+    child.on('exit', (code) => {
+      try {
+        appendFileSync(logFile, `\n===== 启动脚本退出，code = ${code} =====\n`, 'utf8')
+      } catch {
+        /* ignore */
+      }
+    })
+
     child.unref()
+
     return {
       ok: true,
-      detail: '已启动（窗口在任务栏里最小化）。日志会写到 NapCat 目录下的 napcat-console.log。',
+      detail: '已启动（会有一个 cmd 窗口）。日志写到 NapCat 目录下的 napcat-console.log。',
     }
   } catch (e) {
     return { ok: false, detail: String(e).slice(0, 150) }
