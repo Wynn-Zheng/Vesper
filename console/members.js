@@ -420,6 +420,8 @@
    * 挂到 window（供 HTML 里的 onclick 用）
    * ============================================================ */
   window.loadMembers = loadMembers
+  // 给群页用：点成员能打开同一个抽屉
+  window.openMemberDrawer = openDrawer
   window.memberFilter = function (key, value) {
     IF[key] = value
     renderTable()

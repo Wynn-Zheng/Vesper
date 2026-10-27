@@ -930,20 +930,7 @@
     </section>
 
     <section class="view" id="v-groups">
-      <div class="panel">
-        <h3>群成员 <span class="r" id="groups-head"></span></h3>
-        <div class="body">
-          <div class="hint" style="margin-bottom:10px">
-            这些是群里的人。<b>认识</b>指的是有档案（聊过、有印象）；
-            没标的只是名单里的人，你对他们的了解只有名字。
-          </div>
-          <div id="groups-list"></div>
-        </div>
-      </div>
-      <div class="panel" style="margin-top:14px">
-        <h3>不在任何群里的 <span class="r">只私聊过的人</span></h3>
-        <div class="body"><div id="groups-others"></div></div>
-      </div>
+      <div id="groups-body"></div>
     </section>
 
     <section class="view" id="v-search">
@@ -1199,7 +1186,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-person') renderPersonDetail()
   if (viewId === 'v-memory') loadMemory()
   if (viewId === 'v-search') $('search-input')?.focus()
-  if (viewId === 'v-groups') loadGroups()
+  if (viewId === 'v-groups') window.loadGroups2?.()
   if (viewId === 'v-core') loadCore()
   if (viewId === 'v-logs') loadStatus()
   if (viewId === 'v-napcat') loadNapcat()
@@ -3693,6 +3680,7 @@ setInterval(loadStatus, 15000)
   </defs>
 </svg>
   <script src="/members.js"></script>
+  <script src="/groups.js"></script>
   <script src="/settings.js"></script>
   <script src="/test.js"></script>
 </body>
