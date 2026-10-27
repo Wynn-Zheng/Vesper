@@ -13,3 +13,7 @@ node_modules/
 
 electron/node_modules/
 electron/dist/
+
+# 外部插件：装了就不提交（示例 demo 例外）
+plugins/*
+!plugins/demo/

@@ -219,8 +219,35 @@ export function createPluginService(options: {
     },
   ]
 
-  return { pluginsRoot, dataRoot, host, routes }
-}
+    /**
+     * 把 plugins/ 下所有「已启用」的插件加载起来。
+     *
+     * 为什么要单独一个方法：createHost 只提供单个 load(id)，没有批量入口，
+     * 所以光创建 service 永远不会激活任何插件（list 里 loaded 全是 false）。
+     *
+     * 单个插件失败只记进 errors，不中断其余插件。
+     */
+    async function start(): Promise<{ loaded: number; errors: string[] }> {
+      const errors: string[] = []
+      let loaded = 0
+      try {
+        const { plugins } = await scanPlugins(pluginsRoot)
+        for (const plugin of plugins) {
+          if (!plugin.enabled) continue
+          const result = await host.load(plugin.manifest.id)
+          if (result.ok) loaded++
+          else if (result.error && result.error !== 'already loaded') {
+            errors.push(`${plugin.manifest.id}: ${result.error}`)
+          }
+        }
+      } catch (err) {
+        errors.push(`扫描插件目录失败：${errorMessage(err)}`)
+      }
+      return { loaded, errors }
+    }
+
+    return { pluginsRoot, dataRoot, host, routes, start }
+  }
 
 /**
  * 取出一份可直接注册的路由表。

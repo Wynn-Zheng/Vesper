@@ -34,6 +34,7 @@ const DIRS: Record<string, string> = {
   napcat: 'NapCat：定位安装目录、启动/停止、读二维码和日志',
   outward: '朝外看：B 站、刷视频',
   people: '人：账号、建档、群成员、待问的事',
+  plugins: '插件：清单解析、宿主运行时、安装卸载、更新检查',
   persona: '它自己：情绪、画像、快照',
   relation: '关系：评估变化、降温、渲染',
   scheduler: '定时任务：整理记忆、主动找人',

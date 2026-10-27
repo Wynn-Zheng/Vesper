@@ -180,13 +180,6 @@ export async function setEnabled(options: {
   }
 }
 
-/** 索引文件里的单个插件条目 */
-type UpdateIndexEntry = {
-  id: string
-  version: string
-  description?: string
-}
-
 /** checkUpdates 返回的单条结果 */
 type UpdateItem = {
   id: string
