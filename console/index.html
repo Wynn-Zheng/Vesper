@@ -626,6 +626,10 @@
         </div>
       </div>
       <div id="ability-groups"></div>
+
+      <!-- 外部插件面板：plugins.js 往这里渲染「已装的插件 / 安装 / 检查更新」。
+           内置的 11 个在上面，外部插件在下面，同一页管完。 -->
+      <div id="plugins-panel" style="margin-top:24px"></div>
     </section>
 
     <section class="view" id="v-napcat">
@@ -1298,6 +1302,7 @@ function runLoaders(viewId) {
     if (typeof loadAbout === 'function') loadAbout()
   }
   if (viewId === 'v-ability') loadAbility()
+  if (viewId === 'v-plugins') window.renderPlugins?.()
   if (viewId === 'v-data') window.loadData?.()
   if (viewId === 'v-model') window.loadModel?.()
   if (viewId === 'v-about') window.loadAbout?.()
@@ -2830,6 +2835,13 @@ async function loadAbility() {
   } catch (e) {
     box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
   }
+
+  // 外部插件面板：失败不影响内置那部分
+  try {
+    window.renderPlugins?.()
+  } catch {
+    /* 插件面板挂了不影响内置能力列表 */
+  }
 }
 
 const ABILITY_ICONS = {
@@ -4150,6 +4162,7 @@ setInterval(loadStatus, 15000)
   <script src="/members.js"></script>
   <script src="/groups.js"></script>
   <script src="/napcat.js"></script>
+  <script src="plugins.js"></script>
   <script src="/settings.js"></script>
   <script src="/test.js"></script>
 </body>

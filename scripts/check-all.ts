@@ -77,6 +77,15 @@ const STEPS: Step[] = [
   { name: '名字边界', cmd: 'node --env-file-if-exists=.env scripts/test-name-edge.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '检索边界', cmd: 'node --env-file-if-exists=.env scripts/test-recall-edge.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群名单并发', cmd: 'node --env-file-if-exists=.env scripts/test-group-concurrent.ts', expect: /通过 \d+ \/ 失败 0/ },
+
+  // 插件系统（阶段 3+4）
+  { name: '插件注册表', cmd: 'node scripts/selfcheck-plugin-registry.ts', expect: /全部通过/ },
+  { name: '插件宿主', cmd: 'node scripts/selfcheck-plugin-host.ts', expect: /全部通过/ },
+  { name: '插件安装', cmd: 'node scripts/selfcheck-plugin-installer.ts', expect: /全部通过/ },
+  { name: '插件接口', cmd: 'node scripts/selfcheck-plugin-api.ts', expect: /全部通过/ },
+  { name: '插件前端', cmd: 'node scripts/selfcheck-console-plugins.ts', expect: /全部通过/ },
+  { name: '插件端到端', cmd: 'node --env-file-if-exists=.env scripts/test-plugins-e2e.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
+  { name: '插件边界', cmd: 'node --env-file-if-exists=.env scripts/test-plugins-edge.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'

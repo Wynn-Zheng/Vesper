@@ -30,6 +30,7 @@ import { handleMiscApi } from './misc-api.ts'
 import { handleMemberApi } from './member-api.ts'
 import { handleSettingsApi } from './settings-api.ts'
 import { handleTestApi } from './test-api.ts'
+import { createPluginService, pluginRoutes } from './plugin-api.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -782,6 +783,34 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         if (await handleSettingsApi(req, res, path, url, json)) return
         if (await handleTestApi(req, res, path, url, json, readBody)) return
 
+        // ---- 插件系统 ----
+        //
+        // plugin-api.ts 只给「路由表 + handler」，不管 HTTP（那是它的设计），
+        // 所以这里负责把 /api/plugins/xxx 分发过去。
+        if (path.startsWith('/api/plugins/')) {
+          const sub = path.slice('/api/plugins'.length)
+          const svc = getPluginService()
+          // 第一次请求可能赶在插件加载完成之前，等它一下
+          if (pluginReady) await pluginReady
+          const route = pluginRoutes(svc).find((r) => r.path === sub && r.method === req.method)
+          if (!route) {
+            json(res, 404, { ok: false, error: '没有这个插件接口：' + sub })
+            return
+          }
+          let body: unknown
+          if (req.method === 'POST') {
+            try {
+              body = JSON.parse((await readBody(req)) || '{}')
+            } catch {
+              json(res, 400, { ok: false, error: 'invalid body: 不是合法 JSON' })
+              return
+            }
+          }
+          const result = await route.handler(body)
+          json(res, result.ok ? 200 : 400, result)
+          return
+        }
+
       // 体检：一眼看出哪里坏了
       // 每项独立跑，API 挂了不影响查磁盘；最慢的一项 3 秒超时。
       // 能力清单：它能干什么、开没开。
@@ -1287,4 +1316,37 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
   // 日志里不打印完整 token：日志可能被贴出去排错
   const tokenHint = opts.token ? `?token=${opts.token.slice(0, 4)}…（完整 token 见 .env 的 CONSOLE_TOKEN）` : ''
   info(`控制台已启动：${url}${tokenHint}`)
+}
+
+/**
+ * 插件服务的单例。
+ *
+ * 为什么懒加载：创建时会扫 plugins/ 目录并实例化 host，控制台启动时
+ * 不该为了这个拖慢首屏；而且用户可能压根不碰插件页。
+ */
+let pluginService: ReturnType<typeof createPluginService> | null = null
+/** 首次加载插件的进度；/api/plugins 的请求要等它，否则第一次 /list 会看到 loaded 全是 false */
+let pluginReady: Promise<void> | null = null
+function getPluginService(): ReturnType<typeof createPluginService> {
+  if (!pluginService) {
+    pluginService = createPluginService({
+      pluginsRoot: 'plugins',
+      // 注意是 'data' 不是 'data/plugins'：host 和 installer 都会自己拼
+      // join(dataRoot, 'plugins', id)，传 'data/plugins' 会变成 data/plugins/plugins/<id>
+      dataRoot: 'data',
+    })
+    // 首次创建时后台把「已启用」的插件都加载起来。
+    // createHost 只有单个 load(id)，没人调的话 loaded 永远全是 false。
+    const svc = pluginService
+    pluginReady = svc
+      .start()
+      .then((r) => {
+        if (r.loaded > 0) info(`插件已加载 ${r.loaded} 个`)
+        for (const e of r.errors) warnAt('插件加载失败', { err: e, where: 'src/console/server.ts' })
+      })
+      .catch(() => {
+        /* 插件加载失败不影响控制台 */
+      })
+  }
+  return pluginService
 }
