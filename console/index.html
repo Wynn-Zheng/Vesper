@@ -311,12 +311,8 @@
 <main>
   <header>
     <span class="t" id="title">总览</span>
-    <div class="pick" id="person-pick">
-  <button class="pick-btn" id="pick-btn"><span class="pick-avatar" id="pick-av">?</span><span class="pick-name" id="pick-name">—</span><span class="pick-stage" id="pick-stage"></span><span class="pick-arrow">▼</span></button>
-  <div class="pick-menu" id="pick-menu"></div>
-</div>
+    
     <div class="meta">
-      <span>阶段 <b id="h-stage">-</b></span>
       <span>今日 <b id="h-turns">-</b></span>
       <span id="h-model">-</span>
     </div>
@@ -556,6 +552,22 @@
         <div class="hint" style="margin-top:6px">每项都能单独跑。红了就按「怎么修」里的做。</div>
       </div>
       <div id="health-list"></div>
+    </section>
+
+    <section class="view" id="v-napcat">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <b style="font-size:15px">NapCat</b>
+          <span id="nc-state" class="tag">检查中…</span>
+          <button class="mini-btn" onclick="loadNapcat()">刷新</button>
+          <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开</button>
+        </div>
+        <div class="hint" id="nc-hint" style="margin-top:6px"></div>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <iframe id="nc-frame" src="about:blank" style="width:100%;height:calc(100vh - 260px);border:0;background:#fff"></iframe>
+      </div>
     </section>
 
     <section class="view" id="v-people">
@@ -975,7 +987,7 @@ const GROUPS = {
   self: [['v-self', '自我']],
   ability: [['v-ability', '能力'], ['v-qzone', '说说']],
   people: [['v-people', '成员'], ['v-groups', '群'], ['v-person', '详情'], ['v-core', '核心'], ['v-memory', '记忆'], ['v-search', '搜索']],
-  logs: [['v-logs', '运行日志'], ['v-desktop-log', '操作日志'], ['v-chat', '对话']],
+  logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志']],
   settings: [['v-health', '体检'], ['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
   test: [['v-try', '试聊']],
 }
@@ -1029,6 +1041,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-groups') loadGroups()
   if (viewId === 'v-core') loadCore()
   if (viewId === 'v-logs') loadStatus()
+  if (viewId === 'v-napcat') loadNapcat()
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
   if (viewId === 'v-self') loadSelfV2()
@@ -1073,7 +1086,7 @@ async function loadStatus() {
     $('brand-sub').textContent = s.model ? `模型 ${s.model}` : '无模型（回显模式）'
     $('dot').className = 'dot' + (s.connected ? '' : ' off')
     $('conn').textContent = s.connected ? '链路正常' : '链路断开'
-    $('h-stage').textContent = s.relation.stage
+    // 这里原来设 h-stage / pick-* 这些元素，它们已经从页面删掉了
     $('h-turns').textContent = s.today.turns
     $('h-model').textContent = s.model || '-'
 
@@ -2005,6 +2018,46 @@ async function intentAction(action, text) {
 }
 
 // ============================================================
+// NapCat 页（内嵌它的 WebUI）
+// ============================================================
+
+async function loadNapcat() {
+  const tag = $('nc-state')
+  const hint = $('nc-hint')
+  const frame = $('nc-frame')
+  if (!tag) return
+
+  try {
+    const r = await api('/api/napcat')
+    tag.textContent = r.running ? '在跑' : '没跑'
+    tag.style.background = r.running ? '#238636' : '#f85149'
+    tag.style.color = '#fff'
+
+    if (hint) {
+      hint.textContent = r.running
+        ? 'WebUI 在 ' + r.webui + '。下面是它的页面（二维码登录、网络配置都在里面）。'
+        : 'NapCat 没在跑。先启动它，再回来刷新。'
+    }
+
+    if (frame && r.running && frame.src !== r.webui) {
+      frame.src = r.webui
+    }
+  } catch (e) {
+    tag.textContent = '查不到'
+    if (hint) hint.textContent = '失败：' + e.message
+  }
+}
+
+async function openNapcatWeb() {
+  try {
+    const r = await api('/api/napcat')
+    if (r.webui) window.open(r.webui, '_blank')
+  } catch {
+    /* 打不开就算了 */
+  }
+}
+
+// ============================================================
 // 仪表盘 / 体检 / 能力
 // ============================================================
 
@@ -2064,14 +2117,16 @@ async function loadDashboard() {
     const [s, h, c] = await Promise.all([
       api('/api/status'),
       api('/api/health'),
-      api('/api/cost').catch(() => null),
+      api('/api/balance').catch(() => null),
     ])
 
     // 卡片：只放健康度，不放内容统计
     const cards = [
       ['链路', s.connected ? '已连接' : '没连上', s.connected ? '#3fb950' : '#f85149'],
+      ['余额', c && c.total !== null ? '¥' + Number(c.total).toFixed(2) : '—', c && c.total !== null && c.total < 5 ? '#d29922' : ''],
       ['今日消息', String(s.today?.turns ?? 0), ''],
-      ['今天花', c ? '¥' + (c.today ?? 0).toFixed(3) : '—', ''],
+      ['今日花费', c ? '¥' + Number(c.today ?? 0).toFixed(4) : '—', ''],
+      ['本周 / 本月', c ? '¥' + Number(c.week ?? 0).toFixed(3) + ' / ¥' + Number(c.month ?? 0).toFixed(3) : '—', ''],
       ['情绪', s.mood?.emotion || '平稳', ''],
       ['运行时长', fmtDur(s.uptimeSec ?? 0), ''],
       ['体检', LEVEL_STYLE[h.level]?.text ?? '—', LEVEL_STYLE[h.level]?.color ?? ''],
@@ -3257,6 +3312,7 @@ function avatarColor(id, index) {
 }
 function renderPicker(person) {
   const wrap = $('person-pick')
+  // 顶部的人物选择器已经删了（成员都在「成员」页），这里直接跳过
   if (!wrap) return
   wrap.style.display = person.all.length > 1 ? '' : 'none'
   const cur = person.all.find((p) => p.id === person.id) || person.all[0]
@@ -3264,8 +3320,8 @@ function renderPicker(person) {
     const av = $('pick-av')
     av.textContent = (cur.name || '?').slice(0, 1)
     av.style.background = avatarColor(cur.id)
-    $('pick-name').textContent = cur.name || cur.id
-    $('pick-stage').textContent = cur.stage || ''
+    // 这里原来设 h-stage / pick-* 这些元素，它们已经从页面删掉了
+    // 这里原来设 h-stage / pick-* 这些元素，它们已经从页面删掉了
   }
   const menu = $('pick-menu')
   menu.innerHTML = ''
@@ -3357,6 +3413,9 @@ async function loadTrend() {
 // ---------- 启动 ----------
 connectEvents()
 showGroup('dashboard')
+// showGroup 只切显示，不会自动拉数据（它的 runLoaders 只在点导航时调）。
+// 首屏要手动拉一次，不然仪表盘是空的。
+loadDashboard()
 api('/api/logs/recent?n=40')
   .then((rows) => {
     for (const r of rows) {

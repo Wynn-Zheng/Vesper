@@ -26,6 +26,7 @@ import { listSnapshots, restore } from '../persona/version.ts'
 import { loadProfile } from '../persona/profile.ts'
 import { handlePeopleApi } from './people-api.ts'
 import { handleDesktopApi } from './desktop-api.ts'
+import { handleMiscApi } from './misc-api.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -740,6 +741,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         // 逻辑在 console/people-api.ts，这里只转交（返回 true = 已写响应）
         if (await handlePeopleApi(req, res, path, url, json, readBody)) return
         if (await handleDesktopApi(req, res, path, url, json, readBody)) return
+        if (await handleMiscApi(req, res, path, url, json)) return
 
       // 体检：一眼看出哪里坏了
       // 每项独立跑，API 挂了不影响查磁盘；最慢的一项 3 秒超时。
