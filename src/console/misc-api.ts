@@ -16,6 +16,9 @@ import {
 } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { loadRules } from '../core/config.ts'
+// NapCat 的定位和启停交给这个模块：它从配置的 Shell目录 推导所有路径，
+// 不写死盘符和版本号。misc-api 只做 HTTP → 它的转发。
+import * as NC from '../napcat/manager.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
@@ -51,7 +54,65 @@ export async function handleMiscApi(
     } catch {
       running = false
     }
-    json(res, 200, { running, webui: NAPCAT_WEBUI, webuiPage: NAPCAT_WEBUI_PAGE })
+
+    // 顺手把定位结果带上，前端能显示"装在哪、什么模式"
+    const loc = NC.locate()
+    const where =
+      'error' in loc
+        ? { locateError: loc.error }
+        : { shellDir: loc.shellDir, mode: loc.mode, napcatDir: loc.napcatDir }
+
+    json(res, 200, { running, webui: NAPCAT_WEBUI, webuiPage: NAPCAT_WEBUI_PAGE, ...where })
+    return true
+  }
+
+  /* ============ NapCat 安装目录（读 / 改） ============ */
+  if (method === 'GET' && path === '/api/napcat/shelldir') {
+    let configured = ''
+    try {
+      configured = loadRules().rules.NapCat?.Shell目录 ?? ''
+    } catch {
+      configured = ''
+    }
+    const loc = NC.locate()
+    if ('error' in loc) {
+      json(res, 200, { configured, ok: false, error: loc.error })
+      return true
+    }
+    json(res, 200, { configured, ok: true, shellDir: loc.shellDir, mode: loc.mode })
+    return true
+  }
+
+  if (method === 'PUT' && path === '/api/napcat/shelldir') {
+    const chunks: Buffer[] = []
+    for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { shellDir?: string }
+    const want = String(body.shellDir ?? '').trim()
+
+    // 先验证这个目录能不能用（空字符串 = 恢复自动探测）
+    if (want) {
+      const test = NC.locate(want)
+      if ('error' in test) {
+        json(res, 400, { error: test.error })
+        return true
+      }
+    }
+
+    const { setConfigPath } = await import('./config-write.ts')
+    const raw = readFileSync('persona/rules.yaml', 'utf8')
+    const r = setConfigPath(raw, 'NapCat.Shell目录', want)
+    if (!r.ok) {
+      json(res, 400, { error: r.error ?? '改不了' })
+      return true
+    }
+    writeFileSync('persona/rules.yaml', r.text, 'utf8')
+
+    const after = NC.locate()
+    json(res, 200, {
+      ok: true,
+      shelldir: want,
+      resolved: 'error' in after ? null : { shellDir: after.shellDir, mode: after.mode },
+    })
     return true
   }
 
@@ -59,7 +120,7 @@ export async function handleMiscApi(
   // NapCat 自己会把二维码存成 <napcat>/cache/qrcode.png（启动脚本里也是这么用的）。
   // 直接读它就行，不用拿 qrcodeurl 自己画。
   if (method === 'GET' && path === '/api/napcat/qrcode.png') {
-    const f = findQrcodeFile()
+    const f = NC.qrcodeFile()
     if (!f) {
       text(res, 404, '没有二维码文件')
       return true
@@ -113,22 +174,22 @@ export async function handleMiscApi(
   // 为什么能做：NapCat 是独立进程，不是我们服务的一部分。
   // 启动脚本自己会处理提权（net session 判断 + Start-Process -Verb RunAs）。
   if (method === 'POST' && path === '/api/napcat/start') {
-    const r = startNapcat()
+    const r = NC.start()
     json(res, 200, r)
     return true
   }
 
   if (method === 'POST' && path === '/api/napcat/stop') {
-    const r = await stopNapcat()
+    const r = await NC.stop()
     json(res, 200, r)
     return true
   }
 
   if (method === 'POST' && path === '/api/napcat/restart') {
-    const stopped = await stopNapcat()
+    const stopped = await NC.stop()
     // 等进程真退干净再启动，不然会抢端口
     await new Promise((r) => setTimeout(r, 2500))
-    const started = startNapcat()
+    const started = NC.start()
     json(res, 200, { ok: started.ok, stopped: stopped.detail, started: started.detail })
     return true
   }
@@ -138,7 +199,7 @@ export async function handleMiscApi(
   // 启动脚本里加了 Tee-Object，会同时写一份到 <NapCat目录>/napcat-console.log。
   if (method === 'GET' && path === '/api/napcat/console') {
     const limit = Math.min(2000, Math.max(1, Number(_url.searchParams.get('lines') ?? 200)))
-    const f = findConsoleLog()
+    const f = NC.logFile()
 
     if (!f) {
       json(res, 200, {
@@ -834,3 +895,16 @@ async function stopNapcat(): Promise<{ ok: boolean; detail: string }> {
 
   return { ok: false, detail: first.msg.slice(0, 150) }
 }
+
+/*
+ * 旧的实现，暂时保留。
+ *
+ * 这三条（以及它们内部引用的 findXxx）已经被 napcat/manager.ts 取代，
+ * 但删掉要连带清理一整片（findQrcodeFile / findLauncher / findNapcatDir ...
+ * 都在它们内部被引用），一次改风险太大 —— 这个文件我改坏过三次。
+ *
+ * 先用 void 标记"我知道它们没用了"，等下次专门做清理时一起删。
+ */
+void findConsoleLog
+void startNapcat
+void stopNapcat
