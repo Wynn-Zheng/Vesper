@@ -3,6 +3,7 @@
  *
  * 单独一个文件——server.ts 已经 1200 行，往里加东西风险太大（改坏过两次）。
  */
+import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -33,6 +34,15 @@ export async function handleMiscApi(
       running = false
     }
     json(res, 200, { running, webui: NAPCAT_WEBUI })
+    return true
+  }
+
+  /* ============ NapCat 登录状态 + 二维码 ============ */
+  // 为什么这么绕：NapCat 的 WebUI 不是公开 API，要先换 Credential 才能查。
+  // 换的算法是从它的前端 bundle 里挖出来的：sha256(token + ".napcat")。
+  if (method === 'GET' && path === '/api/napcat/login') {
+    const r = await napcatLoginStatus()
+    json(res, 200, r)
     return true
   }
 
@@ -146,4 +156,119 @@ function estimateSpend(): { today: number; week: number; month: number } {
     week: Math.round(out.week * 10000) / 10000,
     month: Math.round(out.month * 10000) / 10000,
   }
+}
+
+/**
+ * 查 NapCat 的登录状态和二维码链接。
+ *
+ * 拿不到就返回 available:false + reason，前端据此决定要不要显示二维码。
+ * 不抛错 —— 这个功能挂了不该影响整个页面。
+ */
+async function napcatLoginStatus(): Promise<{
+  available: boolean
+  reason?: string
+  isLogin?: boolean
+  phase?: string
+  qrcodeurl?: string
+  account?: string
+  nick?: string
+}> {
+  const cfgPath = findWebuiConfig()
+  if (!cfgPath) return { available: false, reason: '找不到 NapCat 的 webui.json' }
+
+  let token = ''
+  try {
+    const raw = JSON.parse(readFileSync(cfgPath, 'utf8')) as { token?: string }
+    token = raw.token ?? ''
+  } catch {
+    return { available: false, reason: 'webui.json 读不了' }
+  }
+  if (!token) return { available: false, reason: 'webui.json 里没有 token' }
+
+  const hash = createHash('sha256').update(token + '.napcat').digest('hex')
+
+  try {
+    const lr = await fetch(NAPCAT_WEBUI + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ hash }),
+      signal: AbortSignal.timeout(3000),
+    })
+    const lj = (await lr.json()) as { code?: number; data?: { Credential?: string } }
+    const cred = lj.data?.Credential
+    if (!cred) return { available: false, reason: '登录 NapCat 失败（token 可能变了）' }
+
+    const H = { 'content-type': 'application/json', Authorization: 'Bearer ' + cred }
+
+    const sr = await fetch(NAPCAT_WEBUI + '/api/QQLogin/CheckLoginStatus', {
+      method: 'POST',
+      headers: H,
+      body: '{}',
+      signal: AbortSignal.timeout(3000),
+    })
+    const sj = (await sr.json()) as {
+      code?: number
+      data?: {
+        isLogin?: boolean
+        loginPhase?: string
+        qrcodeurl?: string
+        isOffline?: boolean
+      }
+    }
+    const d = sj.data ?? {}
+
+    // 已登录的话顺便把账号和昵称也带上（显示"当前登录的是 xxx"）
+    let account = ''
+    let nick = ''
+    if (d.isLogin) {
+      try {
+        const ir = await fetch(NAPCAT_WEBUI + '/api/QQLogin/GetQQLoginInfo', {
+          method: 'POST',
+          headers: H,
+          body: '{}',
+          signal: AbortSignal.timeout(3000),
+        })
+        const ij = (await ir.json()) as { data?: { uin?: string; nick?: string } }
+        account = ij.data?.uin ?? ''
+        nick = ij.data?.nick ?? ''
+      } catch {
+        /* 拿不到就不显示 */
+      }
+    }
+
+    return {
+      available: true,
+      isLogin: d.isLogin === true,
+      phase: d.loginPhase ?? '',
+      qrcodeurl: d.qrcodeurl ?? '',
+      account,
+      nick,
+    }
+  } catch (e) {
+    return { available: false, reason: String(e).slice(0, 120) }
+  }
+}
+
+/** 找 NapCat 的 webui.json。按常见安装位置试，找不到就 null。 */
+function findWebuiConfig(): string | null {
+  const candidates = [
+    'E:/NapCat/NapCat.52230.Shell/versions/9.9.33-52230/resources/app/napcat/config/webui.json',
+    'C:/NapCat/config/webui.json',
+  ]
+  for (const c of candidates) {
+    if (existsSync(c)) return c
+  }
+  // 退一步：从 NapCat 目录名猜（版本号会变）
+  try {
+    const base = 'E:/NapCat/NapCat.52230.Shell/versions'
+    if (existsSync(base)) {
+      for (const ver of readdirSync(base)) {
+        const p = `${base}/${ver}/resources/app/napcat/config/webui.json`
+        if (existsSync(p)) return p
+      }
+    }
+  } catch {
+    /* 忽略 */
+  }
+  return null
 }

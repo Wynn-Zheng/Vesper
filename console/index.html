@@ -575,18 +575,41 @@
     </section>
 
     <section class="view" id="v-napcat">
-      <div class="card" style="margin-bottom:14px">
-        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <b style="font-size:15px">NapCat</b>
-          <span id="nc-state" class="tag">检查中…</span>
-          <button class="mini-btn" onclick="loadNapcat()">刷新</button>
-          <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开</button>
+      <!-- 主区：登录成功后的正常样子。右边登录面板出现时会 margin-right 300px -->
+      <div id="nc-main" style="transition:margin-right .2s ease-out">
+        <div class="card" style="margin-bottom:14px">
+          <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <b style="font-size:15px">NapCat</b>
+            <span id="nc-state" class="tag">检查中…</span>
+            <button class="mini-btn" onclick="loadNapcatLogin()">刷新</button>
+            <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开</button>
+          </div>
+          <div class="hint" id="nc-hint" style="margin-top:6px"></div>
         </div>
-        <div class="hint" id="nc-hint" style="margin-top:6px"></div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <iframe id="nc-frame" src="about:blank" style="width:100%;height:calc(100vh - 260px);border:0;background:#fff"></iframe>
+        </div>
       </div>
 
-      <div class="card" style="padding:0;overflow:hidden">
-        <iframe id="nc-frame" src="about:blank" style="width:100%;height:calc(100vh - 260px);border:0;background:#fff"></iframe>
+      <!-- 右侧登录面板：未登录时滑出，登录成功后自动收起 -->
+      <div id="nc-login-panel"
+        style="display:none;position:fixed;top:0;right:0;width:300px;height:100vh;background:var(--panel);border-left:1px solid var(--line);z-index:800;transform:translateX(100%);transition:transform .2s ease-out;flex-direction:column">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--line);flex:none">
+          <div style="font-size:14px;font-weight:600">扫码登录 QQ</div>
+          <div class="hint" style="font-size:11.5px;margin-top:3px">用手机 QQ 扫这个码</div>
+        </div>
+
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px">
+          <div id="nc-qr" style="display:flex;align-items:center;justify-content:center"></div>
+          <div class="hint" style="font-size:11px;margin-top:14px;text-align:center;line-height:1.6">
+            扫完自动检测，登录成功后这块会自己关掉
+          </div>
+        </div>
+
+        <div style="padding:12px 16px;border-top:1px solid var(--line);flex:none;display:flex;gap:8px">
+          <button class="mini-btn" style="flex:1" onclick="refreshNapcatQrcode()">刷新二维码</button>
+        </div>
       </div>
     </section>
 
@@ -1189,7 +1212,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-groups') window.loadGroups2?.()
   if (viewId === 'v-core') loadCore()
   if (viewId === 'v-logs') loadStatus()
-  if (viewId === 'v-napcat') loadNapcat()
+  if (viewId === 'v-napcat') window.loadNapcatLogin?.()
   if (viewId === 'v-desktop-log') loadDesktopLog()
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
@@ -3681,6 +3704,8 @@ setInterval(loadStatus, 15000)
 </svg>
   <script src="/members.js"></script>
   <script src="/groups.js"></script>
+  <script src="/vendor/qrcode.js"></script>
+  <script src="/napcat.js"></script>
   <script src="/settings.js"></script>
   <script src="/test.js"></script>
 </body>

@@ -479,7 +479,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 这些文件是纯前端代码，不含数据；真正拿数据还得过 /api/* 的 token。
     // 只允许 console/ 下的 .js/.css，路径里不许有 ..，其余一律 404。
     if (
-      (req.method === 'GET' && /^\/[\w.-]+\.(js|css)$/.test(path)) ||
+      (req.method === 'GET' && /^\/(?:vendor\/)?[\w.-]+\.(js|css)$/.test(path)) ||
       (req.method === 'GET' && (path === '/' || path === '/index.html'))
     ) {
       const rel = path === '/' || path === '/index.html' ? 'index.html' : path.slice(1)
