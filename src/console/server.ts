@@ -746,6 +746,160 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       // 能力清单：它能干什么、开没开。
       // 直接复用 abilities.ts —— 那是给 prompt 用的同一份数据，
       // 分开维护会漂（prompt 说"能看屏幕"，控制台说"不能"）。
+      // 它准备做的事：读 / 加 / 完成 / 删
+      // 自我页（7 个子栏）的聚合数据。
+      // 一次拿全，避免每个子栏发一个请求（切 tab 会闪）。
+      if (req.method === 'GET' && path === '/api/self/v2') {
+        const { loadSelf } = await import('../self/store.ts')
+        const { loadLife } = await import('../self/store.ts')
+        const { loadIntent } = await import('../memory/intent.ts')
+        const { decayedMood, loadMood } = await import('../persona/mood.ts')
+        const { loadCore, parseCore } = await import('../memory/core.ts')
+        const { loadPlays } = await import('../learn/plays.ts')
+        const { existsSync, readFileSync } = await import('node:fs')
+
+        const self = loadSelf()
+
+        // 生活：LifeEntry 是 { date, lines }，拍平成 "date：第一条" 这种一行一条
+        let life: string[] = []
+        try {
+          const entries = loadLife()
+          const flat: string[] = []
+          for (const e of entries) {
+            for (const l of e.lines || []) flat.push(e.date ? `${e.date}｜${l}` : l)
+          }
+          life = flat
+        } catch {
+          /* 生活文件读不到 */
+        }
+
+        // 情绪：decayedMood 拿到衰减后的
+        let mood: Record<string, unknown> | null = null
+        try {
+          const raw = loadMood()
+          const m = decayedMood(raw)
+          if (m) {
+            mood = {
+              情绪: (m as unknown as { emotion?: string }).emotion,
+              强度: (m as unknown as { intensity?: number }).intensity,
+              效价: (m as unknown as { valence?: number }).valence,
+              原因: (m as unknown as { reason?: string }).reason,
+            }
+          }
+        } catch {
+          /* 没心情 */
+        }
+
+        // 核心记忆
+        let core: Record<string, string[]> = {}
+        try {
+          const raw = readFileSync('persona/core.md', 'utf8')
+          const parsed = parseCore(raw)
+          const out: Record<string, string[]> = {}
+          for (const item of parsed) {
+            const k = (item as unknown as { kind?: string }).kind ?? '身份'
+            const v = (item as unknown as { text?: string }).text ?? ''
+            if (!v) continue
+            out[k] = out[k] ?? []
+            out[k].push(v)
+          }
+          core = out
+        } catch {
+          /* 没核心文件 */
+        }
+
+        // 它发现的问题
+        let issues: unknown[] = []
+        try {
+          if (existsSync('persona/issues.json')) {
+            const raw = JSON.parse(readFileSync('persona/issues.json', 'utf8'))
+            issues = Array.isArray(raw) ? raw : []
+          }
+        } catch {
+          /* 坏文件 */
+        }
+
+        // 代码地图
+        let codemap = ''
+        try {
+          if (existsSync('persona/codemap.md')) codemap = readFileSync('persona/codemap.md', 'utf8').slice(0, 4000)
+        } catch {
+          /* 读不到 */
+        }
+
+        // 表达学习
+        let plays: unknown[] = []
+        try {
+          plays = loadPlays().slice(0, 30)
+        } catch {
+          /* 没有 */
+        }
+
+        const traits = Object.entries(self.traits ?? {}).filter(([, v]) => v && String(v).trim())
+
+        json(res, 200, {
+          name: self.name || '',
+          selfText: self.about || '',
+          traits,
+          life,
+          intent: loadIntent(),
+          mood,
+          moodHistory: [],
+          core,
+          issues,
+          codemap,
+          plays,
+        })
+        return
+      }
+
+      // 改自述（角色卡里那一大段）
+      if (req.method === 'PUT' && path === '/api/self/text') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string }
+        const text = String(body.text ?? '')
+        if (!text.trim()) {
+          json(res, 400, { error: '自述不能空' })
+          return
+        }
+        const { loadSelf, saveSelf } = await import('../self/store.ts')
+        const cur = loadSelf()
+        saveSelf({ ...cur, about: text })
+        json(res, 200, { ok: true })
+        return
+      }
+
+      if (req.method === 'GET' && path === '/api/intent') {
+        const { loadIntent } = await import('../memory/intent.ts')
+        json(res, 200, loadIntent())
+        return
+      }
+
+      if (req.method === 'POST' && path === '/api/intent') {
+        const body = JSON.parse((await readBody(req)) || '{}') as {
+          action?: 'add' | 'complete' | 'drop'
+          text?: string
+          source?: string
+        }
+        const { addIntent, completeIntent, dropIntent } = await import('../memory/intent.ts')
+        const text = String(body.text ?? '').trim()
+        if (!text) {
+          json(res, 400, { error: '缺少 text' })
+          return
+        }
+        const action = body.action ?? 'add'
+        let done = false
+        if (action === 'add') {
+          const src = body.source === '他说的' || body.source === '你加的' ? body.source : '你加的'
+          done = addIntent(text, src)
+        } else if (action === 'complete') {
+          done = completeIntent(text)
+        } else {
+          done = dropIntent(text)
+        }
+        json(res, done ? 200 : 400, done ? { ok: true } : { error: '没成功（可能已存在或不存在）' })
+        return
+      }
+
       if (req.method === 'GET' && path === '/api/ability') {
         const { listAbilities } = await import('../self/abilities.ts')
         const rules = opts.getRules()

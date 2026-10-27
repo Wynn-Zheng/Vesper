@@ -633,28 +633,16 @@
       </div>
     </section>
 <section class="view" id="v-self">
-      <div class="cols2">
-        <div class="panel"><h3>我是谁 <span class="r" id="self-phase"></span></h3>
-          <div class="body">
-            <div style="margin-bottom:14px">
-              <div class="hint">名字</div>
-              <div style="font-size:20px;font-weight:600;margin-top:4px" id="self-name">—</div>
-              <div class="hint" id="self-name-why" style="margin-top:4px"></div>
-            </div>
-            <div style="margin-bottom:14px">
-              <div class="hint">对自己的认识</div>
-              <div style="font-size:13px;margin-top:4px;white-space:pre-wrap" id="self-about"></div>
-            </div>
-            <div>
-              <div class="hint">最近在想</div>
-              <div style="font-size:13px;margin-top:4px;white-space:pre-wrap" id="self-thinking"></div>
-            </div>
-          </div>
-        </div>
-        <div class="panel"><h3>我自己的事 <span class="r">和对方无关的那些</span></h3>
-          <div class="body" style="max-height:520px;overflow:auto"><div id="self-life"></div></div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <b style="font-size:15px">自我</b>
+          <span class="hint">它对自己的认知、它自己的生活、它记着要做的事</span>
+          <button class="mini-btn" onclick="loadSelfV2()">刷新</button>
         </div>
       </div>
+
+      <div class="group-tabs" id="self-tabs" style="margin-bottom:12px"></div>
+      <div id="self-body"></div>
     </section>
 
 
@@ -1073,7 +1061,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-logs') loadStatus()
   if (viewId === 'v-chat') loadChat()
   if (viewId === 'v-trend') loadTrend()
-  if (viewId === 'v-self') loadSelf()
+  if (viewId === 'v-self') loadSelfV2()
   if (viewId === 'v-features') loadFeatures()
   if (viewId === 'v-qzone') loadQzone()
   if (viewId === 'v-rules') loadRules()
@@ -1819,6 +1807,233 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 })
+
+// ============================================================
+// 自我（7 个子栏）
+// ============================================================
+
+let SELF_TAB = 'card'
+let SELF_DATA = null
+
+const SELF_TABS = [
+  ['card', '角色卡'],
+  ['mind', '心事'],
+  ['mood', '情绪'],
+  ['core', '底线'],
+  ['issues', '我觉得有问题'],
+  ['codemap', '代码地图'],
+  ['plays', '学说话'],
+]
+
+async function loadSelfV2() {
+  const bar = $('self-tabs')
+  if (bar) {
+    bar.innerHTML = ''
+    for (const [k, label] of SELF_TABS) {
+      const b = el('button', 'gtab' + (k === SELF_TAB ? ' on' : ''), label)
+      b.onclick = () => {
+        SELF_TAB = k
+        renderSelfV2()
+      }
+      bar.appendChild(b)
+    }
+  }
+
+  const body = $('self-body')
+  if (body) body.innerHTML = '<div class="hint">加载中…</div>'
+
+  try {
+    SELF_DATA = await api('/api/self/v2')
+    renderSelfV2()
+  } catch (e) {
+    if (body) body.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
+  }
+}
+
+function renderSelfV2() {
+  const body = $('self-body')
+  if (!body || !SELF_DATA) return
+  const d = SELF_DATA
+
+  // 高亮当前 tab
+  for (const b of document.querySelectorAll('#self-tabs .gtab')) {
+    b.classList.toggle('on', b.textContent === (SELF_TABS.find((x) => x[0] === SELF_TAB) || [])[1])
+  }
+
+  body.innerHTML = ''
+
+  if (SELF_TAB === 'card') {
+    const c = el('div', 'card')
+    c.appendChild(el('div', 'op-t', '名字'))
+    c.appendChild(el('div', 'txt', d.name || '（还没取名字）')).style.cssText = 'font-size:15px;margin-bottom:14px'
+
+    c.appendChild(el('div', 'op-t', '我是谁'))
+    const ta = el('textarea')
+    ta.value = d.selfText || ''
+    ta.rows = 5
+    ta.style.cssText = 'width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--text);font-size:13px;line-height:1.6'
+    c.appendChild(ta)
+    const b1 = el('button', 'mini-btn', '保存自述')
+    b1.style.marginTop = '8px'
+    b1.onclick = () => saveSelfText(ta.value)
+    c.appendChild(b1)
+
+    c.appendChild(el('div', 'op-t', '我给自己定的规矩')).style.marginTop = '16px'
+    if (!(d.traits || []).length) {
+      c.appendChild(el('div', 'empty', '还没有特征'))
+    } else {
+      for (const [k, v] of d.traits) {
+        const row = el('div', 'item')
+        row.appendChild(el('b', '', k + '：')).style.fontSize = '13px'
+        row.appendChild(el('span', 'sub', v))
+        c.appendChild(row)
+      }
+    }
+    body.appendChild(c)
+  }
+
+  if (SELF_TAB === 'mind') {
+    // 生活
+    const c1 = el('div', 'card')
+    c1.appendChild(el('div', 'op-t', '我自己的生活'))
+    const life = d.life || []
+    if (!life.length) c1.appendChild(el('div', 'empty', '还没有生活记录'))
+    for (const l of life.slice(-12).reverse()) {
+      c1.appendChild(el('div', 'item', '· ' + l)).style.fontSize = '13px'
+    }
+    body.appendChild(c1)
+
+    // 准备做的事
+    const c2 = el('div', 'card')
+    c2.style.marginTop = '12px'
+    c2.appendChild(el('div', 'op-t', '我准备做的事'))
+    c2.appendChild(el('div', 'hint', '这些是我自己记着要做的，不是等人回答')).style.marginBottom = '8px'
+
+    const todo = d.intent?.todo || []
+    if (!todo.length) c2.appendChild(el('div', 'empty', '没有待办'))
+    for (const x of todo) {
+      const row = el('div', 'item')
+      row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)'
+      const mid = el('div')
+      mid.style.cssText = 'flex:1'
+      mid.appendChild(el('div', 'txt', x.text))
+      mid.appendChild(el('div', 'sub', x.source + ' · ' + x.date))
+      row.appendChild(mid)
+
+      const okb = el('button', 'mini-btn', '完成')
+      okb.onclick = () => intentAction('complete', x.text)
+      const delb = el('button', 'mini-btn danger', '删')
+      delb.onclick = () => intentAction('drop', x.text)
+      row.appendChild(okb)
+      row.appendChild(delb)
+      c2.appendChild(row)
+    }
+
+    // 加一条
+    const addRow = el('div')
+    addRow.style.cssText = 'display:flex;gap:8px;margin-top:10px'
+    const inp = el('input')
+    inp.placeholder = '加一条……'
+    inp.style.cssText = 'flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px'
+    const addb = el('button', 'mini-btn', '加')
+    addb.onclick = () => {
+      if (inp.value.trim()) intentAction('add', inp.value.trim())
+    }
+    addRow.appendChild(inp)
+    addRow.appendChild(addb)
+    c2.appendChild(addRow)
+    body.appendChild(c2)
+  }
+
+  if (SELF_TAB === 'mood') {
+    const c = el('div', 'card')
+    if (!d.mood) {
+      c.appendChild(el('div', 'empty', '现在没有特别的心情'))
+    } else {
+      c.appendChild(el('div', 'op-t', d.mood.情绪 || '—'))
+      c.appendChild(el('div', 'sub', '强度 ' + (d.mood.强度 ?? '?') + (d.mood.效价 !== undefined ? ' · 效价 ' + d.mood.效价 : '')))
+      if (d.mood.原因) c.appendChild(el('div', 'txt', '因为：' + d.mood.原因)).style.marginTop = '8px'
+    }
+    if ((d.moodHistory || []).length) {
+      c.appendChild(el('div', 'op-t', '最近变化')).style.marginTop = '16px'
+      for (const h of d.moodHistory.slice(-5).reverse()) {
+        c.appendChild(el('div', 'sub', (h.情绪 || '?') + ' ' + (h.强度 ?? '') + '  ' + (h.at ? new Date(h.at).toLocaleString() : '')))
+      }
+    }
+    body.appendChild(c)
+  }
+
+  if (SELF_TAB === 'core') {
+    const c = el('div', 'card')
+    c.appendChild(el('div', 'op-t', '我一定不能弄错的'))
+    c.appendChild(el('div', 'hint', '这个只有你能改。它只能提申请。')).style.marginBottom = '8px'
+    const core = d.core || {}
+    for (const [kind, items] of Object.entries(core)) {
+      if (!Array.isArray(items) || !items.length) continue
+      c.appendChild(el('div', 'op-t', kind)).style.marginTop = '10px'
+      for (const it of items) c.appendChild(el('div', 'item', '· ' + it))
+    }
+    if (!Object.keys(core).length) c.appendChild(el('div', 'empty', '还是空的'))
+    body.appendChild(c)
+  }
+
+  if (SELF_TAB === 'issues') {
+    const c = el('div', 'card')
+    c.appendChild(el('span', 'tag', '自动生成')).style.cssText = 'background:rgba(255,255,255,.08);font-size:11px'
+    c.appendChild(el('div', 'op-t', '它自己发现的问题')).style.marginTop = '8px'
+    const issues = d.issues || []
+    if (!issues.length) c.appendChild(el('div', 'empty', '没有发现问题'))
+    for (const it of issues.slice(-15).reverse()) {
+      const row = el('div', 'item')
+      row.appendChild(el('div', 'txt', it.text || it.msg || String(it)))
+      if (it.at) row.appendChild(el('div', 'sub', new Date(it.at).toLocaleString()))
+      c.appendChild(row)
+    }
+    body.appendChild(c)
+  }
+
+  if (SELF_TAB === 'codemap') {
+    const c = el('div', 'card')
+    c.appendChild(el('span', 'tag', '自动生成')).style.cssText = 'background:rgba(255,255,255,.08);font-size:11px'
+    c.appendChild(el('div', 'op-t', '我对自己的代码的认知')).style.marginTop = '8px'
+    c.appendChild(el('div', 'txt', d.codemap || '（还没有代码地图）')).style.cssText = 'white-space:pre-wrap;font-size:12.5px;line-height:1.7;margin-top:8px'
+    body.appendChild(c)
+  }
+
+  if (SELF_TAB === 'plays') {
+    const c = el('div', 'card')
+    c.appendChild(el('div', 'op-t', '我学到的说话方式'))
+    const plays = d.plays || []
+    if (!plays.length) c.appendChild(el('div', 'empty', '还没学到'))
+    for (const x of plays.slice(0, 20)) {
+      const row = el('div', 'item')
+      row.appendChild(el('div', 'txt', x.text || String(x)))
+      if (x.score !== undefined) row.appendChild(el('div', 'sub', '评分 ' + x.score))
+      c.appendChild(row)
+    }
+    body.appendChild(c)
+  }
+}
+
+async function saveSelfText(text) {
+  try {
+    await sendJson('/api/self/text', { text }, 'PUT')
+    toast('已保存')
+    loadSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function intentAction(action, text) {
+  try {
+    await sendJson('/api/intent', { action, text })
+    toast(action === 'add' ? '加上了' : action === 'complete' ? '完成了' : '删了')
+    loadSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
 
 // ============================================================
 // 仪表盘 / 体检 / 能力

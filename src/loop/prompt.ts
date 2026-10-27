@@ -23,6 +23,8 @@ export interface PromptParts {
    * 因为它被告知没有，就真以为自己没有。
    */
   desktop?: { 只读: boolean; 可操作: boolean }
+  /** 它自己准备做的事（intent.md） */
+  intent?: string
   /** 它自己的模块地图（精简版）：一共几块、各干什么 */
   codeMap?: string
   rules: Rules
@@ -256,6 +258,11 @@ export function buildSystem(parts: PromptParts): string {
   // 成长的痕迹：只在真的变过时才有内容
   if (parts.growth) {
     lines.push('', parts.growth)
+  }
+
+  // 它自己准备做的事：和"待问"不是一回事，那个是等别人回答
+  if (parts.intent) {
+    lines.push('', parts.intent)
   }
 
   lines.push('')
