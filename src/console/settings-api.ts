@@ -6,7 +6,7 @@
  *   这个文件      → 数据目录、磁盘、备份、模型配置、版本（设置页在用）
  */
 import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
 import { loadRules } from '../core/config.ts'
@@ -142,6 +142,10 @@ export async function handleSettingsApi(
       hasKey: Boolean(key),
       baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com（默认）',
       model: process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat（默认）',
+      // 配置和数据到底在哪 —— 用户想手动改文件、或者换台机器搬数据时要看这个。
+      // 打包后 cwd 是 %APPDATA%\QQBot\data-root，不写出来没人找得到。
+      envPath: resolve('.env'),
+      dataDir: resolve('.'),
       visionModel: (() => {
         try {
           return loadRules().rules.视觉?.模型 || ''

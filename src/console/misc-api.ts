@@ -8,10 +8,12 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from '
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import { loadRules } from '../core/config.ts'
+import { info } from '../core/log.ts'
 // NapCat 的定位和启停交给这个模块：它从配置的 Shell目录 推导所有路径，
 // 不写死盘符和版本号。misc-api 只做 HTTP → 它的转发。
 import * as NC from '../napcat/manager.ts'
 import { installStatus, startInstall } from '../napcat/install.ts'
+import { wireOnebot } from '../napcat/wire.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
@@ -287,6 +289,26 @@ export async function handleMiscApi(
   // 换的算法是从它的前端 bundle 里挖出来的：sha256(token + ".napcat")。
   if (method === 'GET' && path === '/api/napcat/login') {
     const r = await napcatLoginStatus()
+
+    // 已登录 → 顺手把 OneBot 连接配好。
+    //
+    // NapCat 扫码登录后才会生成 config/onebot11_<QQ号>.json，里面默认不连任何东西。
+    // 要求用户自己去 WebUI 加 WebSocket 客户端太难了，这里直接补上。
+    // 只加"没有指向我们"的，用户手动配过的不动。
+    if (r.available && r.isLogin) {
+      const located = NC.locate()
+      if (!('error' in located)) {
+        const w = wireOnebot(located.shellDir)
+        const changed = w.files.filter((f) => f.changed)
+        if (changed.length > 0) {
+          info('已自动把 NapCat 的 OneBot 连接指向 bot', { files: changed.map((f) => f.path) })
+          // 告诉前端：配置刚改过，需要重启 NapCat 才生效
+          json(res, 200, { ...r, wired: true, wiredFiles: changed.length })
+          return true
+        }
+      }
+    }
+
     json(res, 200, r)
     return true
   }

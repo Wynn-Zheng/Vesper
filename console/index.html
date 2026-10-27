@@ -582,6 +582,11 @@
     </section>
 
     <section class="view on" id="v-dashboard">
+      <!-- 首次启动的引导条：没有 API Key 时才显示，由 renderFirstRunGuide 控制 -->
+      <div
+        id="dash-guide"
+        style="display:none;margin-bottom:14px;padding:16px 18px;background:linear-gradient(135deg,rgba(88,166,255,.10),rgba(63,185,80,.06));border:1px solid rgba(88,166,255,.28);border-radius:10px"
+      ></div>
       <!-- 主指标 + 三个陪衬。刻意做成不同大小 —— 八个一样大的卡片会让
            眼睛不知道先看哪，视觉上就是"没设计"。 -->
       <div class="dash-hero">
@@ -2788,6 +2793,7 @@ async function loadDashboard() {
       api('/api/trend?days=7').catch(() => null),
     ])
 
+    renderFirstRunGuide(h)
     renderDashHero(s, c, t)
     renderDashChart(t)
     renderHealth(h, $('dash-health'))
@@ -2797,6 +2803,41 @@ async function loadDashboard() {
     const main = $('dash-main')
     if (main) main.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
   }
+}
+
+/**
+ * 首次启动的引导条。
+ *
+ * 刚解压的人打开控制台看到的是几个 0 和一堆空卡片，不知道该先干什么 ——
+ * 而他只需要补一个 API Key。与其让他自己找「设置 → 模型」，不如直接摆出来。
+ */
+function renderFirstRunGuide(health) {
+  const box = $('dash-guide')
+  if (!box) return
+
+  const items = health && Array.isArray(health.items) ? health.items : []
+  const apiItem = items.find((x) => x.id === 'api' || x.id === 'deepseek')
+  const looksUnconfigured = apiItem && apiItem.level === 'fail' && /没有 DEEPSEEK_API_KEY/.test(apiItem.detail || '')
+
+  if (!looksUnconfigured) {
+    box.style.display = 'none'
+    box.innerHTML = ''
+    return
+  }
+
+  box.style.display = ''
+  box.innerHTML =
+    '<div style="display:flex;gap:14px;align-items:flex-start">' +
+    '<div style="font-size:20px;line-height:1.2">🔑</div>' +
+    '<div style="flex:1;min-width:0">' +
+    '<div style="font-weight:600;margin-bottom:4px">还差一步就能用了</div>' +
+    '<div class="hint" style="font-size:12.5px;line-height:1.8">' +
+    '现在还没有 DeepSeek 的 API Key，所以它只能用回显模式（你发什么它原样回什么），也不会真的理解你。<br>' +
+    '去 <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener" style="color:var(--accent)">platform.deepseek.com</a> 申请一个，填到下面就能用。' +
+    '</div>' +
+    '</div>' +
+    '<button class="mini-btn" onclick="showGroup(\'settings\',\'v-settings\');setTimeout(()=>document.getElementById(\'model-body\')?.scrollIntoView({block:\'center\'}),300)">去填 Key</button>' +
+    '</div>'
 }
 
 function fmtDur(sec) {

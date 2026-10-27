@@ -56,6 +56,15 @@
         loadWebuiFrame(d.webuiAuto || d.webui)
         loadNapcatConsole()
         stopPoll()
+
+        // 后端刚把 OneBot 连接配好（扫码登录后才有的 onebot11_<QQ号>.json）。
+        // NapCat 只在启动/登录时读一次配置，所以要重启它才生效。
+        if (d.wired) {
+          toast('已自动把连接配好，正在重启 NapCat…')
+          setTimeout(() => {
+            napcatAction('restart').catch(() => {})
+          }, 1000)
+        }
       } else {
         // 未登录 → 显示面板 + 二维码
         renderInfo(d, false, d.reason)
