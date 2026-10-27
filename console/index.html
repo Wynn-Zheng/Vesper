@@ -1,6 +1,26 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <script>
+    // 最早的错误捕获：比任何业务脚本都先装，这样能抓到首屏的崩溃。
+    // 页面里显示成一个角落的红色小条（正常时看不见）。
+    window.__bootErrs = []
+    window.addEventListener('error', function (e) {
+      window.__bootErrs.push((e.message || '?') + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno)
+      var d = document.createElement('div')
+      d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#f85149;color:#fff;padding:6px 10px;font:12px monospace;z-index:99999'
+      d.textContent = '页面出错：' + e.message + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno
+      document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(d) })
+      if (document.body) document.body.appendChild(d)
+    })
+    window.addEventListener('unhandledrejection', function (e) {
+      window.__bootErrs.push('unhandled: ' + ((e.reason && e.reason.message) || e.reason))
+      var d = document.createElement('div')
+      d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#d29922;color:#fff;padding:6px 10px;font:12px monospace;z-index:99999'
+      d.textContent = '未处理的 Promise 错误：' + ((e.reason && e.reason.message) || e.reason)
+      if (document.body) document.body.appendChild(d)
+    })
+  </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QQ Bot 控制台</title>
@@ -3574,11 +3594,9 @@ function renderPicker(person) {
     menu.appendChild(item)
   }
 }
-$('pick-btn').onclick = (e) => {
-  e.stopPropagation()
-  $('pick-menu').classList.toggle('on')
-}
-document.addEventListener('click', () => $('pick-menu').classList.remove('on'))
+// 顶部的人物选择器已经删了（成员都在「成员」页），这里不再挂事件。
+// 之前留着 `$('pick-btn').onclick = ...` 会抛 "Cannot set properties of null"，
+// 把后面整段启动代码（首屏加载）全带崩 —— 表现就是页面空白。
 // ---------- 日志级别过滤 ----------
 const logFilter = { level: 'all', rows: [] }
 function renderLogRows() {
@@ -3644,7 +3662,12 @@ connectEvents()
 showGroup('dashboard')
 // showGroup 只切显示，不会自动拉数据（它的 runLoaders 只在点导航时调）。
 // 首屏要手动拉一次，不然仪表盘是空的。
-loadDashboard()
+// 用 setTimeout(0) 推迟到当前同步代码跑完，避免和后面的初始化抢 DOM；
+// 再加 catch，不然出错时静默白屏，很难查。
+setTimeout(() => {
+  loadDashboard().catch((e) => console.error('首屏 loadDashboard 失败:', e))
+  loadStatus().catch((e) => console.error('首屏 loadStatus 失败:', e))
+}, 0)
 api('/api/logs/recent?n=40')
   .then((rows) => {
     for (const r of rows) {
