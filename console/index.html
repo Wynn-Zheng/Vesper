@@ -145,6 +145,11 @@
   .hint{font-size:11.5px;color:var(--dim2)}
   /* ---- 组内 tab ---- */
   .group-tabs{display:flex;gap:2px;margin-bottom:14px}
+/* 设置页的分块标题：一行，左标题+说明，右按钮 */
+.set-head{display:flex;align-items:baseline;gap:10px;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.set-head b{font-size:14.5px}
+.view > .set-head:not(:first-child){margin-top:28px}
+.set-head + .card,.set-head + .panel{margin-top:0}
   .gtab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim2);font-size:13px;padding:7px 16px;cursor:pointer;font-family:inherit;transition:color .15s}
   .gtab:hover{color:var(--text)}
   .gtab.on{color:var(--blue);border-bottom-color:var(--blue)}
@@ -623,18 +628,6 @@
       <div id="ability-groups"></div>
     </section>
 
-    <section class="view" id="v-health">
-      <div class="card" style="margin-bottom:14px">
-        <div class="row" style="display:flex;gap:10px;align-items:center">
-          <b style="font-size:15px">体检</b>
-          <span id="health-tag" class="tag">—</span>
-          <button class="mini-btn" onclick="loadHealth()">重新检查</button>
-        </div>
-        <div class="hint" style="margin-top:6px">每项都能单独跑。红了就按「怎么修」里的做。</div>
-      </div>
-      <div id="health-list"></div>
-    </section>
-
     <section class="view" id="v-napcat">
       <div id="nc-main" style="transition:margin-right .2s ease-out">
         <!-- 状态卡 -->
@@ -780,39 +773,104 @@
       <div id="md-body" style="flex:1;overflow:auto;padding:14px 18px"></div>
     </div>
 
-    <section class="view" id="v-data">
-      <div class="card" style="margin-bottom:14px">
-        <div class="row" style="display:flex;gap:10px;align-items:center">
-          <b style="font-size:15px">数据</b>
-          <span class="hint">数据在哪、占多少、怎么备份</span>
-          <button class="mini-btn" onclick="loadData()">刷新</button>
-        </div>
-      </div>
-      <div id="data-body"></div>
-    </section>
-
-    <section class="view" id="v-model">
-      <div class="card" style="margin-bottom:14px">
-        <div class="row" style="display:flex;gap:10px;align-items:center">
-          <b style="font-size:15px">模型</b>
-          <span class="hint">DeepSeek 的接入配置</span>
-          <button class="mini-btn" onclick="loadModel()">刷新</button>
-        </div>
+    <section class="view" id="v-settings">
+      <div class="set-head">
+        <b>连接</b>
+        <span class="hint">模型接入</span>
+        <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadModel()">刷新</button></div>
       </div>
       <div id="model-body"></div>
-    </section>
 
-    <section class="view" id="v-about">
-      <div class="card" style="margin-bottom:14px">
-        <div class="row" style="display:flex;gap:10px;align-items:center">
-          <b style="font-size:15px">关于</b>
-          <span class="hint">版本、运行时、重启</span>
-          <button class="mini-btn" onclick="loadAbout()">刷新</button>
+      <div class="set-head">
+        <b>规则</b>
+        <span class="hint">它怎么说话、怎么记事</span>
+        <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadRules()">重新读取</button></div>
+      </div>
+      <div class="panel">
+        <div class="body">
+          <div class="hint" style="margin-bottom:8px">直接改 persona/rules.yaml。保存后自动重载，不用重启。</div>
+          <textarea class="editor" id="rules-text" spellcheck="false"></textarea>
+          <div class="row">
+            <button class="btn pri" onclick="saveRules()">保存</button>
+            <button class="btn" onclick="loadRules()">重新读取</button>
+            <span class="hint" id="rules-hint"></span>
+          </div>
         </div>
       </div>
-      <div id="about-body"></div>
-    </section>
 
+      <div class="set-head">
+        <b>权限</b>
+        <span class="hint">谁能让它说话</span>
+        <div style="margin-left:auto;display:flex;gap:6px"></div>
+      </div>
+      <div class="cols2">
+        <div class="panel">
+          <h3>群 <span class="r" id="acc-g-count"></span></h3>
+          <div class="body">
+            <div class="acc-block">
+              <div class="acc-label">白名单 <span>留空 = 不限制</span></div>
+              <div class="chips" id="chips-groupAllow"></div>
+              <input class="chip-input" id="input-groupAllow" placeholder="输入群号，回车添加" autocomplete="off">
+            </div>
+            <div class="acc-block">
+              <div class="acc-label">黑名单 <span>永远不理这些群</span></div>
+              <div class="chips" id="chips-groupDeny"></div>
+              <input class="chip-input" id="input-groupDeny" placeholder="输入群号，回车添加" autocomplete="off">
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>成员 <span class="r" id="acc-m-count"></span></h3>
+          <div class="body">
+            <div class="acc-block">
+              <div class="acc-label">白名单 <span>留空 = 不限制</span></div>
+              <div class="chips" id="chips-memberAllow"></div>
+              <input class="chip-input" id="input-memberAllow" placeholder="输入 QQ 号，回车添加" autocomplete="off">
+            </div>
+            <div class="acc-block">
+              <div class="acc-label">黑名单 <span>永远不理这些人</span></div>
+              <div class="chips" id="chips-memberDeny"></div>
+              <input class="chip-input" id="input-memberDeny" placeholder="输入 QQ 号，回车添加" autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="body">
+          <label class="switch-row">
+            <input type="checkbox" id="acc-require-at">
+            <span>群里必须 <b>@</b> 它才回复</span>
+            <span class="hint">关掉后，群里所有消息都会被处理</span>
+          </label>
+          <div class="row" style="margin-top:14px">
+            <button class="btn pri" onclick="saveAccessPolicy()">保存</button>
+            <span class="hint" id="acc-path"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-head">
+        <b>数据</b>
+        <span class="hint">存哪、占多少、怎么备份</span>
+        <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadData()">刷新</button></div>
+      </div>
+      <div id="data-body"></div>
+
+      <div class="set-head">
+        <b>关于</b>
+        <span class="hint">版本、运行时、重启</span>
+        <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadAbout()">刷新</button></div>
+      </div>
+      <div id="about-body"></div>
+
+      <div class="set-head">
+        <b>健康检查</b>
+        <span class="hint">9 项，红了才需要管</span>
+        <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadHealth()">重新检查</button></div>
+      </div>
+      <div id="health-list"></div>
+
+    </section>
     <section class="view" id="v-tools-test">
       <div class="card" style="margin-bottom:14px">
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -940,19 +998,6 @@
 
     
 
-    <section class="view" id="v-rules">
-      <div class="panel"><h3>persona/rules.yaml <span class="r">保存后自动重载</span></h3>
-        <div class="body">
-          <textarea class="editor" id="rules-text" spellcheck="false"></textarea>
-          <div class="row">
-            <button class="btn pri" onclick="saveRules()">保存</button>
-            <button class="btn" onclick="loadRules()">重新读取</button>
-            <span class="hint" id="rules-hint"></span>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <section class="view" id="v-history">
       <div class="panel"><h3>人格快照 <span class="r">改动后自动保存，最多 50 份</span></h3>
         <div class="body">
@@ -964,56 +1009,6 @@
         </div>
       </div>
     </section>
-
-    <section class="view" id="v-access">
-      <div class="cols2">
-        <div class="panel">
-          <h3>群 <span class="r" id="acc-g-count"></span></h3>
-          <div class="body">
-            <div class="acc-block">
-              <div class="acc-label">白名单 <span>留空 = 不限制</span></div>
-              <div class="chips" id="chips-groupAllow"></div>
-              <input class="chip-input" id="input-groupAllow" placeholder="输入群号，回车添加" autocomplete="off">
-            </div>
-            <div class="acc-block">
-              <div class="acc-label">黑名单 <span>永远不理这些群</span></div>
-              <div class="chips" id="chips-groupDeny"></div>
-              <input class="chip-input" id="input-groupDeny" placeholder="输入群号，回车添加" autocomplete="off">
-            </div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>成员 <span class="r" id="acc-m-count"></span></h3>
-          <div class="body">
-            <div class="acc-block">
-              <div class="acc-label">白名单 <span>留空 = 不限制</span></div>
-              <div class="chips" id="chips-memberAllow"></div>
-              <input class="chip-input" id="input-memberAllow" placeholder="输入 QQ 号，回车添加" autocomplete="off">
-            </div>
-            <div class="acc-block">
-              <div class="acc-label">黑名单 <span>永远不理这些人</span></div>
-              <div class="chips" id="chips-memberDeny"></div>
-              <input class="chip-input" id="input-memberDeny" placeholder="输入 QQ 号，回车添加" autocomplete="off">
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="panel" style="margin-top:12px">
-        <div class="body">
-          <label class="switch-row">
-            <input type="checkbox" id="acc-require-at">
-            <span>群里必须 <b>@</b> 它才回复</span>
-            <span class="hint">关掉后，群里所有消息都会被处理</span>
-          </label>
-          <div class="row" style="margin-top:14px">
-            <button class="btn pri" onclick="saveAccessPolicy()">保存</button>
-            <span class="hint" id="acc-path"></span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    
 
     <section class="view" id="v-qzone">
       <div class="panel">
@@ -1251,14 +1246,9 @@ const GROUPS = {
   ability: [['v-ability', '能力'], ['v-qzone', '说说']],
   people: [['v-members', '成员'], ['v-groups', '群'], ['v-search', '搜索']],
   logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志']],
-  settings: [
-    ['v-health', '体检'],
-    ['v-data', '数据'],
-    ['v-model', '模型'],
-    ['v-rules', '规则'],
-    ['v-access', '权限'],
-    ['v-about', '关于'],
-  ],
+  // 设置是一页滚到底，所以只有一个入口。
+  // 页内用 set-head 分块：连接 / 规则 / 权限 / 数据 / 关于 / 健康检查
+  settings: [['v-settings', '设置']],
   test: [['v-try', '试聊'], ['v-tools-test', '工具连通性'], ['v-recall-test', '记忆检索']],
 }
 const TITLES = { dashboard: '仪表盘', self: '自我', ability: '能力', people: '成员', logs: '日志', settings: '设置', test: '测试' }
@@ -1298,7 +1288,15 @@ function showGroup(g, subIndex = 0) {
 
 function runLoaders(viewId) {
   if (viewId === 'v-dashboard') { loadDashboard(); loadStatus() }
-  if (viewId === 'v-health') loadHealth()
+  if (viewId === 'v-settings') {
+    // 一页里有六块，进来全加载一次。各自独立，一块挂了不影响别的。
+    loadHealth()
+    if (typeof loadModel === 'function') loadModel()
+    if (typeof loadRules === 'function') loadRules()
+    if (typeof loadAccessPolicy === 'function') loadAccessPolicy()
+    if (typeof loadData === 'function') loadData()
+    if (typeof loadAbout === 'function') loadAbout()
+  }
   if (viewId === 'v-ability') loadAbility()
   if (viewId === 'v-data') window.loadData?.()
   if (viewId === 'v-model') window.loadModel?.()
