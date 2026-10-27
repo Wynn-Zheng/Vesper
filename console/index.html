@@ -588,6 +588,18 @@
 
           <div id="nc-info"></div>
         </div>
+
+        <!-- NapCat 控制台输出。它自己不写日志，靠启动脚本的 Tee 落到 napcat-console.log -->
+        <div class="card" style="margin-top:14px">
+          <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <b style="font-size:13.5px">控制台输出</b>
+            <span id="nc-console-meta" class="hint" style="font-size:11px"></span>
+            <button class="mini-btn" onclick="loadNapcatConsole()" style="margin-left:auto">刷新</button>
+          </div>
+          <div class="hint" id="nc-console-hint" style="margin-top:6px"></div>
+          <pre id="nc-console"
+            style="margin-top:8px;max-height:340px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-all"></pre>
+        </div>
       </div>
 
       <!-- 右侧登录面板：未登录时滑出，登录成功后自动收起 -->

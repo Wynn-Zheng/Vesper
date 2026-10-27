@@ -504,7 +504,15 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         : rel.endsWith('.js')
           ? 'text/javascript; charset=utf-8'
           : 'text/html; charset=utf-8'
-      text(res, 200, readFileSync(full, 'utf8'), type)
+      // 不加 no-cache 的话，改了 js/css 浏览器还用旧的 —— 排查半天以为是代码没生效。
+      // 这些文件很小，每次都重新拉不心疼。
+      const body = readFileSync(full, 'utf8')
+      res.writeHead(200, {
+        'content-type': type,
+        'content-length': String(Buffer.byteLength(body)),
+        'cache-control': 'no-cache, no-store, must-revalidate',
+      })
+      res.end(body)
       return
     }
 

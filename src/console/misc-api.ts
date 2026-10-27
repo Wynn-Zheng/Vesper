@@ -4,7 +4,7 @@
  * 单独一个文件——server.ts 已经 1200 行，往里加东西风险太大（改坏过两次）。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
@@ -65,6 +65,47 @@ export async function handleMiscApi(
       res.end(buf)
     } catch {
       text(res, 500, '读不了二维码文件')
+    }
+    return true
+  }
+
+  /* ============ NapCat 控制台输出 ============ */
+  // NapCat 自己不写日志文件（logs/ 目录一直是空的），cmd 窗口的输出只在屏幕上。
+  // 启动脚本里加了 Tee-Object，会同时写一份到 <NapCat目录>/napcat-console.log。
+  if (method === 'GET' && path === '/api/napcat/console') {
+    const limit = Math.min(2000, Math.max(1, Number(_url.searchParams.get('lines') ?? 200)))
+    const f = findConsoleLog()
+
+    if (!f) {
+      json(res, 200, {
+        available: false,
+        reason: '还没有日志文件。用改过的启动脚本重启一次 NapCat 就会生成。',
+        lines: [],
+      })
+      return true
+    }
+
+    try {
+      const raw = readFileSync(f, 'utf8')
+      const all = raw.split('\n').filter((l) => l.trim())
+      json(res, 200, {
+        available: true,
+        path: f,
+        total: all.length,
+        lines: all.slice(-limit),
+        // 文件大小和最后修改时间，方便判断"是不是新的"
+        bytes: raw.length,
+        mtime: (() => {
+          try {
+            const st = statSync(f)
+            return st.mtimeMs
+          } catch {
+            return 0
+          }
+        })(),
+      })
+    } catch (e) {
+      json(res, 200, { available: false, reason: String(e).slice(0, 100), lines: [] })
     }
     return true
   }
@@ -359,6 +400,19 @@ function findQrcodeFile(): string | null {
     }
   } catch {
     /* 忽略 */
+  }
+  return null
+}
+
+/** 找启动脚本写的控制台日志。位置在 NapCat 目录根部。 */
+function findConsoleLog(): string | null {
+  const candidates = [
+    'E:/NapCat/napcat-console.log',
+    // 万一脚本放别处
+    'E:/NapCat/NapCat.52230.Shell/napcat-console.log',
+  ]
+  for (const c of candidates) {
+    if (existsSync(c)) return c
   }
   return null
 }

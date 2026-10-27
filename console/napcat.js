@@ -40,11 +40,13 @@
           tag.style.color = '#fff'
         }
         renderInfo(d, true)
+        loadNapcatConsole()
         stopPoll()
       } else {
         // 未登录 → 显示面板 + 二维码
         renderInfo(d, false)
         showPanel()
+        loadNapcatConsole()
         renderQrcode()
         const tag = document.getElementById('nc-state')
         if (tag) {
@@ -203,7 +205,44 @@
     }
   }
 
+  /**
+   * 拉 NapCat 的控制台输出。
+   *
+   * NapCat 本身不写日志文件，这个文件是我们改启动脚本加出来的
+   * （Tee-Object 把 cmd 窗口的输出同时写一份）。
+   */
+  async function loadNapcatConsole() {
+    const box = document.getElementById('nc-console')
+    const hint = document.getElementById('nc-console-hint')
+    const meta = document.getElementById('nc-console-meta')
+    if (!box) return
+
+    try {
+      const d = await api('/api/napcat/console?lines=200')
+
+      if (!d.available) {
+        box.textContent = ''
+        if (hint) hint.textContent = d.reason || '没有日志'
+        if (meta) meta.textContent = ''
+        return
+      }
+
+      if (hint) hint.textContent = ''
+      box.textContent = (d.lines || []).join('\n')
+      // 滚到底，看最新的
+      box.scrollTop = box.scrollHeight
+
+      if (meta) {
+        const kb = (d.bytes / 1024).toFixed(1)
+        meta.textContent = `${d.total} 行 · ${kb} KB`
+      }
+    } catch (e) {
+      if (hint) hint.textContent = '读取失败：' + e.message
+    }
+  }
+
   window.loadNapcatLogin = loadNapcatLogin
+  window.loadNapcatConsole = loadNapcatConsole
   window.refreshNapcatQrcode = () => {
     loadNapcatLogin()
   }
