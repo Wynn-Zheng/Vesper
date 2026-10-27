@@ -403,6 +403,9 @@ async function napcatLoginStatus(): Promise<{
       // 所以前端只在未登录时才用它
       hasQrcode: Boolean(qrFile),
       webui: NAPCAT_WEBUI_PAGE,
+      // 带 token 的 WebUI 地址 —— 它的前端认 ?token=，会自己登录。
+      // 不带的话 iframe 里永远是登录页。
+      webuiAuto: NAPCAT_WEBUI_PAGE + '?token=' + encodeURIComponent(token),
       phase: d.loginPhase ?? '',
       account,
       nick,

@@ -52,13 +52,13 @@
           tag.style.color = '#fff'
         }
         renderInfo(d, true)
-        loadWebuiFrame(d.webui)
+        loadWebuiFrame(d.webuiAuto || d.webui)
         loadNapcatConsole()
         stopPoll()
       } else {
         // 未登录 → 显示面板 + 二维码
         renderInfo(d, false, d.reason)
-        loadWebuiFrame(d.webui)
+        loadWebuiFrame(d.webuiAuto || d.webui)
         showPanel()
         loadNapcatConsole()
         renderQrcode()
