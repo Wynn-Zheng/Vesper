@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
@@ -457,43 +457,110 @@ function findConsoleLog(): string | null {
   return null
 }
 
-/** 启动脚本的位置。找不到就试旁边几个可能的名字。 */
-function findLauncher(): string | null {
-  const candidates = [
-    'E:/NapCat/启动NapCat.cmd',
-    'E:/NapCat/start-napcat.bat',
-  ]
-  for (const c of candidates) {
-    if (existsSync(c)) return c
+/** 找 napcat.mjs 所在目录（NapCat 的运行目录） */
+function findNapcatDir(): string | null {
+  const base = 'E:/NapCat/NapCat.52230.Shell/versions'
+  try {
+    if (existsSync(base)) {
+      for (const ver of readdirSync(base)) {
+        const d = `${base}/${ver}/resources/app/napcat`
+        if (existsSync(d + '/napcat.mjs')) return d
+      }
+    }
+  } catch {
+    /* 忽略 */
   }
   return null
 }
 
+/** 找 NapCat 的 Shell 里的 QQ.exe（不是 Program Files 那个） */
+function findQqExe(): string | null {
+  const shellRoot = 'E:/NapCat/NapCat.52230.Shell'
+  const direct = shellRoot + '/QQ.exe'
+  if (existsSync(direct)) return direct
+  // 退一步：Shell 目录下找
+  try {
+    if (existsSync(shellRoot)) {
+      for (const name of readdirSync(shellRoot)) {
+        if (name.toLowerCase() === 'qq.exe') return shellRoot + '/' + name
+      }
+    }
+  } catch {
+    /* 忽略 */
+  }
+  return null
+}
+
+/** 往 napcat-console.log 追加一行（UTF-8，带时间戳） */
+function appendConsoleLog(line: string): void {
+  if (!line.trim()) return
+  try {
+    const f = 'E:/NapCat/napcat-console.log'
+    const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    appendFileSync(f, `[${ts}] ${line}\n`, 'utf8')
+  } catch {
+    /* 写不进去就算了，不影响启动 */
+  }
+}
+
 /**
- * 启动 NapCat。
+ * 启动 NapCat —— 直接 spawn NapCatWinBootMain.exe，不跑那个 .cmd。
  *
- * detached + stdio:'ignore' 是必须的：
- *   不 detach 的话，我们的服务退出会把 NapCat 一起带走。
- *   ignore stdio 是因为脚本自己会弹 UAC 窗口，我们不想被它的输出堵住。
+ * 为什么不跑 .cmd（3 个理由，都是实测出来的）：
+ *   1. 会弹一个黑框（cmd 窗口），现在控制台能看到日志了，那个框很碍事
+ *   2. .cmd 里会检测权限，普通用户就走 Start-Process -Verb RunAs，
+ *      弹一个**新的提权窗口** —— 那个我们藏不掉
+ *   3. .cmd 用 PowerShell 的 Tee-Object 写日志，是 UTF-16LE，读出来一堆 \u0000
  *
- * 脚本里有提权逻辑（net session 判断 + Start-Process -Verb RunAs），
- * 所以会弹一个 UAC 确认框 —— 这是 Windows 的限制，绕不过去。
+ * 而 NapCatWinBootMain.exe 的 manifest 是 asInvoker（不需要管理员），
+ * 所以可以自己 spawn：无窗口、无需 UAC、日志由我们按 UTF-8 写。
+ *
+ * 环境变量照抄 .cmd 里那 5 个，位置在 <napcat>/napcat.mjs 同级。
  */
 function startNapcat(): { ok: boolean; detail: string } {
-  const launcher = findLauncher()
-  if (!launcher) return { ok: false, detail: '找不到启动脚本（E:/NapCat/启动NapCat.cmd）' }
+  const dir = findNapcatDir()
+  if (!dir) return { ok: false, detail: '找不到 NapCat 目录（napcat.mjs 所在的那个）' }
+
+  const qqExe = findQqExe()
+  if (!qqExe) return { ok: false, detail: '找不到 QQ.exe' }
+
+  const launcher = dir + '/NapCatWinBootMain.exe'
+  const hook = dir + '/NapCatWinBootHook.dll'
+  if (!existsSync(launcher)) return { ok: false, detail: '找不到 NapCatWinBootMain.exe' }
+  if (!existsSync(hook)) return { ok: false, detail: '找不到 NapCatWinBootHook.dll' }
 
   try {
-    const child = spawn('cmd.exe', ['/c', launcher], {
+    const child = spawn(launcher, [qqExe, hook], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        NAPCAT_PATCH_PACKAGE: dir + '/qqnt.json',
+        NAPCAT_LOAD_PATH: dir + '/loadNapCat.js',
+        NAPCAT_INJECT_PATH: hook,
+        NAPCAT_LAUNCHER_PATH: launcher,
+        NAPCAT_MAIN_PATH: dir + '/napcat.mjs',
+      },
+      // detached：服务退出不带走 NapCat
       detached: true,
-      stdio: 'ignore',
-      windowsHide: false,
+      // 捕获输出自己写日志（UTF-8，不会乱码）
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // 关键：不弹黑框
+      windowsHide: true,
     })
+
+    appendConsoleLog(`===== NapCat 启动于 ${new Date().toLocaleString('zh-CN')} =====`)
+
+    const onData = (d: Buffer): void => appendConsoleLog(d.toString('utf8').trimEnd())
+    child.stdout?.on('data', onData)
+    child.stderr?.on('data', onData)
+
+    child.on('exit', (code) => {
+      appendConsoleLog(`===== NapCat 退出，code = ${code} =====`)
+    })
+
     child.unref()
-    return {
-      ok: true,
-      detail: '已发起启动。如果弹了 UAC 确认框，点「是」；几秒后刷新看状态。',
-    }
+
+    return { ok: true, detail: '已启动（无窗口）。几秒后会自动刷新状态。' }
   } catch (e) {
     return { ok: false, detail: String(e).slice(0, 150) }
   }
@@ -506,17 +573,46 @@ function startNapcat(): { ok: boolean; detail: string } {
  * 杀掉就太粗暴了。NapCat 注入的那个 QQ 会跟着 NapCatWinBootMain 一起退。
  */
 async function stopNapcat(): Promise<{ ok: boolean; detail: string }> {
-  try {
-    const { execFile } = await import('node:child_process')
-    await new Promise<void>((resolve, reject) => {
-      execFile('taskkill', ['/IM', 'NapCatWinBootMain.exe', '/F'], (err) => {
-        // 进程本来就不存在也算成功（422 = 没找到进程）
-        if (err && !String(err).includes('not found')) reject(err)
-        else resolve()
+  const { execFile } = await import('node:child_process')
+
+  /** 跑一次 taskkill，返回是否成功 */
+  const kill = (): Promise<{ ok: boolean; msg: string }> =>
+    new Promise((resolve) => {
+      execFile('taskkill', ['/IM', 'NapCatWinBootMain.exe', '/F'], (err, _stdout, stderr) => {
+        if (!err) return resolve({ ok: true, msg: '' })
+        const msg = String(stderr || err.message).trim()
+        // 进程本来就不在 —— 也算成功
+        if (/not found|找不到/i.test(msg)) return resolve({ ok: true, msg: '' })
+        resolve({ ok: false, msg })
       })
     })
-    return { ok: true, detail: '已停止' }
-  } catch (e) {
-    return { ok: false, detail: String(e).slice(0, 150) }
+
+  // 第一次：普通权限试
+  const first = await kill()
+  if (first.ok) return { ok: true, detail: '已停止' }
+
+  // 失败通常是"拒绝访问" —— NapCat 是提权跑的，普通权限杀不掉。
+  // 走一次 UAC：弹确认框，点了「是」就能杀。
+  if (/access is denied|拒绝访问|could not be terminated/i.test(first.msg)) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        execFile(
+          'powershell',
+          [
+            '-NoProfile',
+            '-Command',
+            "Start-Process -FilePath 'taskkill' -ArgumentList '/IM','NapCatWinBootMain.exe','/F' -Verb RunAs -WindowStyle Hidden",
+          ],
+          (err) => (err ? reject(err) : resolve()),
+        )
+      })
+      // 提权的 taskkill 是异步的，等它跑完
+      await new Promise((r) => setTimeout(r, 2500))
+      return { ok: true, detail: '已尝试停止（弹了 UAC 的话要点「是」）' }
+    } catch (e) {
+      return { ok: false, detail: '需要管理员权限才能停：' + String(e).slice(0, 100) }
+    }
   }
+
+  return { ok: false, detail: first.msg.slice(0, 150) }
 }
