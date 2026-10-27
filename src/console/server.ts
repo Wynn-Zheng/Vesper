@@ -27,6 +27,7 @@ import { loadProfile } from '../persona/profile.ts'
 import { handlePeopleApi } from './people-api.ts'
 import { handleDesktopApi } from './desktop-api.ts'
 import { handleMiscApi } from './misc-api.ts'
+import { handleMemberApi } from './member-api.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -471,6 +472,31 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const path = url.pathname
 
+    // 控制台自己的静态文件（members.js 等）**不走 token 校验**。
+    //
+    // 为什么：`<script src="/members.js">` 带不了自定义 header，
+    // 也没法把 token 拼进 src（那是硬编码，刷新就失效）。
+    // 这些文件是纯前端代码，不含数据；真正拿数据还得过 /api/* 的 token。
+    // 只允许 console/ 下的 .js/.css，路径里不许有 ..，其余一律 404。
+    if (
+      (req.method === 'GET' && /^\/[\w.-]+\.(js|css)$/.test(path)) ||
+      (req.method === 'GET' && (path === '/' || path === '/index.html'))
+    ) {
+      const rel = path === '/' || path === '/index.html' ? 'index.html' : path.slice(1)
+      const full = resolve('console', rel)
+      if (!full.startsWith(resolve('console')) || !existsSync(full)) {
+        text(res, 404, '没有这个文件')
+        return
+      }
+      const type = rel.endsWith('.css')
+        ? 'text/css; charset=utf-8'
+        : rel.endsWith('.js')
+          ? 'text/javascript; charset=utf-8'
+          : 'text/html; charset=utf-8'
+      text(res, 200, readFileSync(full, 'utf8'), type)
+      return
+    }
+
     // 鉴权：token 从 query 或 header 取
     const given = url.searchParams.get('token') ?? req.headers['x-console-token']
     if (opts.token && given !== opts.token) {
@@ -485,15 +511,6 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     const personId = asked && isValidPersonId(asked) ? asked : fallback
 
     try {
-      if (req.method === 'GET' && (path === '/' || path === '/index.html')) {
-        if (!existsSync(indexFile)) {
-          text(res, 500, '找不到 console/index.html')
-          return
-        }
-        text(res, 200, readFileSync(indexFile, 'utf8'), 'text/html; charset=utf-8')
-        return
-      }
-
       if (req.method === 'GET' && path === '/api/status') {
         json(res, 200, status(opts, personId))
         return
@@ -742,6 +759,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         if (await handlePeopleApi(req, res, path, url, json, readBody)) return
         if (await handleDesktopApi(req, res, path, url, json, readBody)) return
         if (await handleMiscApi(req, res, path, url, json)) return
+        if (await handleMemberApi(req, res, path, url, json)) return
 
       // 体检：一眼看出哪里坏了
       // 每项独立跑，API 挂了不影响查磁盘；最慢的一项 3 秒超时。

@@ -1,0 +1,440 @@
+/**
+ * 成员页：表格 + 侧边抽屉。
+ *
+ * 为什么单独一个 js 文件而不是塞进 index.html：
+ *   index.html 已经 3000 多行，往里加东西改坏过好几次（可选链赋值、正则转义）。
+ *   单独一个文件可以用 node --check 单独验语法。
+ */
+
+(function () {
+  'use strict'
+
+  /* ============================================================
+   * 状态
+   * ============================================================ */
+  let DATA = { rows: [], nameless: [], stats: {} }
+  let IF = { q: '', src: 'all', sort: 'relation', onlyChat: false }
+  let DRAW = { open: false, person: null, tab: 'memory', chat: [], detail: null }
+
+  /* ============================================================
+   * 加载
+   * ============================================================ */
+  async function loadMembers() {
+    const box = document.getElementById('mt-body')
+    if (!box) return
+    box.innerHTML = '<tr><td colspan="7" class="hint" style="padding:20px">加载中…</td></tr>'
+
+    try {
+      DATA = await api('/api/member/table')
+      renderTable()
+    } catch (e) {
+      box.innerHTML =
+        '<tr><td colspan="7" class="empty" style="padding:20px">加载失败：' + esc(e.message) + '</td></tr>'
+    }
+  }
+
+  /* ============================================================
+   * 表格
+   * ============================================================ */
+  function renderTable() {
+    const all = [...DATA.rows, ...(DATA.nameless || [])]
+
+    let list = all
+    if (IF.q) {
+      const q = IF.q.toLowerCase()
+      list = list.filter(
+        (r) => (r.名字 || '').toLowerCase().includes(q) || String(r.账号 || '').includes(q),
+      )
+    }
+    if (IF.src === 'private') list = list.filter((r) => (r.来源 || []).some((s) => s.kind === 'private'))
+    else if (IF.src === 'group') list = list.filter((r) => (r.来源 || []).some((s) => s.kind === 'group'))
+    else if (IF.src === 'none') list = list.filter((r) => r.未建档)
+    if (IF.onlyChat) list = list.filter((r) => (r.对话 || {}).turns > 0)
+
+    if (IF.sort === 'relation') list.sort((a, b) => (b.关系?.值 || 0) - (a.关系?.值 || 0))
+    else if (IF.sort === 'recent') list.sort((a, b) => (b.对话?.lastAt || 0) - (a.对话?.lastAt || 0))
+    else if (IF.sort === 'memory')
+      list.sort((a, b) => (b.记忆?.facts || 0) + (b.记忆?.episodes || 0) - ((a.记忆?.facts || 0) + (a.记忆?.episodes || 0)))
+    else if (IF.sort === 'name') list.sort((a, b) => String(a.名字).localeCompare(String(b.名字), 'zh'))
+
+    const head = document.getElementById('mt-head')
+    if (head) {
+      head.textContent =
+        list.length + ' 个成员' +
+        (IF.q || IF.src !== 'all' || IF.onlyChat ? '（已筛选）' : '') +
+        (DATA.stats && DATA.stats.chatted ? ' · ' + DATA.stats.chatted + ' 个聊过' : '')
+    }
+
+    const box = document.getElementById('mt-body')
+    if (!box) return
+    box.innerHTML = ''
+
+    if (!list.length) {
+      box.innerHTML = '<tr><td colspan="7" class="empty" style="padding:20px">没有符合的成员</td></tr>'
+      return
+    }
+
+    for (const r of list) {
+      const tr = document.createElement('tr')
+      tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer'
+      if (r.未建档) tr.style.opacity = '0.55'
+      tr.onmouseenter = () => (tr.style.background = 'rgba(255,255,255,.03)')
+      tr.onmouseleave = () => (tr.style.background = '')
+      tr.onclick = () => openDrawer(r)
+
+      const td = (content, opts) => {
+        const c = document.createElement('td')
+        c.style.cssText = 'padding:7px 8px;font-size:12.5px;vertical-align:middle' + (opts?.css || '')
+        if (typeof content === 'string') c.innerHTML = content
+        else c.appendChild(content)
+        tr.appendChild(c)
+        return c
+      }
+
+      // 1. 人
+      const who = document.createElement('div')
+      who.style.cssText = 'display:flex;align-items:center;gap:8px'
+      const av = document.createElement('span')
+      av.textContent = (r.名字 || '?').slice(0, 1)
+      av.style.cssText =
+        'width:24px;height:24px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;background:' +
+        avatarColor(r.id)
+      who.appendChild(av)
+      const nmBox = document.createElement('div')
+      nmBox.style.cssText = 'min-width:0'
+      nmBox.appendChild(document.createTextNode(r.名字))
+      const sub = document.createElement('div')
+      sub.className = 'hint'
+      sub.style.fontSize = '10.5px'
+      sub.textContent = r.账号
+      nmBox.appendChild(sub)
+      who.appendChild(nmBox)
+      td(who)
+
+      // 2. 来源
+      const src = (r.来源 || []).map((s) => s.kind === 'private' ? '私聊' : s.label)
+      td(
+        src.length
+          ? src.slice(0, 2).map((x) => '<span class="tag" style="font-size:10px;padding:0 4px">' + esc(x) + '</span>').join(' ')
+          : '<span class="hint">—</span>',
+      )
+
+      // 3. 关系
+      td(
+        r.关系?.值 > 0
+          ? esc(r.关系.阶段) + ' <span class="hint">' + r.关系.值 + '</span>'
+          : '<span class="hint">' + esc(r.关系?.阶段 || '陌生') + '</span>',
+      )
+
+      // 4. 记忆
+      const mem = r.记忆 || {}
+      td(
+        mem.facts || mem.episodes
+          ? mem.facts + ' 事实 · ' + mem.episodes + ' 经历'
+          : '<span class="hint">—</span>',
+      )
+
+      // 5. 对话
+      td(
+        r.对话?.turns
+          ? r.对话.turns + ' 条 <span class="hint">' + fmtAgo(r.对话.lastAt) + '</span>'
+          : '<span class="hint">没说过</span>',
+      )
+
+      // 6. 核心
+      td(r.核心?.count ? r.核心.count + ' 条' : '<span class="hint">—</span>')
+
+      // 7. 日期
+      td(
+        '<span class="hint">' +
+          (r.日期?.firstSeen ? new Date(r.日期.firstSeen).toLocaleDateString() : '—') +
+          '</span>',
+      )
+
+      box.appendChild(tr)
+    }
+  }
+
+  /* ============================================================
+   * 抽屉
+   * ============================================================ */
+  async function openDrawer(row) {
+    DRAW = { open: true, person: row, tab: 'memory', chat: [], detail: null }
+
+    const d = document.getElementById('member-drawer')
+    const mask = document.getElementById('member-mask')
+    if (!d) return
+    d.style.display = 'block'
+    if (mask) mask.style.display = 'block'
+    // 让它滑进来
+    requestAnimationFrame(() => {
+      d.style.transform = 'translateX(0)'
+    })
+
+    renderDrawerHead()
+    await loadDrawerData()
+    renderDrawerBody()
+  }
+
+  function closeDrawer() {
+    const d = document.getElementById('member-drawer')
+    const mask = document.getElementById('member-mask')
+    if (d) {
+      d.style.transform = 'translateX(100%)'
+      setTimeout(() => (d.style.display = 'none'), 180)
+    }
+    if (mask) mask.style.display = 'none'
+    DRAW.open = false
+  }
+
+  function renderDrawerHead() {
+    const p = DRAW.person
+    if (!p) return
+    const n = document.getElementById('md-name')
+    const s = document.getElementById('md-sub')
+    if (n) n.textContent = p.名字
+    if (s) {
+      const src = (p.来源 || []).map((x) => (x.kind === 'private' ? '私聊' : x.label)).join(' · ')
+      s.textContent = p.账号 + (src ? ' · ' + src : '') + (p.未建档 ? ' · 未建档' : '')
+    }
+
+    // 屏蔽开关
+    const bt = document.getElementById('md-block')
+    if (bt) {
+      api('/api/access')
+        .then((a) => {
+          const denied = (a.memberDeny || []).includes(p.id)
+          bt.textContent = denied ? '已屏蔽' : '屏蔽'
+          bt.style.background = denied ? '#f85149' : ''
+          bt.style.color = denied ? '#fff' : ''
+          bt.onclick = async () => {
+            try {
+              await sendJson('/api/member/block', { id: p.id, blocked: !denied }, 'PUT')
+              openDrawer(p)
+              toast(denied ? '取消屏蔽' : '已屏蔽')
+            } catch (e) {
+              alert('失败：' + e.message)
+            }
+          }
+        })
+        .catch(() => {})
+    }
+  }
+
+  async function loadDrawerData() {
+    const p = DRAW.person
+    if (!p) return
+    try {
+      const tasks = []
+      tasks.push(
+        api('/api/member/chat?id=' + encodeURIComponent(p.id) + '&limit=60')
+          .then((r) => (DRAW.chat = r.rows || []))
+          .catch(() => (DRAW.chat = [])),
+      )
+      if (!p.未建档) {
+        tasks.push(
+          api('/api/person/detail?id=' + encodeURIComponent(p.id))
+            .then((r) => (DRAW.detail = r))
+            .catch(() => (DRAW.detail = null)),
+        )
+      }
+      await Promise.all(tasks)
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  function renderDrawerBody() {
+    const box = document.getElementById('md-body')
+    if (!box) return
+
+    // TAB
+    const tabs = [
+      ['memory', '全部记忆'],
+      ['chat', '历史对话'],
+      ['timeline', '时间线'],
+      ['impression', '印象'],
+    ]
+    const bar = document.getElementById('md-tabs')
+    if (bar) {
+      bar.innerHTML = ''
+      for (const [k, label] of tabs) {
+        const b = document.createElement('button')
+        b.className = 'gtab' + (k === DRAW.tab ? ' on' : '')
+        b.textContent = label
+        b.onclick = () => {
+          DRAW.tab = k
+          renderDrawerBody()
+        }
+        bar.appendChild(b)
+      }
+    }
+
+    box.innerHTML = ''
+
+    if (DRAW.tab === 'memory') {
+      const d = DRAW.detail
+      if (!d) {
+        box.innerHTML = '<div class="empty">这个人还没建档，没有记忆</div>'
+        return
+      }
+
+      const sec = (title, items) => {
+        const c = document.createElement('div')
+        c.className = 'card'
+        c.style.marginBottom = '10px'
+        const h = document.createElement('div')
+        h.className = 'op-t'
+        h.textContent = title
+        c.appendChild(h)
+        if (!items.length) {
+          const e = document.createElement('div')
+          e.className = 'empty'
+          e.textContent = '没有'
+          c.appendChild(e)
+        } else {
+          for (const it of items) {
+            const row = document.createElement('div')
+            row.className = 'item'
+            row.style.padding = '5px 0'
+            row.textContent = it
+            c.appendChild(row)
+          }
+        }
+        box.appendChild(c)
+      }
+
+      sec('事实', (d.事实 || []).map((f) => f.text))
+      sec('经历', (d.经历 || []).map((e) => (e.title || '') + (e.date ? '（' + e.date + '）' : '')))
+      sec('待问', (d.待问 || []).map((o) => o.text))
+    }
+
+    if (DRAW.tab === 'chat') {
+      if (!DRAW.chat.length) {
+        box.innerHTML = '<div class="empty">最近没有聊天记录</div>'
+        return
+      }
+      const wrap = document.createElement('div')
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px'
+      for (const c of DRAW.chat) {
+        const row = document.createElement('div')
+        const mine = c.role === 'assistant'
+        row.style.cssText =
+          'display:flex;justify-content:' + (mine ? 'flex-end' : 'flex-start') + ';gap:6px'
+        const bubble = document.createElement('div')
+        bubble.style.cssText =
+          'max-width:70%;padding:6px 10px;border-radius:8px;font-size:12.5px;line-height:1.5;' +
+          (mine ? 'background:rgba(88,166,255,.15);color:#cfe3ff' : 'background:rgba(255,255,255,.06)')
+        bubble.textContent = c.text
+        row.appendChild(bubble)
+        wrap.appendChild(row)
+        const t = document.createElement('div')
+        t.className = 'hint'
+        t.style.cssText = 'font-size:10px;margin-top:-2px;text-align:' + (mine ? 'right' : 'left')
+        t.textContent = new Date(c.at).toLocaleString()
+        wrap.appendChild(t)
+      }
+      box.appendChild(wrap)
+    }
+
+    if (DRAW.tab === 'timeline') {
+      const d = DRAW.detail
+      const events = []
+      if (d?.首次见到) events.push({ at: d.首次见到, text: '第一次见到' })
+      for (const e of d?.经历 || []) {
+        if (e.date) events.push({ at: new Date(e.date).getTime(), text: e.title || e.date })
+      }
+      events.sort((a, b) => a.at - b.at)
+      if (!events.length) {
+        box.innerHTML = '<div class="empty">还没有时间线</div>'
+        return
+      }
+      for (const e of events) {
+        const row = document.createElement('div')
+        row.className = 'item'
+        row.style.cssText = 'padding:6px 0;border-left:2px solid rgba(88,166,255,.4);padding-left:10px'
+        const t = document.createElement('div')
+        t.className = 'hint'
+        t.style.fontSize = '10.5px'
+        t.textContent = new Date(e.at).toLocaleString()
+        row.appendChild(t)
+        const x = document.createElement('div')
+        x.textContent = e.text
+        row.appendChild(x)
+        box.appendChild(row)
+      }
+    }
+
+    if (DRAW.tab === 'impression') {
+      const d = DRAW.detail
+      const c = document.createElement('div')
+      c.className = 'card'
+      c.appendChild(Object.assign(document.createElement('div'), { className: 'op-t', textContent: '我对他的印象' }))
+      const ta = document.createElement('textarea')
+      ta.value = d?.印象 || ''
+      ta.rows = 6
+      ta.style.cssText =
+        'width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--text);font-size:13px;line-height:1.6;margin-top:8px'
+      c.appendChild(ta)
+      const save = document.createElement('button')
+      save.className = 'mini-btn'
+      save.textContent = '保存印象'
+      save.style.marginTop = '8px'
+      save.onclick = async () => {
+        try {
+          await sendJson('/api/person/impression', { id: DRAW.person.id, text: ta.value }, 'PUT')
+          toast('已保存')
+          loadDrawerData().then(renderDrawerBody)
+        } catch (e) {
+          alert('失败：' + e.message)
+        }
+      }
+      c.appendChild(save)
+
+      // 画像
+      c.appendChild(Object.assign(document.createElement('div'), { className: 'op-t', textContent: '画像' })).style.marginTop =
+        '16px'
+      const ta2 = document.createElement('textarea')
+      ta2.value = d?.画像 || ''
+      ta2.rows = 4
+      ta2.style.cssText = ta.style.cssText
+      c.appendChild(ta2)
+      const save2 = document.createElement('button')
+      save2.className = 'mini-btn'
+      save2.textContent = '保存画像'
+      save2.style.marginTop = '8px'
+      save2.onclick = async () => {
+        try {
+          await sendJson('/api/person/profile', { id: DRAW.person.id, text: ta2.value }, 'PUT')
+          toast('已保存')
+        } catch (e) {
+          alert('失败：' + e.message)
+        }
+      }
+      c.appendChild(save2)
+      box.appendChild(c)
+    }
+  }
+
+  /* ============================================================
+   * 挂到 window（供 HTML 里的 onclick 用）
+   * ============================================================ */
+  window.loadMembers = loadMembers
+  window.memberFilter = function (key, value) {
+    IF[key] = value
+    renderTable()
+  }
+  window.memberSearch = function (v) {
+    IF.q = v
+    renderTable()
+  }
+  window.memberSort = function (v) {
+    IF.sort = v
+    renderTable()
+  }
+  window.memberOnlyChat = function (v) {
+    IF.onlyChat = v
+    renderTable()
+  }
+  window.closeDrawer = closeDrawer
+})()
