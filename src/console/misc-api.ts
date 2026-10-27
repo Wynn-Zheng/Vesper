@@ -5,7 +5,15 @@
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
@@ -127,7 +135,28 @@ export async function handleMiscApi(
       // 去掉 ANSI 颜色码（NapCat 输出里有 \u001b[33m 这种）
       raw = raw.replace(/\u001b\[[0-9;]*m/g, '')
 
-      const all = raw.split(/\r?\n/).filter((l) => l.trim())
+      // 去掉乱码行。
+      //
+      // 为什么会有乱码：napcat-console.log 是 PowerShell 的 Tee-Object 写的，
+      // 编码是 UTF-16LE。但如果这个文件之前被别的程序（比如我们早期版本）
+      // 用 UTF-8 追加过，同一个文件里就混了两种编码 —— 按 BOM 判断整体编码
+      // 只能救其中一种，另一种读出来就是"ㅛ㨷ㄴ〺"这种。
+      //
+      // 这些行对我们的用途（看 NapCat 在干什么）没有价值，直接扔掉。
+      const isGarbage = (line: string): boolean => {
+        if (!line.trim()) return true
+        let bad = 0
+        for (const ch of line) {
+          const c = ch.codePointAt(0) ?? 0
+          // 汉字/常见符号/ASCII 都算正常；控制字符、私用区、替换字符算坏
+          if (c === 0xfffd) bad++
+          else if (c < 0x20 && c !== 0x09) bad++
+          else if (c >= 0xe000 && c <= 0xf8ff) bad++
+        }
+        return bad / line.length > 0.3
+      }
+
+      const all = raw.split(/\r?\n/).filter((l) => l.trim() && !isGarbage(l))
       json(res, 200, {
         available: true,
         path: f,
@@ -444,13 +473,101 @@ function findQrcodeFile(): string | null {
   return null
 }
 
-/** 找启动脚本写的控制台日志。位置在 NapCat 目录根部。 */
+/**
+ * 找 NapCat 的日志文件。
+ *
+ * 两个来源，优先用第二个：
+ *   1. <NapCat 根>/napcat-console.log —— 老启动脚本用 Tee 写的（UTF-16LE）
+ *   2. <napcat>/logs/*.log —— NapCat 自己写的（需要 napcat.json 里 fileLog:true）
+ *
+ * 我们默认把 fileLog 打开（ensureFileLog），所以正常情况下用第 2 个：
+ * 它不受"有没有窗口"影响，NapCat 想怎么写就怎么写。
+ */
 function findConsoleLog(): string | null {
-  const candidates = [
-    'E:/NapCat/napcat-console.log',
-    // 万一脚本放别处
-    'E:/NapCat/NapCat.52230.Shell/napcat-console.log',
-  ]
+  // 优先：NapCat 自己的日志目录里最新的那个
+  const dir = findNapcatDir()
+  if (dir) {
+    // 日志目录：NapCat 里是 logPath = <binaryPath>/logs
+    // binaryPath 可能是 napcat 目录，也可能是 Shell 根目录 —— 两处都试
+    const logsDir = dir + '/logs'
+    try {
+      if (existsSync(logsDir)) {
+        const files = readdirSync(logsDir)
+          .filter((f) => f.endsWith('.log'))
+          .map((f) => ({ f, t: statSync(logsDir + '/' + f).mtimeMs }))
+          .sort((a, b) => b.t - a.t)
+        if (files.length) return logsDir + '/' + files[0]!.f
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
+
+  // 退回：.cmd 的 Tee 写的那份（内容最全，就是 UTF-16LE）
+  for (const c of ['E:/NapCat/napcat-console.log']) {
+    if (existsSync(c)) return c
+  }
+
+  // 最后：我们自己的事件日志（只有启动/退出）
+  for (const c of ['E:/NapCat/qqbot-napcat-events.log']) {
+    if (existsSync(c)) return c
+  }
+  return null
+}
+
+/**
+ * 确保 NapCat 开了文件日志。
+ *
+ * 为什么要这个：NapCat 默认 fileLog=false，所以 logs/ 一直是空的 ——
+ * 用户想在控制台看日志，只能靠那个 cmd 窗口。
+ * 这里自动把配置改成 true，用户什么都不用做。
+ *
+ * 只在值不对的时候写文件，而且先备份一次。
+ */
+function ensureFileLog(): { ok: boolean; changed: boolean; detail?: string } {
+  const dir = findNapcatDir()
+  if (!dir) return { ok: false, changed: false, detail: '找不到 NapCat 目录' }
+
+  const cfgDir = dir + '/config'
+  if (!existsSync(cfgDir)) return { ok: false, changed: false, detail: '找不到 config 目录' }
+
+  // NapCat 有两套配置，优先级是 **分账号 > 全局**：
+  //   napcat.json            ← 全局
+  //   napcat_<QQ号>.json     ← 单个账号（会覆盖全局！）
+  //
+  // 踩过的坑：只改了 napcat.json，但 napcat_552388771.json 里 fileLog 还是 false，
+  // 结果 logs/ 一直是空的。
+  // 所以要把所有 napcat*.json 都过一遍。
+  const targets = readdirSync(cfgDir).filter((f) => /^napcat.*\.json$/.test(f) && !f.endsWith('.bak'))
+
+  let changed = false
+  const errors: string[] = []
+
+  for (const f of targets) {
+    const cfgPath = cfgDir + '/' + f
+    try {
+      const raw = readFileSync(cfgPath, 'utf8')
+      const cfg = JSON.parse(raw) as Record<string, unknown>
+      if (cfg.fileLog === true) continue
+
+      if (!existsSync(cfgPath + '.bak')) writeFileSync(cfgPath + '.bak', raw, 'utf8')
+
+      cfg.fileLog = true
+      if (cfg.fileLogLevel === 'debug' || cfg.fileLogLevel === undefined) cfg.fileLogLevel = 'info'
+      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n', 'utf8')
+      changed = true
+    } catch (e) {
+      errors.push(f + ': ' + String(e).slice(0, 60))
+    }
+  }
+
+  if (errors.length) return { ok: false, changed, detail: errors.join('; ') }
+  return { ok: true, changed }
+}
+
+/** 启动脚本的位置。找不到就试旁边几个可能的名字。 */
+function findLauncher(): string | null {
+  const candidates = ['E:/NapCat/启动NapCat.cmd', 'E:/NapCat/start-napcat.bat']
   for (const c of candidates) {
     if (existsSync(c)) return c
   }
@@ -491,12 +608,26 @@ function findQqExe(): string | null {
   return null
 }
 
-/** 往 napcat-console.log 追加一行（UTF-8，带时间戳） */
+/**
+ * 往我们自己的事件日志追加一行（UTF-8）。
+ *
+ * 为什么不写 napcat-console.log：
+ *   那个文件是 .cmd 里的 PowerShell Tee-Object 写的，编码是 UTF-16LE。
+ *   我们再往里写 UTF-8，同一个文件里混两种编码，读出来一半是乱码。
+ *   所以分开：主日志看 .cmd 那份，我们只记"启动/退出"这种自己知道的事。
+ */
 function appendConsoleLog(line: string): void {
   if (!line.trim()) return
   try {
-    const f = 'E:/NapCat/napcat-console.log'
+    const f = 'E:/NapCat/qqbot-napcat-events.log'
     const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    // 文件太大就清一次（超过 512KB）
+    try {
+      const st = statSync(f)
+      if (st.size > 512 * 1024) writeFileSync(f, '', 'utf8')
+    } catch {
+      /* 文件不存在，正常 */
+    }
     appendFileSync(f, `[${ts}] ${line}\n`, 'utf8')
   } catch {
     /* 写不进去就算了，不影响启动 */
@@ -504,20 +635,62 @@ function appendConsoleLog(line: string): void {
 }
 
 /**
- * 启动 NapCat —— 直接 spawn NapCatWinBootMain.exe，不跑那个 .cmd。
+ * 启动 NapCat。
  *
- * 为什么不跑 .cmd（3 个理由，都是实测出来的）：
- *   1. 会弹一个黑框（cmd 窗口），现在控制台能看到日志了，那个框很碍事
- *   2. .cmd 里会检测权限，普通用户就走 Start-Process -Verb RunAs，
- *      弹一个**新的提权窗口** —— 那个我们藏不掉
- *   3. .cmd 用 PowerShell 的 Tee-Object 写日志，是 UTF-16LE，读出来一堆 \u0000
+ * 两种模式，默认走 cmd：
  *
- * 而 NapCatWinBootMain.exe 的 manifest 是 asInvoker（不需要管理员），
- * 所以可以自己 spawn：无窗口、无需 UAC、日志由我们按 UTF-8 写。
+ *   cmd（默认）—— 跑 启动NapCat.cmd，窗口最小化（start /min）
+ *     + 日志完整（脚本里的 Tee-Object 会写 napcat-console.log）
+ *     + 官方路径，最稳
+ *     + 脚本里还有"删旧二维码 / 自动开 WebUI"这些便利
+ *     - 任务栏有个最小化的窗口
  *
- * 环境变量照抄 .cmd 里那 5 个，位置在 <napcat>/napcat.mjs 同级。
+ *   direct —— 直接 spawn NapCatWinBootMain.exe
+ *     + 完全没有窗口
+ *     - **拿不到日志**：NapCat 在非多进程模式下强制关掉 fileLog，
+ *       而 consoleLog 需要控制台，所以 spawn 出去的东西没有落点。
+ *       （这条是挖 napcat.mjs 源码确认的，不是猜的）
+ *     - 少了脚本里的便利步骤
+ *
+ * 想看日志就用 cmd。想完全静默就改环境变量 NAPCAT_START_MODE=direct。
  */
 function startNapcat(): { ok: boolean; detail: string } {
+  // 默认 direct —— 这是封装成 exe 之后要的行为：
+  //   **完全不弹窗口**，NapCat 的启动、状态、二维码、日志全在软件界面里。
+  //
+  // 想看 NapCat 的原始控制台输出（排查启动失败用），把环境变量改成 cmd：
+  //   NAPCAT_START_MODE=cmd
+  // 那样会跑 .cmd，任务栏里有个最小化的窗口。
+  const mode = (process.env['NAPCAT_START_MODE'] ?? 'direct').toLowerCase()
+
+  if (mode === 'cmd') return startNapcatViaCmd()
+  return startNapcatDirect()
+}
+
+/** 官方路径：跑启动脚本，窗口最小化 */
+function startNapcatViaCmd(): { ok: boolean; detail: string } {
+  const launcher = findLauncher()
+  if (!launcher) return { ok: false, detail: '找不到启动脚本（E:/NapCat/启动NapCat.cmd）' }
+
+  try {
+    // /min 让窗口最小化到任务栏，不挡视线，但日志照常走脚本里的 Tee
+    const child = spawn('cmd.exe', ['/c', 'start', '', '/min', launcher], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.unref()
+    return {
+      ok: true,
+      detail: '已启动（窗口在任务栏里最小化）。日志会写到 NapCat 目录下的 napcat-console.log。',
+    }
+  } catch (e) {
+    return { ok: false, detail: String(e).slice(0, 150) }
+  }
+}
+
+/** 静默模式：直接 spawn exe，无窗口，但拿不到日志 */
+function startNapcatDirect(): { ok: boolean; detail: string } {
   const dir = findNapcatDir()
   if (!dir) return { ok: false, detail: '找不到 NapCat 目录（napcat.mjs 所在的那个）' }
 
@@ -529,14 +702,12 @@ function startNapcat(): { ok: boolean; detail: string } {
   if (!existsSync(launcher)) return { ok: false, detail: '找不到 NapCatWinBootMain.exe' }
   if (!existsSync(hook)) return { ok: false, detail: '找不到 NapCatWinBootHook.dll' }
 
-  // 删掉上次的二维码。
-  // .cmd 里也有这一步（del /f /q "%QR%"），不删的话控制台可能显示一张
-  // 已经过期的码 —— 扫了登不上，还找不到原因。
+  // 删掉上次的二维码（脚本里也有这一步，不删可能显示过期的）
   try {
     const oldQr = dir + '/cache/qrcode.png'
     if (existsSync(oldQr)) unlinkSync(oldQr)
   } catch {
-    /* 删不掉也不影响启动，只是可能显示旧码 */
+    /* 删不掉也不影响启动 */
   }
 
   try {
@@ -550,27 +721,22 @@ function startNapcat(): { ok: boolean; detail: string } {
         NAPCAT_LAUNCHER_PATH: launcher,
         NAPCAT_MAIN_PATH: dir + '/napcat.mjs',
       },
-      // detached：服务退出不带走 NapCat
       detached: true,
-      // 捕获输出自己写日志（UTF-8，不会乱码）
       stdio: ['ignore', 'pipe', 'pipe'],
-      // 关键：不弹黑框
       windowsHide: true,
     })
 
-    appendConsoleLog(`===== NapCat 启动于 ${new Date().toLocaleString('zh-CN')} =====`)
-
+    appendConsoleLog(`===== NapCat 启动（静默模式）于 ${new Date().toLocaleString('zh-CN')} =====`)
     const onData = (d: Buffer): void => appendConsoleLog(d.toString('utf8').trimEnd())
     child.stdout?.on('data', onData)
     child.stderr?.on('data', onData)
-
-    child.on('exit', (code) => {
-      appendConsoleLog(`===== NapCat 退出，code = ${code} =====`)
-    })
-
+    child.on('exit', (code) => appendConsoleLog(`===== NapCat 退出，code = ${code} =====`))
     child.unref()
 
-    return { ok: true, detail: '已启动（无窗口）。几秒后会自动刷新状态。' }
+    return {
+      ok: true,
+      detail: '已启动（无窗口）。看状态和二维码就行；想看原始日志请设 NAPCAT_START_MODE=cmd。',
+    }
   } catch (e) {
     return { ok: false, detail: String(e).slice(0, 150) }
   }
