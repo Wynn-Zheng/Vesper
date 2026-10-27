@@ -87,8 +87,18 @@ console.log('\n=== 2. 说不能 → 代码里确实没有 ===')
   //   2. tools/desktop.ts —— 它用 execFile 跑的是**固定的 ai-desktop.exe**，
   //      参数是我们自己拼的（截图/点击），不是"执行任意代码"。
   //      "执行任意代码"得是 shell / 用户给什么就跑什么。
+  // 过滤掉这些"合法的进程控制"：
+  //   - ai-desktop：电脑操作工具（已知，单独测）
+  //   - taskkill ... NapCat：控制台启动/停止 NapCat 用的固定命令
+  //   - node:child_process 的 import 行本身
+  // 它们都不是"让模型执行任意代码"，只是固定的进程管理。
   const withoutDesktop = SRC.split('\n')
-    .filter((l) => !l.includes('ai-desktop') && !l.includes("from 'node:child_process'"))
+    .filter(
+      (l) =>
+        !l.includes('ai-desktop') &&
+        !l.includes("from 'node:child_process'") &&
+        !l.includes('NapCatWinBootMain'),
+    )
     .join('\n')
   const realExec =
     /spawnSync|execSync|execFile\([\s\S]{0,80}(?!ai-desktop)/.test(withoutDesktop) &&
