@@ -297,15 +297,13 @@
 <aside>
   <div class="brand"><h1>QQ Bot</h1><p id="brand-sub">连接中…</p></div>
     <nav id="nav">
-    <button class="on" data-v="state"><span class="ico">◎</span>状态</button>
-    <button data-v="people"><span class="ico">◉</span>人物</button>
-    <button data-v="groups"><span class="ico">▣</span>群组</button>
-    <button data-v="desktop"><span class="ico">▤</span>电脑</button>
-    <button data-v="memory"><span class="ico">◈</span>记忆</button>
-    <button data-v="comm"><span class="ico">≡</span>对话</button>
+    <button class="on" data-v="dashboard"><span class="ico">◎</span>仪表盘</button>
     <button data-v="self"><span class="ico">✦</span>自我</button>
+    <button data-v="ability"><span class="ico">⚡</span>能力</button>
+    <button data-v="people"><span class="ico">◉</span>成员</button>
+    <button data-v="logs"><span class="ico">≡</span>日志</button>
     <button data-v="settings"><span class="ico">⚙</span>设置</button>
-    <button data-v="tools"><span class="ico">⌘</span>工具</button>
+    <button data-v="test"><span class="ico">◐</span>测试</button>
   </nav>
   <div class="foot"><span class="dot" id="dot"></span><span id="conn">未连接</span></div>
 </aside>
@@ -517,6 +515,43 @@
         <div class="op-t" style="margin-bottom:8px">最近的操作</div>
         <div id="dk-log"></div>
       </div>
+    </section>
+
+    <section class="view on" id="v-dashboard">
+      <div class="cards" id="dash-cards" style="margin-bottom:16px"></div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <b style="font-size:15px">体检</b>
+          <span id="dash-health-tag" class="tag">—</span>
+          <button class="mini-btn" onclick="loadDashboard()">重新体检</button>
+        </div>
+        <div id="dash-health" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="op-t" style="margin-bottom:8px">最近活动</div>
+        <div id="dash-recent"></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-ability">
+      <div class="card" style="margin-bottom:14px">
+        <div class="hint">这里列的是它现在真正能做的事。开关会立刻生效，不用重启。</div>
+      </div>
+      <div id="ability-list"></div>
+    </section>
+
+    <section class="view" id="v-health">
+      <div class="card" style="margin-bottom:14px">
+        <div class="row" style="display:flex;gap:10px;align-items:center">
+          <b style="font-size:15px">体检</b>
+          <span id="health-tag" class="tag">—</span>
+          <button class="mini-btn" onclick="loadHealth()">重新检查</button>
+        </div>
+        <div class="hint" style="margin-top:6px">每项都能单独跑。红了就按「怎么修」里的做。</div>
+      </div>
+      <div id="health-list"></div>
     </section>
 
     <section class="view" id="v-people">
@@ -978,20 +1013,18 @@ async function api(path, init) {
 
 // ---------- 导航：6 组，组内用 tab 切 ----------
 const GROUPS = {
-  state: [['v-state', '状态'], ['v-overview', '概览'], ['v-relation', '关系']],
-  people: [['v-people', '人物'], ['v-person', '详情']],
-  groups: [['v-groups', '群成员']],
-  desktop: [['v-desktop', '电脑操作']],
-  memory: [['v-memory', '记忆'], ['v-core', '核心'], ['v-search', '搜索']],
-  comm: [['v-logs', '日志'], ['v-chat', '对话']],
+  dashboard: [['v-dashboard', '总览']],
   self: [['v-self', '自我'], ['v-qzone', '说说'], ['v-features', '新功能']],
-  settings: [['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
-  tools: [['v-try', '试聊'], ['v-ops', '操作']],
+  ability: [['v-ability', '能力']],
+  people: [['v-people', '成员'], ['v-groups', '群'], ['v-person', '详情'], ['v-core', '核心'], ['v-memory', '记忆'], ['v-search', '搜索']],
+  logs: [['v-logs', '运行日志'], ['v-desktop-log', '操作日志'], ['v-chat', '对话']],
+  settings: [['v-health', '体检'], ['v-rules', '规则'], ['v-access', '权限'], ['v-history', '历史']],
+  test: [['v-try', '试聊']],
 }
-const TITLES = { desktop: '电脑操作', state: '状态', people: '人物', groups: '群组', memory: '记忆', comm: '对话', self: '自我', settings: '设置', tools: '工具' }
+const TITLES = { dashboard: '仪表盘', self: '自我', ability: '能力', people: '成员', logs: '日志', settings: '设置', test: '测试' }
 
-let currentGroup = 'state'
-let currentViewId = 'v-state'
+let currentGroup = 'dashboard'
+let currentViewId = 'v-dashboard'
 
 /** 当前显示的是哪个 view（切人后要重新拉它的数据） */
 function activeView() {
@@ -1024,6 +1057,9 @@ function showGroup(g, subIndex = 0) {
 }
 
 function runLoaders(viewId) {
+  if (viewId === 'v-dashboard') { loadDashboard(); loadStatus() }
+  if (viewId === 'v-health') loadHealth()
+  if (viewId === 'v-ability') loadAbility()
   if (viewId === 'v-state') { loadStatus(); loadState() }
   if (viewId === 'v-overview') { loadStatus(); loadTrend() }
   if (viewId === 'v-relation') loadRelation()
@@ -1783,6 +1819,145 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 })
+
+// ============================================================
+// 仪表盘 / 体检 / 能力
+// ============================================================
+
+const LEVEL_STYLE = {
+  ok: { color: '#3fb950', mark: '✓', text: '正常' },
+  warn: { color: '#d29922', mark: '!', text: '注意' },
+  fail: { color: '#f85149', mark: '✗', text: '有问题' },
+}
+
+async function loadHealth() {
+  const box = $('health-list') || $('dash-health')
+  if (!box) return
+  box.innerHTML = '<div class="hint">检查中…</div>'
+  try {
+    const r = await api('/api/health')
+    renderHealth(r, box)
+  } catch (e) {
+    box.innerHTML = '<div class="empty">检查失败：' + esc(e.message) + '</div>'
+  }
+}
+
+function renderHealth(r, box) {
+  const st = LEVEL_STYLE[r.level] || LEVEL_STYLE.warn
+  const tag = $('health-tag') || $('dash-health-tag')
+  if (tag) {
+    tag.textContent = st.text + '（' + r.counts.ok + '/' + r.counts.warn + '/' + r.counts.fail + '）'
+    tag.style.background = st.color
+    tag.style.color = '#fff'
+  }
+
+  box.innerHTML = ''
+  for (const it of r.items) {
+    const s = LEVEL_STYLE[it.level] || LEVEL_STYLE.warn
+    const row = el('div', 'item')
+    row.style.cssText =
+      'padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);border-left:3px solid ' + s.color + ';padding-left:10px'
+    const head = el('div')
+    head.style.cssText = 'display:flex;gap:8px;align-items:baseline'
+    head.appendChild(el('span', '', s.mark)).style.color = s.color
+    const nm = el('b', '', it.name)
+    nm.style.cssText = 'font-size:13px;min-width:90px'
+    head.appendChild(nm)
+    head.appendChild(el('span', 'sub', it.detail))
+    row.appendChild(head)
+
+    if (it.fix) {
+      const fix = el('div', 'sub', '→ ' + it.fix)
+      fix.style.cssText = 'color:#d29922;margin-top:3px;font-size:12px;line-height:1.5'
+      row.appendChild(fix)
+    }
+    box.appendChild(row)
+  }
+}
+
+async function loadDashboard() {
+  try {
+    const [s, h, c] = await Promise.all([
+      api('/api/status'),
+      api('/api/health'),
+      api('/api/cost').catch(() => null),
+    ])
+
+    // 卡片：只放健康度，不放内容统计
+    const cards = [
+      ['链路', s.connected ? '已连接' : '没连上', s.connected ? '#3fb950' : '#f85149'],
+      ['今日消息', String(s.today?.turns ?? 0), ''],
+      ['今天花', c ? '¥' + (c.today ?? 0).toFixed(3) : '—', ''],
+      ['情绪', s.mood?.emotion || '平稳', ''],
+      ['运行时长', fmtDur(s.uptimeSec ?? 0), ''],
+      ['体检', LEVEL_STYLE[h.level]?.text ?? '—', LEVEL_STYLE[h.level]?.color ?? ''],
+    ]
+    const box = $('dash-cards')
+    box.innerHTML = ''
+    for (const [k, v, color] of cards) {
+      const card = el('div', 'card')
+      card.style.cssText = 'padding:14px 16px;min-width:120px;flex:1'
+      card.appendChild(el('div', 'hint', k))
+      const val = el('div', '', v)
+      val.style.cssText = 'font-size:19px;font-weight:600;margin-top:4px' + (color ? ';color:' + color : '')
+      card.appendChild(val)
+      box.appendChild(card)
+    }
+
+    renderHealth(h, $('dash-health'))
+
+    // 最近活动
+    try {
+      const l = await api('/api/logs/recent?n=6')
+      const rb = $('dash-recent')
+      rb.innerHTML = ''
+      for (const x of (l.rows || []).slice(0, 6)) {
+        const row = el('div', 'item')
+        row.style.cssText = 'padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+        row.appendChild(el('div', 'sub', new Date(x.ts).toLocaleTimeString() + '  ' + String(x.msg || '').slice(0, 70)))
+        rb.appendChild(row)
+      }
+    } catch {
+      /* 日志取不到不影响仪表盘 */
+    }
+  } catch (e) {
+    const box = $('dash-cards')
+    if (box) box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
+  }
+}
+
+function fmtDur(sec) {
+  if (sec < 60) return sec + ' 秒'
+  if (sec < 3600) return Math.floor(sec / 60) + ' 分钟'
+  if (sec < 86400) return Math.floor(sec / 3600) + ' 小时'
+  return Math.floor(sec / 86400) + ' 天'
+}
+
+async function loadAbility() {
+  const box = $('ability-list')
+  if (!box) return
+  try {
+    const r = await api('/api/ability')
+    box.innerHTML = ''
+    for (const a of r.list || []) {
+      const card = el('div', 'card')
+      card.style.cssText = 'padding:14px 16px;margin-bottom:10px'
+      const head = el('div')
+      head.style.cssText = 'display:flex;gap:10px;align-items:center'
+      head.appendChild(el('b', '', a.name)).style.fontSize = '14px'
+      const badge = el('span', 'tag', a.on ? '已开启' : '关着')
+      badge.style.background = a.on ? '#238636' : 'rgba(255,255,255,.08)'
+      badge.style.color = a.on ? '#fff' : ''
+      head.appendChild(badge)
+      card.appendChild(head)
+      card.appendChild(el('div', 'sub', a.hint)).style.marginTop = '4px'
+      box.appendChild(card)
+    }
+    if (!(r.list || []).length) box.appendChild(el('div', 'empty', '没有能力数据'))
+  } catch (e) {
+    box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
+  }
+}
 
 // ---------- 电脑操作 ----------
 function openDesktopPanel() {
@@ -2849,7 +3024,7 @@ async function loadTrend() {
 
 // ---------- 启动 ----------
 connectEvents()
-showGroup('state')
+showGroup('dashboard')
 api('/api/logs/recent?n=40')
   .then((rows) => {
     for (const r of rows) {

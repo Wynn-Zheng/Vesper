@@ -741,6 +741,35 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         if (await handlePeopleApi(req, res, path, url, json, readBody)) return
         if (await handleDesktopApi(req, res, path, url, json, readBody)) return
 
+      // 体检：一眼看出哪里坏了
+      // 每项独立跑，API 挂了不影响查磁盘；最慢的一项 3 秒超时。
+      // 能力清单：它能干什么、开没开。
+      // 直接复用 abilities.ts —— 那是给 prompt 用的同一份数据，
+      // 分开维护会漂（prompt 说"能看屏幕"，控制台说"不能"）。
+      if (req.method === 'GET' && path === '/api/ability') {
+        const { listAbilities } = await import('../self/abilities.ts')
+        const rules = opts.getRules()
+        const list = listAbilities(rules).map((a) => ({
+          name: a.name,
+          on: a.available,
+          hint: a.hint,
+        }))
+        json(res, 200, { list })
+        return
+      }
+
+      if (req.method === 'GET' && path === '/api/health') {
+        const { healthReport } = await import('./health.ts')
+        const r = await healthReport({
+          apiKey: process.env['DEEPSEEK_API_KEY'],
+          baseUrl: process.env['DEEPSEEK_BASE_URL'],
+          // connected 是 transport 实例上的 getter，不是模块级状态
+          connected: opts.transport.connected ?? false,
+        })
+        json(res, 200, r)
+        return
+      }
+
       // 电脑操作日志：模型点了什么、什么时候、成没成。
       // 不和 /api/logs/recent 混在一起 —— 那是运行日志（info/warn），
       // 这是"它动了你的鼠标"的记录，性质不一样。
