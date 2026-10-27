@@ -85,7 +85,7 @@ act   = ["act"]
 
 [git]
 # 必须和当前分支一致，否则 run 会切走
-base_branch = "bugfix/r1-emoji-vision"
+base_branch = "agenttree/2026-10-28-plugins"
 worktree_dir = ".agenttree/wt"
 auto_merge = true
 auto_commit = true
