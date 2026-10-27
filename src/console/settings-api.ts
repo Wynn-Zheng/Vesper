@@ -5,7 +5,7 @@
  *   misc-api     → NapCat 状态、余额（仪表盘在用）
  *   这个文件      → 数据目录、磁盘、备份、模型配置、版本（设置页在用）
  */
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
@@ -149,6 +149,89 @@ export async function handleSettingsApi(
           return ''
         }
       })(),
+    })
+    return true
+  }
+
+  /* ============ 改模型配置（写入 .env / rules.yaml） ============ */
+  // 支持三样：
+  //   apiKey      → .env 的 DEEPSEEK_API_KEY
+  //   model       → .env 的 DEEPSEEK_MODEL
+  //   visionModel → rules.yaml 的 视觉.模型
+  //
+  // BASE_URL 不在里面：.env 里写它会被忽略（只认启动环境），代码里有默认值。
+  if (method === 'PUT' && path === '/api/settings/model') {
+    const chunks: Buffer[] = []
+    for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as {
+      apiKey?: string
+      model?: string
+      visionModel?: string
+    }
+
+    const changed: string[] = []
+    const errors: string[] = []
+
+    // ---- .env 里的两项（按行替换，不用正则，省得和转义打架）----
+    const envTodo: Array<[string, string]> = []
+    if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
+      envTodo.push(['DEEPSEEK_API_KEY', body.apiKey])
+    }
+    if (typeof body.model === 'string' && body.model.trim()) {
+      envTodo.push(['DEEPSEEK_MODEL', body.model])
+    }
+
+    if (envTodo.length) {
+      try {
+        const envPath = '.env'
+        const text = existsSync(envPath) ? readFileSync(envPath, 'utf8') : ''
+        // 备份一次（只在还没备份过时）
+        if (existsSync(envPath) && !existsSync(envPath + '.bak')) {
+          copyFileSync(envPath, envPath + '.bak')
+        }
+
+        const lines = text.split('\n')
+        for (const [k, raw] of envTodo) {
+          // key 去掉前后引号，避免写成 KEY="sk-xxx"
+          const val = raw.trim().replace(/^["']|["']$/g, '')
+          const idx = lines.findIndex((l) => l.trimStart().startsWith(k + '='))
+          if (idx >= 0) lines[idx] = k + '=' + val
+          else lines.push(k + '=' + val)
+          changed.push(k)
+        }
+
+        writeFileSync(envPath, lines.join('\n'), 'utf8')
+      } catch (e) {
+        errors.push('.env 写入失败：' + String(e).slice(0, 80))
+      }
+    }
+
+    // ---- rules.yaml 里的视觉模型 ----
+    if (typeof body.visionModel === 'string') {
+      try {
+        const { setConfigPath } = await import('./config-write.ts')
+        const raw = readFileSync('persona/rules.yaml', 'utf8')
+        const r = setConfigPath(raw, '视觉.模型', body.visionModel.trim())
+        if (r.ok) {
+          writeFileSync('persona/rules.yaml', r.text, 'utf8')
+          changed.push('视觉.模型')
+        } else {
+          errors.push('rules.yaml 写入失败：' + (r.error ?? '?'))
+        }
+      } catch (e) {
+        errors.push('rules.yaml：' + String(e).slice(0, 80))
+      }
+    }
+
+    if (errors.length) {
+      json(res, 400, { error: errors.join('；'), changed })
+      return true
+    }
+    json(res, 200, {
+      ok: true,
+      changed,
+      // .env 是进程启动时读的，改了要重启才生效
+      note: changed.some((c) => c.startsWith('DEEPSEEK')) ? '改 .env 要重启才生效' : '已生效',
     })
     return true
   }

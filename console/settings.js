@@ -132,70 +132,232 @@
   /* ============================================================
    * 模型
    * ============================================================ */
-  async function loadModel() {
-    const box = document.getElementById('model-body')
-    if (!box) return
-    box.innerHTML = '<div class="hint">读取中…</div>'
+    async function loadModel() {
+      const box = document.getElementById('model-body')
+      if (!box) return
+      box.innerHTML = '<div class="hint">读取中…</div>'
 
-    try {
-      const d = await api('/api/settings/model')
-      box.innerHTML = ''
+      try {
+        const [d, bal, st] = await Promise.all([
+          api('/api/settings/model'),
+          api('/api/balance').catch(() => null),
+          api('/api/status').catch(() => null),
+        ])
+        box.innerHTML = ''
 
-      const c = el('div', 'card')
-      c.appendChild(el('div', 'op-t', 'DeepSeek 配置'))
+        // ---------- 接入 ----------
+        const c1 = el('div', 'card')
+        c1.appendChild(el('div', 'op-t', '接入'))
 
-      const row = (label, value, hint) => {
-        const r = el('div')
-        r.style.cssText = 'display:flex;gap:10px;align-items:baseline;padding:6px 0;font-size:12.5px'
-        const k = el('span', '', label)
-        k.style.cssText = 'color:#8b949e;min-width:80px;flex:none'
-        r.appendChild(k)
-        const v = el('span', '', value)
-        v.style.cssText = 'flex:1;word-break:break-all'
-        r.appendChild(v)
-        c.appendChild(r)
-        if (hint) {
-          const h = el('div', 'hint', hint)
-          h.style.cssText = 'font-size:11px;margin-left:90px;margin-top:-2px'
-          c.appendChild(h)
+        const keyLabel = el('div', 'hint', 'API Key')
+        keyLabel.style.cssText = 'font-size:11.5px;margin-top:12px'
+        c1.appendChild(keyLabel)
+
+        const keyRow = el('div')
+        keyRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:5px'
+
+        const keyInput = el('input')
+        keyInput.type = 'password'
+        keyInput.autocomplete = 'off'
+        keyInput.placeholder = d.hasKey ? '已保存 ' + d.apiKey + '，要换就填新的' : 'sk-...'
+        keyInput.style.cssText =
+          "flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px;color:inherit;font-family:ui-monospace,Consolas,monospace"
+        keyRow.appendChild(keyInput)
+
+        // 显示/隐藏（password ↔ text）
+        const eye = el('button', 'mini-btn', '显示')
+        eye.onclick = () => {
+          const show = keyInput.type === 'password'
+          keyInput.type = show ? 'text' : 'password'
+          eye.textContent = show ? '隐藏' : '显示'
         }
-      }
+        keyRow.appendChild(eye)
 
-      row('API Key', d.apiKey || '（没配）', d.hasKey ? '' : '在项目根目录的 .env 里填 DEEPSEEK_API_KEY=sk-...')
-      row('Base URL', d.baseUrl)
-      row('模型', d.model)
-      row('视觉模型', d.visionModel || '（没设，用默认）')
-
-      const hint = el('div', 'hint', '改这些要编辑 .env 然后重启服务。控制台不能直接改（key 太敏感）')
-      hint.style.cssText = 'margin-top:12px;font-size:11.5px'
-      c.appendChild(hint)
-      box.appendChild(c)
-
-      // 连通性测试
-      const c2 = el('div', 'card')
-      c2.style.marginTop = '12px'
-      c2.appendChild(el('div', 'op-t', '连通性'))
-      const btn = el('button', 'mini-btn', '测一下')
-      btn.style.marginTop = '8px'
-      btn.onclick = async () => {
-        btn.disabled = true
-        btn.textContent = '测…'
-        try {
-          const r = await api('/api/health')
-          const item = (r.items || []).find((x) => x.name && x.name.includes('DeepSeek'))
-          toast(item ? item.level === 'ok' ? '✓ ' + item.detail : '✗ ' + item.detail : '测不到')
-        } catch (e) {
-          toast('✗ ' + e.message)
+        const saveKey = el('button', 'mini-btn', '保存')
+        saveKey.onclick = async () => {
+          const v = keyInput.value.trim()
+          if (!v) return toast('先填一个 key')
+          if (!/^sk-[A-Za-z0-9]{10,}$/.test(v)) return toast('看着不像 key（应该 sk- 开头）')
+          saveKey.disabled = true
+          saveKey.textContent = '保存中…'
+          try {
+            const r = await sendJson('/api/settings/model', { apiKey: v }, 'PUT')
+            toast('已写入 .env' + (r.note ? '，' + r.note : ''))
+            keyInput.value = ''
+            loadModel()
+          } catch (e) {
+            toast('✗ ' + e.message)
+          }
+          saveKey.disabled = false
+          saveKey.textContent = '保存'
         }
-        btn.disabled = false
-        btn.textContent = '测一下'
+        keyRow.appendChild(saveKey)
+        c1.appendChild(keyRow)
+
+        const keyHint = el('div', 'hint')
+        keyHint.style.cssText = 'font-size:11px;margin-top:6px;line-height:1.6'
+        keyHint.textContent = d.hasKey
+          ? '当前 ' + d.apiKey + '。改完写入 .env，重启服务才生效。'
+          : '还没配。去 platform.deepseek.com 拿一个，填进来就能用。'
+        c1.appendChild(keyHint)
+
+        // 服务地址（只读，说明了为什么不能改）
+        const urlRow = el('div')
+        urlRow.style.cssText = 'display:flex;gap:10px;align-items:baseline;padding:10px 0 0;font-size:12.5px;border-top:1px solid var(--line);margin-top:12px'
+        const urlK = el('span', '', '服务地址')
+        urlK.style.cssText = 'color:var(--dim);min-width:70px;flex:none'
+        urlRow.appendChild(urlK)
+        urlRow.appendChild(el('span', '', d.baseUrl))
+        c1.appendChild(urlRow)
+
+        const urlHint = el('div', 'hint', '这个写死在代码里（.env 里改它不生效），换了服务商才需要动。')
+        urlHint.style.cssText = 'font-size:11px;margin-top:4px;margin-left:80px'
+        c1.appendChild(urlHint)
+        box.appendChild(c1)
+
+        // ---------- 模型 ----------
+        const c2 = el('div', 'card')
+        c2.style.marginTop = '12px'
+        c2.appendChild(el('div', 'op-t', '模型'))
+
+        const mkSelect = (label, cur, options, hint) => {
+          const row = el('div')
+          row.style.cssText = 'display:flex;gap:10px;align-items:center;padding:8px 0'
+          const k = el('span', '', label)
+          k.style.cssText = 'color:var(--dim);min-width:70px;flex:none;font-size:12.5px'
+          row.appendChild(k)
+          const sel = el('select')
+          sel.style.cssText =
+            'flex:1;max-width:280px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12.5px;color:inherit'
+          for (const o of options) {
+            const op = el('option', '', o[1])
+            op.value = o[0]
+            if (o[0] === cur) op.selected = true
+            sel.appendChild(op)
+          }
+          row.appendChild(sel)
+          c2.appendChild(row)
+          if (hint) {
+            const h = el('div', 'hint', hint)
+            h.style.cssText = 'font-size:11px;margin-left:80px;margin-top:-4px;margin-bottom:4px'
+            c2.appendChild(h)
+          }
+          return sel
+        }
+
+        const curModel = (d.model || '').replace('（默认）', '')
+        const selModel = mkSelect('对话模型', curModel, [
+          ['deepseek-chat', 'deepseek-chat（通用，便宜）'],
+          ['deepseek-reasoner', 'deepseek-reasoner（会思考，慢且贵）'],
+        ])
+
+        const curVision = (d.visionModel || '').trim()
+        const selVision = mkSelect(
+          '视觉模型',
+          curVision,
+          [
+            ['', '（不启用，看图功能关着）'],
+            ['deepseek-v4-flash-vision-exp', 'deepseek-v4-flash-vision-exp'],
+          ],
+          '只有主模型是纯文本时才需要它：先用它把图看成一句话，再混进对话。',
+        )
+
+        const saveModel = el('button', 'mini-btn', '保存模型设置')
+        saveModel.style.marginTop = '10px'
+        saveModel.onclick = async () => {
+          saveModel.disabled = true
+          try {
+            const r = await sendJson(
+              '/api/settings/model',
+              { model: selModel.value, visionModel: selVision.value },
+              'PUT',
+            )
+            toast('已保存' + (r.note ? '，' + r.note : ''))
+          } catch (e) {
+            toast('✗ ' + e.message)
+          }
+          saveModel.disabled = false
+        }
+        c2.appendChild(saveModel)
+        box.appendChild(c2)
+
+        // ---------- 状态 ----------
+        const c3 = el('div', 'card')
+        c3.style.marginTop = '12px'
+        const head = el('div')
+        head.style.cssText = 'display:flex;align-items:center;gap:10px'
+        head.appendChild(el('div', 'op-t', '状态'))
+        const retest = el('button', 'mini-btn', '重新测试')
+        retest.style.marginLeft = 'auto'
+        head.appendChild(retest)
+        c3.appendChild(head)
+
+        const stBox = el('div')
+        stBox.style.cssText = 'margin-top:10px;font-size:12.5px;line-height:1.9'
+        c3.appendChild(stBox)
+
+        const renderStatus = (health) => {
+          stBox.innerHTML = ''
+          const item = (health && health.items ? health.items : []).find(
+            (x) => x.name && String(x.name).includes('DeepSeek'),
+          )
+          const ok = item && item.level === 'ok'
+          const dot = el('span')
+          dot.style.cssText =
+            'display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle;background:' +
+            (item ? (ok ? 'var(--green)' : 'var(--red)') : 'var(--dim2)')
+
+          const line1 = el('div')
+          line1.appendChild(dot)
+          // 有 detail 就直接用它（"能调通（168ms）"本身已经说了状态），
+          // 没 detail 才退回自己的一句话，免得"能连通 能调通"重复
+          const hasDetail = item && item.detail
+          line1.appendChild(
+            el('span', '', hasDetail ? '' : !item ? '还没测' : ok ? '能连通' : '连不上'),
+          )
+          if (hasDetail) {
+            const de = el('span', 'hint', item.detail)
+            de.style.cssText = 'font-size:11.5px'
+            line1.appendChild(de)
+          }
+          stBox.appendChild(line1)
+
+          // 余额 / 今日用量
+          const parts = []
+          if (bal && bal.total != null) parts.push('余额 ¥' + Number(bal.total).toFixed(2))
+          if (st && st.cost) {
+            parts.push('今日 ' + (st.cost.calls ?? 0) + ' 次调用')
+            parts.push('¥' + Number(st.cost.cny ?? 0).toFixed(4))
+          }
+          if (parts.length) {
+            const line2 = el('div', 'hint', parts.join(' · '))
+            line2.style.cssText = 'font-size:11.5px'
+            stBox.appendChild(line2)
+          }
+        }
+
+        renderStatus(null)
+        retest.onclick = async () => {
+          retest.disabled = true
+          retest.textContent = '测试中…'
+          try {
+            renderStatus(await api('/api/health'))
+          } catch (e) {
+            toast('✗ ' + e.message)
+          }
+          retest.disabled = false
+          retest.textContent = '重新测试'
+        }
+        // 进来先自动测一次（反正 health 接口本来就会调）
+        api('/api/health')
+          .then(renderStatus)
+          .catch(() => {})
+
+        box.appendChild(c3)
+      } catch (e) {
+        box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
       }
-      c2.appendChild(btn)
-      box.appendChild(c2)
-    } catch (e) {
-      box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
     }
-  }
 
   /* ============================================================
    * 关于
