@@ -340,6 +340,8 @@ async function napcatLoginStatus(): Promise<{
   account?: string
   nick?: string
   webui?: string
+  /** 带 token 的 WebUI 地址（iframe 用，可以免登录） */
+  webuiAuto?: string
   hasQrcode?: boolean
 }> {
   const cfgPath = findWebuiConfig()
