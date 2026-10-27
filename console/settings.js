@@ -181,8 +181,10 @@
           saveKey.disabled = true
           saveKey.textContent = '保存中…'
           try {
-            const r = await sendJson('/api/settings/model', { apiKey: v }, 'PUT')
-            toast('已写入 .env' + (r.note ? '，' + r.note : ''))
+            await sendJson('/api/settings/model', { apiKey: v }, 'PUT')
+            // 说清楚"没生效"这件事 —— 只打"已写入 .env"会让人以为马上就能用，
+            // 结果模型还是回显模式，看起来就像保存失败。
+            toast('已保存。要重启程序才会用上新 Key（现在还在回显模式）')
             keyInput.value = ''
             loadModel()
           } catch (e) {
@@ -200,6 +202,43 @@
           ? '当前 ' + d.apiKey + '。改完写入 .env，重启服务才生效。'
           : '还没配。去 platform.deepseek.com 拿一个，填进来就能用。'
         c1.appendChild(keyHint)
+
+        // 配了但没生效 —— 最容易被误解成"保存没用"。
+        // apiKey 是启动时读成常量传给模型的，所以写完文件必须重启才真的切过去。
+        if (d.restartNeeded) {
+          const warn = el('div')
+          warn.style.cssText =
+            'margin-top:10px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.7;' +
+            'background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4)'
+          warn.innerHTML =
+            '<b>Key 已保存，但还没生效</b><br>' +
+            '<span style="color:#8b949e">现在仍跑在回显模式。重启之后才会真正用它。</span>'
+          c1.appendChild(warn)
+
+          const rb = el('button', 'mini-btn', '立即重启')
+          rb.style.marginTop = '8px'
+          rb.onclick = async () => {
+            rb.disabled = true
+            rb.textContent = '重启中…'
+            try {
+              const rr = await sendJson('/api/settings/restart', {}, 'POST')
+              if (rr.restarting) {
+                toast('正在重启，几秒后自动刷新…')
+                setTimeout(() => location.reload(), 5000)
+              } else {
+                // 浏览器模式没法自重起
+                alert(rr.detail || '请手动重启')
+                rb.disabled = false
+                rb.textContent = '立即重启'
+              }
+            } catch (e) {
+              alert('重启失败：' + e.message)
+              rb.disabled = false
+              rb.textContent = '立即重启'
+            }
+          }
+          warn.appendChild(rb)
+        }
 
         // 服务地址（只读，说明了为什么不能改）
         const urlRow = el('div')

@@ -136,14 +136,32 @@ export async function handleSettingsApi(
   /* ============ 模型：当前配置 + 连通性 ============ */
   if (method === 'GET' && path === '/api/settings/model') {
     const key = (process.env['DEEPSEEK_API_KEY'] ?? '').trim()
+
+    // 「.env 里配了」和「这个进程真的在用它」是两件事。
+    //
+    // apiKey 在启动时被读成常量传给模型了（index.ts 的 llm），所以刚保存完
+    // 文件里有了、运行时还是空的 —— 界面上如果只显示"已配置"，
+    // 用户会以为生效了，实际还在回显模式。
+    let fileKey = ''
+    try {
+      if (existsSync('.env')) {
+        const m = /^DEEPSEEK_API_KEY=["']?([^"'\r\n]*)["']?/m.exec(readFileSync('.env', 'utf8'))
+        fileKey = (m?.[1] ?? '').trim()
+      }
+    } catch {
+      /* 读不了就当没有 */
+    }
+
     json(res, 200, {
       // key 只露前后各 4 位，防止整串出现在界面上
-      apiKey: key ? key.slice(0, 6) + '…' + key.slice(-4) : '',
-      hasKey: Boolean(key),
+      apiKey: key ? key.slice(0, 6) + '…' + key.slice(-4) : fileKey ? fileKey.slice(0, 6) + '…' + fileKey.slice(-4) : '',
+      hasKey: Boolean(fileKey) || Boolean(key), // 文件里配了就算配了
+      live: Boolean(key), // 但当前进程用没用上，看 process.env
+      restartNeeded: Boolean(fileKey) && !key, // 配了但没加载 → 要重启
       baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com（默认）',
       model: process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat（默认）',
       // 配置和数据到底在哪 —— 用户想手动改文件、或者换台机器搬数据时要看这个。
-      // 打包后 cwd 是 %APPDATA%\QQBot\data-root，不写出来没人找得到。
+      // 打包后 cwd 是 %APPDATA%\QQbot\data-root，不写出来没人找得到。
       envPath: resolve('.env'),
       dataDir: resolve('.'),
       visionModel: (() => {
@@ -275,12 +293,19 @@ export async function handleSettingsApi(
 
   /* ============ 服务：重启（只提示，真重启要外部做） ============ */
   if (method === 'POST' && path === '/api/settings/restart') {
-    // 自己杀自己会让响应发不出去。所以返回一句"请手动重启"，
-    // 打包成 Electron 之后由主进程管这块（那里能安全重启）。
+    // 桌面版：先回响应，然后自己退出（退出码 42 = "我要重启"），
+    // main.js 的 exit handler 看到 42 会把后端起回来。
+    // 浏览器模式（手动 npm start）没法自重起，只能提示手动来。
+    const desktop = process.env['DESKTOP_MODE'] === '1'
+    if (desktop) {
+      json(res, 200, { ok: true, restarting: true, detail: '正在重启…窗口会自动恢复' })
+      setTimeout(() => process.exit(42), 300)
+      return true
+    }
     json(res, 200, {
       ok: false,
       needManual: true,
-      detail: '服务不能自己重启（会掐断正在返回的响应）。请在终端 Ctrl+C 后重新 npm start；打包成软件后这里会变成"重启"按钮。',
+      detail: '浏览器模式下服务不能自己重启（会掐断正在返回的响应）。请在终端 Ctrl+C 后重新 npm start。',
     })
     return true
   }

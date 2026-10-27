@@ -284,7 +284,28 @@ async function ensureBackend() {
   backend.on('exit', (code) => {
     trace('[main] 后端退出，code = ' + code)
     backend = null
-    // 后端崩了要提示，不能静默白屏
+
+    // 42 = 后端主动要求重启（控制台点了「重启」）。
+    // 常见于刚改完 API Key —— 那个值启动时才读，所以必须换进程才生效。
+    if (code === 42 && !app.isQuitting) {
+      trace('[main] 后端要求重启，1 秒后拉起')
+      setTimeout(() => {
+        ensureBackend()
+          .then((r) => {
+            trace('[main] 重启结果 ok=' + r.ok)
+            if (r.ok && win && !win.isDestroyed()) {
+              // 重启完重新加载一次，让页面拿到新状态
+              win.webContents.reload()
+            } else if (!r.ok) {
+              trace('[main] 重启失败：' + r.reason)
+            }
+          })
+          .catch((e) => trace('[main] 重启异常：' + (e && e.stack)))
+      }, 1000)
+      return
+    }
+
+    // 其它情况：真崩了，要提示，不能静默白屏
     if (win && !win.isDestroyed()) {
       win.webContents.executeJavaScript(
         `document.body.insertAdjacentHTML('afterbegin','<div style="background:#f85149;color:#fff;padding:10px;font:14px system-ui;z-index:99999">后端已退出（code ${code}）。关掉重开试试。</div>')`,
