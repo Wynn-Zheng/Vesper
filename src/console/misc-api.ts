@@ -529,6 +529,16 @@ function startNapcat(): { ok: boolean; detail: string } {
   if (!existsSync(launcher)) return { ok: false, detail: '找不到 NapCatWinBootMain.exe' }
   if (!existsSync(hook)) return { ok: false, detail: '找不到 NapCatWinBootHook.dll' }
 
+  // 删掉上次的二维码。
+  // .cmd 里也有这一步（del /f /q "%QR%"），不删的话控制台可能显示一张
+  // 已经过期的码 —— 扫了登不上，还找不到原因。
+  try {
+    const oldQr = dir + '/cache/qrcode.png'
+    if (existsSync(oldQr)) unlinkSync(oldQr)
+  } catch {
+    /* 删不掉也不影响启动，只是可能显示旧码 */
+  }
+
   try {
     const child = spawn(launcher, [qqExe, hook], {
       cwd: dir,
