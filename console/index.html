@@ -82,10 +82,10 @@
 .dash-spark{display:block;margin-top:6px}
 .dash-foot{margin-top:auto;padding-top:10px;border-top:1px solid rgba(56,139,253,.14);font-size:11px;color:var(--dim2);display:flex;gap:14px;flex-wrap:wrap}
 .dash-foot b{color:var(--dim);font-weight:600;font-variant-numeric:tabular-nums}
-.dash-side{display:grid;grid-template-rows:repeat(3,1fr);gap:10px}
-.dash-mini{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 13px;display:flex;flex-direction:column;justify-content:center;min-height:0}
+.dash-side{display:grid;grid-template-rows:repeat(2,1fr);gap:12px}
+.dash-mini{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;min-height:0}
 .dash-mini .k{font-size:11px;color:var(--dim);letter-spacing:.04em}
-.dash-mini .v{font-size:16.5px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:1px;line-height:1.25}
+.dash-mini .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;line-height:1.2}
 .dash-mini .s{font-size:10.5px;color:var(--dim2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-chart-card{margin-bottom:14px}
 .dash-chart-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
@@ -2595,14 +2595,7 @@ function renderDashHero(s, c, t) {
       v: fmtDur(s.uptimeSec ?? 0),
       s: s.connected ? '链路正常' : '链路断开',
     },
-    {
-      k: '情绪',
-      v: s.mood?.emotion || '平稳',
-      s:
-        typeof s.mood?.intensity === 'number'
-          ? '强度 ' + Math.round(s.mood.intensity * 100) + '%'
-          : '没什么特别的',
-    },
+
   ]
 
   for (const it of items) {
