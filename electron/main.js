@@ -199,10 +199,12 @@ function probe() {
   })
 }
 
-async function waitReady(timeoutMs = 25000) {
+async function waitReady(timeoutMs = 25000, checkAbort = () => '') {
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
     if (await probe()) return true
+    // 后端已经明确失败了就别干等
+    if (checkAbort()) return false
     await new Promise((r) => setTimeout(r, 400))
   }
   return false
@@ -214,8 +216,8 @@ async function waitReady(timeoutMs = 25000) {
 async function ensureBackend() {
   // 1. 已经在跑？直接连（可能是你手动 npm start 的）
   if (await probe()) {
-    console.log('[main] 检测到已有后端，直接复用')
-    return true
+    trace('[main] 检测到已有后端，直接复用')
+    return { ok: true, reason: '复用已在运行的后端', log: '' }
   }
 
   // 2. 没在跑，自己拉一个
@@ -226,35 +228,58 @@ async function ensureBackend() {
     : path.join(APP_ROOT, 'src', 'index.ts')
 
   if (!existsSync(entry)) {
-    console.error('[main] 找不到入口：', entry)
-    return false
+    trace('[main] 找不到入口：' + entry)
+    return { ok: false, reason: `找不到后端入口：${entry}`, log: '' }
   }
 
   // 打包后用 Electron 自带的 Node —— 用户机器不一定装了 Node。
   const nodeCmd = app.isPackaged ? process.execPath : 'node'
 
-  console.log(`[main] 启动后端：${entry}（用 ${nodeCmd}）`)
+  trace(`[main] 启动后端：${entry}（用 ${nodeCmd}），cwd=${DATA_ROOT}`)
 
-  backend = spawn(nodeCmd, [entry], {
-    cwd: DATA_ROOT, // 关键：数据目录由 cwd 决定（源码里全是相对路径）
-    env: {
-      ...process.env,
-      ...readDotEnv(), // .env 手动注入（不能靠 --env-file，见文件头注释）
-      ELECTRON_RUN_AS_NODE: '1', // 让 electron.exe 以 Node 模式跑，而不是再开一个 Electron
-      DESKTOP_MODE: '1',
-      // 程序资源目录（console/ 等）在哪 —— 打包后 cwd 是用户数据目录，
-      // 后端不能再用 resolve('console') 找前端文件
-      QQBOT_ROOT: APP_ROOT,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
+  // 收集后端输出，失败时显示到窗口里（用户找不到日志文件，这是最直接的）
+  const collected = []
+  const collect = (prefix, d) => {
+    const text = prefix + String(d)
+    collected.push(text)
+    if (collected.length > 40) collected.shift()
+    process.stdout.write(text)
+  }
+
+  try {
+    backend = spawn(nodeCmd, [entry], {
+      cwd: DATA_ROOT, // 关键：数据目录由 cwd 决定（源码里全是相对路径）
+      env: {
+        ...process.env,
+        ...readDotEnv(), // .env 手动注入（不能靠 --env-file，见文件头注释）
+        ELECTRON_RUN_AS_NODE: '1', // 让 electron.exe 以 Node 模式跑，而不是再开一个 Electron
+        DESKTOP_MODE: '1',
+        // 程序资源目录（console/ 等）在哪 —— 打包后 cwd 是用户数据目录，
+        // 后端不能再用 resolve('console') 找前端文件
+        QQBOT_ROOT: APP_ROOT,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+  } catch (e) {
+    // spawn 同步抛错（参数不合法之类）
+    const reason = `拉起后端失败：${e && e.message ? e.message : String(e)}`
+    trace(reason)
+    return { ok: false, reason, log: collected.join('') }
+  }
+
+  // spawn 失败（cwd 不存在、exe 不可执行）是异步 error 事件，不监听就抓不住
+  let spawnError = ''
+  backend.on('error', (e) => {
+    spawnError = e && e.message ? e.message : String(e)
+    trace('[main] 后端 spawn 出错：' + spawnError)
   })
 
-  backend.stdout?.on('data', (d) => process.stdout.write('[backend] ' + d))
-  backend.stderr?.on('data', (d) => process.stderr.write('[backend] ' + d))
+  backend.stdout?.on('data', (d) => collect('[backend] ', d))
+  backend.stderr?.on('data', (d) => collect('[backend:err] ', d))
 
   backend.on('exit', (code) => {
-    console.log('[main] 后端退出，code =', code)
+    trace('[main] 后端退出，code = ' + code)
     backend = null
     // 后端崩了要提示，不能静默白屏
     if (win && !win.isDestroyed()) {
@@ -264,15 +289,52 @@ async function ensureBackend() {
     }
   })
 
-  const ok = await waitReady()
-  if (!ok) console.error('[main] 后端 25 秒没起来')
-  return ok
+  // 等就绪的同时盯着 spawn 错误，别干等 25 秒
+  const ok = await waitReady(25000, () => (spawnError ? spawnError : ''))
+  if (!ok) {
+    const reason = spawnError
+      ? `后端起不来：${spawnError}`
+      : '后端 25 秒内没响应（没报错，可能启动很慢或端口被占）'
+    trace('[main] ' + reason)
+    return { ok: false, reason, log: collected.join('') }
+  }
+  return { ok: true, reason: '', log: '' }
 }
 
 /* ============================================================
  * 窗口
  * ============================================================ */
-function createWindow() {
+
+/**
+ * 后端起不来时显示的错误页。
+ *
+ * 为什么不用一句 ERR_CONNECTION_REFUSED：
+ *   用户看不到终端，也不知道日志在哪。把「为什么没起来」直接画在窗口里，
+ *   截图发过来就能定位，不用教人找文件。
+ */
+function failPage(info) {
+  const esc = (s) =>
+    String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const logText = info.log ? esc(String(info.log).slice(-4000)) : ''
+  const logFile = path.join(process.env.APPDATA || '', 'qqbot-main.log')
+
+  return `<body style="background:#0d1117;color:#e6edf3;font:14px/1.7 system-ui;padding:40px;margin:0">
+    <h2 style="color:#f85149;margin:0 0 6px">后端起不来</h2>
+    <p style="color:#8b949e;margin:0 0 20px;word-break:break-all">${esc(info.reason)}</p>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;margin-bottom:18px">
+      <div style="color:#8b949e;font-size:12px;margin-bottom:8px">后端输出</div>
+      <div style="font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all">${logText || '（后端没有任何输出）'}</div>
+    </div>
+    <div style="color:#8b949e;font-size:12px;line-height:1.9">
+      <div>日志文件：<code style="color:#79c0ff">${esc(logFile)}</code></div>
+      <div>数据目录：<code style="color:#79c0ff">${esc(DATA_ROOT)}</code></div>
+      <div>后端入口：<code style="color:#79c0ff">${esc(APP_ROOT)}\\build\\index.js</code></div>
+      <div style="margin-top:14px">把这一屏截图发出来就能定位。</div>
+    </div>
+  </body>`
+}
+
+function createWindow(failInfo = null) {
   // 打包时 preload 会被改名成 .cjs（app/manifest 里是 type:module，
   // .js 会被当 ESM 解析，而 preload 必须是 CJS）。开发时还是 preload.js。
   const preloadName = existsSync(path.join(__dirname, 'preload.cjs')) ? 'preload.cjs' : 'preload.js'
@@ -296,9 +358,14 @@ function createWindow() {
     },
   })
 
-  const token = consoleToken()
-  const url = token ? `${CONSOLE_URL}/?token=${encodeURIComponent(token)}` : CONSOLE_URL
-  win.loadURL(url)
+  // 后端没起来：直接把原因和日志画在窗口里，别让用户对着 ERR_CONNECTION_REFUSED 猜
+  if (failInfo && !failInfo.ok) {
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(failPage(failInfo)))
+  } else {
+    const token = consoleToken()
+    const url = token ? `${CONSOLE_URL}/?token=${encodeURIComponent(token)}` : CONSOLE_URL
+    win.loadURL(url)
+  }
 
   win.once('ready-to-show', () => win.show())
 
@@ -314,11 +381,11 @@ function createWindow() {
     win.loadURL(
       'data:text/html;charset=utf-8,' +
         encodeURIComponent(
-          `<body style="background:#0d1117;color:#e6edf3;font:15px/1.8 system-ui;padding:60px">
-           <h2>连不上后端</h2>
-           <p style="color:#8b949e">${desc}（${code}）</p>
-           <p style="color:#8b949e">后端可能没起来。看这个窗口的终端输出，或者关掉重开。</p>
-           </body>`,
+          failPage({
+            ok: false,
+            reason: `窗口打不开后端：${desc}（${code}）`,
+            log: failInfo && failInfo.log ? failInfo.log : '',
+          }),
         ),
     )
   })
@@ -368,9 +435,12 @@ app.whenReady().then(async () => {
   trace('DATA_ROOT=' + DATA_ROOT)
   ensureDataRoot()
   trace('ensureDataRoot 完成')
-  await ensureBackend()
-  trace('ensureBackend 完成')
-  createWindow()
+
+  const backendResult = await ensureBackend()
+  trace('ensureBackend 完成，ok=' + backendResult.ok + (backendResult.ok ? '' : ' 原因=' + backendResult.reason))
+
+  // 后端没起来就把原因画在窗口里，而不是让用户看 ERR_CONNECTION_REFUSED
+  createWindow(backendResult)
   trace('createWindow 完成')
   try {
     createTray()
