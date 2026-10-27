@@ -466,8 +466,6 @@ async function runAction(
 }
 
 export async function startConsole(opts: ConsoleOptions): Promise<void> {
-  const indexFile = resolve('console/index.html')
-
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const path = url.pathname
