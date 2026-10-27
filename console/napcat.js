@@ -362,8 +362,8 @@
     const hint = document.getElementById('nc-log-hint')
     if (!hint) return
     hint.textContent = on
-      ? '会多一个最小化的窗口。重启 NapCat 后生效。'
-      : '启动完全无窗口。重启 NapCat 后生效。'
+      ? '启动时会把输出写到日志文件（仍然是零窗口）。重启 NapCat 后生效。'
+      : '启动完全无窗口，也不写日志。重启 NapCat 后生效。'
   }
 
   /** 读配置，把开关和卡片的初始状态摆好 */
