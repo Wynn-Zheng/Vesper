@@ -19,45 +19,19 @@
     "directories": {
       "output": "dist"
     },
-    "files": [
-      "main.js",
-      "preload.js",
-      "icon.png",
-      "!node_modules/**/*"
-    ],
+    "files": ["main.js", "preload.js", "icon.png"],
     "extraResources": [
-      {
-        "from": "../src",
-        "to": "app/src"
-      },
-      {
-        "from": "../console",
-        "to": "app/console"
-      },
-      {
-        "from": "../package.json",
-        "to": "app/package.json"
-      },
+      { "from": "../src", "to": "app/src" },
+      { "from": "../console", "to": "app/console" },
+      { "from": "../package.json", "to": "app/package.json" },
       {
         "from": "../node_modules",
-        "to": "app/node_modules"
-      },
-      {
-        "from": "../.env",
-        "to": "app/.env"
-      },
-      {
-        "from": "../persona",
-        "to": "app/persona",
-        "filter": [
-          "**/*"
-        ]
+        "to": "app/node_modules",
+        "filter": ["**/*", "!**/*.md", "!**/test/**", "!**/__tests__/**"]
       }
     ],
     "win": {
-      "target": [
-        "nsis"
-      ],
+      "target": ["nsis"],
       "icon": "icon.png"
     },
     "nsis": {
