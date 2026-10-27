@@ -1221,6 +1221,43 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
+/**
+ * token 不对时的全屏提示。
+ *
+ * 场景：URL 里写的是 ?token=0c97（从启动日志里抄漏了后半截），
+ * 页面能打开（静态文件不校验），但所有接口 401 → 一片空白。
+ * 光看控制台报错的人根本想不到是 token 少了几个字符。
+ */
+let tokenHelpShown = false
+function showTokenHelp() {
+  if (tokenHelpShown) return
+  tokenHelpShown = true
+
+  const mask = document.createElement('div')
+  mask.id = 'token-help'
+  mask.style.cssText =
+    'position:fixed;inset:0;background:rgba(13,17,23,.96);z-index:99999;' +
+    'display:flex;align-items:center;justify-content:center;padding:40px'
+  mask.innerHTML =
+    '<div style="max-width:620px;line-height:1.9">' +
+    '<div style="font-size:20px;font-weight:600;margin-bottom:10px">打不开控制台：token 不对</div>' +
+    '<div style="color:#8b949e;font-size:13.5px;margin-bottom:18px">' +
+    '链接里的 <code style="color:#79c0ff">?token=</code> 后面要是完整的一串（16 位）。<br>' +
+    '常见原因：从启动日志里复制时只抄了前几位。' +
+    '</div>' +
+    '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;font-size:13px">' +
+    '<div style="color:#8b949e;margin-bottom:6px">完整 token 在数据目录的 <code style="color:#79c0ff">.env</code> 里：</div>' +
+    '<div style="font-family:ui-monospace,Consolas,monospace;color:#e6edf3">CONSOLE_TOKEN=&lt;16 位&gt;</div>' +
+    '<div style="color:#8b949e;margin-top:8px">或者看后端启动日志里那句「控制台已启动：http://…?token=…」（现在是完整链接，可以直接复制）</div>' +
+    '</div>' +
+    '<div style="color:#8b949e;font-size:12.5px;margin-top:16px">' +
+    '数据目录通常在 <code style="color:#79c0ff">%APPDATA%/qqbot/data-root</code>（桌面版）。' +
+    '</div>' +
+    '</div>'
+
+  document.body.appendChild(mask)
+}
+
 async function api(path, init) {
   // token 走 header，不拼在 URL 里：URL 会进浏览器历史和 Referer
   const headers = { 'x-console-token': token, ...(init?.headers || {}) }
@@ -1231,6 +1268,14 @@ async function api(path, init) {
     url = `${path}${sep}person=${encodeURIComponent(currentPerson)}`
   }
   const res = await fetch(url, { ...init, headers })
+
+  // 401 基本都是 URL 里的 token 不对（常见：从日志里复制时只抄了前几位）。
+  // 不提示的话页面就是一片空白，用户只会以为程序坏了。
+  if (res.status === 401) {
+    showTokenHelp()
+    throw new Error('token 不对')
+  }
+
   if (!res.ok) {
     // 后端出错时返回的是 {"error":"..."}，直接丢给前端会显示成一坨 JSON。
     // 能解析就只取 error 那句话，解析不了再退回原文。

@@ -534,6 +534,29 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 鉴权：token 从 query 或 header 取
     const given = url.searchParams.get('token') ?? req.headers['x-console-token']
     if (opts.token && given !== opts.token) {
+      // 浏览器直接打开时给一个人话页面 —— 裸 401 只会让人以为程序坏了。
+      // 接口请求（fetch）还是回 JSON，前端好处理。
+      const wantsHtml = String(req.headers['accept'] ?? '').includes('text/html')
+      if (wantsHtml && (req.method === 'GET' || req.method === 'HEAD')) {
+        const hint = given ? '链接里的 token 不对（可能少复制了后半截）' : '链接里没有 token'
+        const full = given ? '' : `http://127.0.0.1:${opts.port}/?token=${opts.token}`
+        text(
+          res,
+          401,
+          `<!doctype html><meta charset="utf-8"><title>需要 token</title>
+<body style="background:#0d1117;color:#e6edf3;font:15px/1.9 system-ui;padding:60px;max-width:720px">
+<h2 style="margin:0 0 8px">打不开控制台</h2>
+<p style="color:#8b949e;margin:0 0 20px">${hint}</p>
+${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="background:#161b22;border:1px solid #30363d;padding:6px 10px;border-radius:6px;display:inline-block;margin-top:6px;color:#79c0ff;word-break:break-all">${full}</code></p>` : ''}
+<p style="color:#8b949e;font-size:13px;margin:0">
+完整 token 在数据目录的 <code style="color:#79c0ff">.env</code> 里（<code>CONSOLE_TOKEN</code>），<br>
+也可以看后端启动日志里那句「控制台已启动」。
+</p>
+</body>`,
+          'text/html; charset=utf-8',
+        )
+        return
+      }
       json(res, 401, { error: 'token 不对' })
       return
     }
@@ -1327,9 +1350,10 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
   })
 
   const url = `http://127.0.0.1:${opts.port}/`
-  // 日志里不打印完整 token：日志可能被贴出去排错
-  const tokenHint = opts.token ? `?token=${opts.token.slice(0, 4)}…（完整 token 见 .env 的 CONSOLE_TOKEN）` : ''
-  info(`控制台已启动：${url}${tokenHint}`)
+  // 打印完整链接：这是本地控制台，token 就在同目录的 .env 里，藏它没意义。
+  // 之前打的是 `?token=0c97…`，结果有人照着复制去掉了省略号 → 401，白折腾。
+  const full = opts.token ? `${url}?token=${opts.token}` : url
+  info(`控制台已启动：${full}`)
 }
 
 /**
