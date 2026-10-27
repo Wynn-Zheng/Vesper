@@ -1,4 +1,4 @@
-/**
+/*
  * 插件安装器：只负责本地文件操作，不做任何网络请求。
  * 所有失败都通过返回值报告，不向调用方抛异常。
  */
@@ -18,6 +18,16 @@ function isSafeId(id: string): boolean {
   return /^[a-z0-9-]+$/.test(id)
 }
 
+/** 读宿主版本号：拿 package.json 的 version 去比清单里的 minHostVersion */
+async function readHostVersion(): Promise<string> {
+  try {
+    const pkg = JSON.parse(await readFile('package.json', 'utf8')) as { version?: string }
+    return pkg.version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
+
 /** 安装期间写进目标目录的记录文件 */
 type InstallRecord = {
   id: string
@@ -34,6 +44,8 @@ export async function installPlugin(options: {
   source: string
   pluginsRoot: string
   allowOverwrite?: boolean
+  /** 宿主的版本号，用来比对清单里的 minHostVersion。不传就从 package.json 读 */
+  hostVersion?: string
 }): Promise<{ ok: boolean; id?: string; error?: string }> {
   const sourcePath = resolve(options.source)
   const pluginsRoot = resolve(options.pluginsRoot)
@@ -73,7 +85,29 @@ export async function installPlugin(options: {
     }
     const manifest = parsed.manifest
 
-    // 2. 目标目录已存在且未允许覆盖时，直接拒绝
+    // 2. 入口文件必须真的存在。
+    // 不查的话会装进一个永远加载不起来的插件（list 里看得见、loaded 永远 false），
+    // 用户根本不知道哪错了 —— 不如现在就说清楚。
+    const entryPath = join(sourcePath, manifest.entry)
+    if (!existsSync(entryPath)) {
+      return {
+        ok: false,
+        error: `入口文件不存在：${manifest.entry}（清单里的 entry 要指向目录内真实存在的文件）`,
+      }
+    }
+
+    // 3. 宿主版本要求
+    if (manifest.minHostVersion) {
+      const hostVersion = options.hostVersion ?? (await readHostVersion())
+      if (compareVersions(hostVersion, manifest.minHostVersion) < 0) {
+        return {
+          ok: false,
+          error: `这个插件要求宿主版本 >= ${manifest.minHostVersion}，当前是 ${hostVersion}`,
+        }
+      }
+    }
+
+    // 4. 目标目录已存在且未允许覆盖时，直接拒绝
     const targetDir = join(pluginsRoot, manifest.id)
     if (existsSync(targetDir) && options.allowOverwrite !== true) {
       return { ok: false, error: 'already installed' }
