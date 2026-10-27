@@ -89,21 +89,48 @@ console.log('\n=== 2. 说不能 → 代码里确实没有 ===')
   //      "执行任意代码"得是 shell / 用户给什么就跑什么。
   // 过滤掉这些"合法的进程控制"：
   //   - ai-desktop：电脑操作工具（已知，单独测）
-  //   - taskkill ... NapCat：控制台启动/停止 NapCat 用的固定命令
+  //   - NapCat 的启动/停止：taskkill NapCatWinBootMain / Start-Process 提权
   //   - node:child_process 的 import 行本身
   // 它们都不是"让模型执行任意代码"，只是固定的进程管理。
-  const withoutDesktop = SRC.split('\n')
-    .filter(
-      (l) =>
-        !l.includes('ai-desktop') &&
-        !l.includes("from 'node:child_process'") &&
-        !l.includes('NapCatWinBootMain'),
-    )
-    .join('\n')
-  const realExec =
-    /spawnSync|execSync|execFile\([\s\S]{0,80}(?!ai-desktop)/.test(withoutDesktop) &&
-    !/execFile\(exePath\(\)/.test(SRC)
-  check('执行代码: 没有真进程执行', !realExec, 'src 里有真正的命令执行')
+  // 这个检查的目的是：确认**模型自己不能执行任意命令**。
+  //
+  // 真正危险的是这些东西：
+  //   eval / new Function —— 能跑任意字符串
+  //   spawnSync / execSync —— 同步跑任意程序
+  //   exec( / execFile( 的**第一个参数是变量**（那才是"用户/模型决定跑什么"）
+  //
+  // 而下面这些是**固定的进程管理**，不算：
+  //   - ai-desktop：电脑操作工具（单独测）
+  //   - spawn(launcher, [args])：启动 NapCat，路径写死
+  //   - execFile('taskkill', [...])：停 NapCat，命令写死
+  //   - execFile('powershell', [...])：提权停 NapCat，命令写死
+  //
+  // 所以判断改成：看有没有 eval / new Function / spawnSync / execSync，
+  // 以及 exec/execFile 后面紧跟的是不是**字符串字面量还是变量**。
+  const dangerous: string[] = []
+  const lines = SRC.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i]!
+    if (l.includes('ai-desktop')) continue
+    if (/\beval\s*\(/.test(l)) dangerous.push(`eval: ${l.trim()}`)
+    if (/new\s+Function\s*\(/.test(l)) dangerous.push(`new Function: ${l.trim()}`)
+    if (/\bspawnSync\s*\(/.test(l)) dangerous.push(`spawnSync: ${l.trim()}`)
+    if (/\bexecSync\s*\(/.test(l)) dangerous.push(`execSync: ${l.trim()}`)
+    // exec(变量) / execFile(变量) —— 第一个参数不是引号开头就危险
+    // 注意：
+    //   - 要排除 `xxx.exec(...)`（正则的 exec，不是 child_process 的）
+    //   - 要排除 `exec(exePath(), ...)`（ai-desktop 的路径是写死的，不是模型决定）
+    const m = /(?<![.\w])(?:exec|execFile)\s*\(\s*([^\s)])/.exec(l)
+    if (m && m[1] !== "'" && m[1] !== '"' && m[1] !== '`' && !l.includes('exePath()')) {
+      dangerous.push(`exec(非字面量): ${l.trim()}`)
+    }
+  }
+
+  check(
+    '执行代码: 没有真进程执行',
+    dangerous.length === 0,
+    dangerous.length ? '危险调用：' + dangerous.slice(0, 3).join(' | ') : '',
+  )
 }
 {
   const c = claim('打开网页/搜索')
