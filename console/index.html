@@ -265,6 +265,35 @@
 </style>
 </head>
 <body>
+<script>
+  // 双击 index.html 打开时（file:// 协议），所有 fetch 都会变成
+  // file:///E:/api/xxx 然后 CORS 拒绝 —— 看起来像"连不上服务"，
+  // 其实只是打开方式不对。这里直接把人指到正确地址。
+  if (location.protocol === 'file:') {
+    // 用 DOMContentLoaded 之后插入，不用 document.write：
+    // write 会打乱解析顺序，配合 window.stop() 还会让浏览器一直"加载中"。
+    document.addEventListener('DOMContentLoaded', function () {
+      var d = document.createElement('div')
+      d.id = 'file-protocol-warn'
+      d.style.cssText =
+        'position:fixed;inset:0;background:#0d1117;color:#e6edf3;z-index:99999;padding:40px;' +
+        'display:flex;align-items:center;justify-content:center;font:15px/1.8 system-ui,sans-serif'
+      d.innerHTML =
+        '<div style="max-width:640px">' +
+        '<div style="font-size:22px;font-weight:600;margin-bottom:16px">这个文件要由服务打开，不能双击</div>' +
+        '<div style="color:#8b949e;margin-bottom:16px">你现在用的是 <code>file://</code>，' +
+        '所有接口请求会变成 <code>file:///E:/api/…</code>，浏览器全部拒绝（控制台里是一堆 CORS 报错）。</div>' +
+        '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 18px;margin-bottom:16px">' +
+        '<div style="color:#8b949e;font-size:12px;margin-bottom:6px">正确地址（复制到地址栏）：</div>' +
+        '<code style="color:#58a6ff;font-size:15px">http://127.0.0.1:7788/?token=…</code>' +
+        '<div style="color:#8b949e;font-size:12px;margin-top:8px">完整 token 见 <code>.env</code> 的 CONSOLE_TOKEN，' +
+        '或启动日志里「控制台已启动」那行。</div></div>' +
+        '<div style="color:#8b949e;font-size:13px">如果 7788 也打不开，说明服务没跑：在项目目录执行 <code>npm start</code>。</div>' +
+        '</div>'
+      document.body.appendChild(d)
+    })
+  }
+</script>
 <aside>
   <div class="brand"><h1>QQ Bot</h1><p id="brand-sub">连接中…</p></div>
     <nav id="nav">
