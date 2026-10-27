@@ -754,7 +754,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         const { loadLife } = await import('../self/store.ts')
         const { loadIntent } = await import('../memory/intent.ts')
         const { decayedMood, loadMood } = await import('../persona/mood.ts')
-        const { loadCore, parseCore } = await import('../memory/core.ts')
+        const { parseCore } = await import('../memory/core.ts')
         const { loadPlays } = await import('../learn/plays.ts')
         const { existsSync, readFileSync } = await import('node:fs')
 

@@ -224,6 +224,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
       只读: opts.rules.电脑操作?.enabled === true,
       可操作: opts.rules.电脑操作?.enabled === true && opts.rules.电脑操作?.允许操作 === true,
     },
+    // 它自己准备做的事（intent.md），和"待问"不是一回事
+    intent: todoForPrompt(),
     // 只用精选模式：只注入人工审过的经验
     memory: [
       renderRecalled(recalled),
