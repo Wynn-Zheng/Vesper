@@ -38,13 +38,34 @@ export function resetInstallStatus(): void {
   status = { state: 'idle', percent: 0, message: '' }
 }
 
-/** 这些是运行产物，不该跟着新机器走 */
+/**
+ * 不该跟着新机器走的东西。
+ *
+ * 分两类：
+ *   1. 运行产物：日志、备份、sqlite 临时文件
+ *   2. **用户数据**：NapCat 跑过之后才会生成的那些，里面有账号/token/二维码。
+ *      包里的源已经清过了（scripts/package-electron.ts 里有一份一样的规则），
+ *      这里再挡一道 —— 万一源是开发机上的 E:\NapCat，也不能把用户的号带出去。
+ */
 function shouldSkip(p: string): boolean {
-  const name = p.replace(/\\/g, '/').split('/').pop() ?? ''
+  const s = p.replace(/\\/g, '/')
+  const name = s.split('/').pop() ?? ''
+
+  // 运行产物
   if (/\.log$/i.test(name)) return true
   if (/\.bak\d*$/i.test(name)) return true
   if (/\.db-(wal|shm)$/i.test(name)) return true
   if (name === 'NapCat.Shell.zip') return true
+
+  // 用户数据
+  if (/\/config\/webui\.json$/i.test(s)) return true
+  if (/\/config\/passkey\.json$/i.test(s)) return true
+  if (/\/config\/napcat_\d+\.json$/i.test(s)) return true
+  if (/\/config\/napcat_protocol_\d+\.json$/i.test(s)) return true
+  if (/\/config\/onebot11_\d+\.json$/i.test(s)) return true
+  if (/\/cache\/qrcode\.png$/i.test(s)) return true
+  if (/\/guild1\.db$/i.test(s)) return true
+
   return false
 }
 

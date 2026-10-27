@@ -182,15 +182,45 @@ async function main(): Promise<void> {
       force: true,
       filter: (src) => {
         const name = src.replace(/\\/g, '/').split('/').pop() ?? ''
-        if (/\.log$/i.test(name)) return false // 运行日志
-        if (/\.bak\d*$/i.test(name)) return false // 备份
-        if (/\.db-(wal|shm)$/i.test(name)) return false // sqlite 临时文件
-        if (name === 'NapCat.Shell.zip') return false // 安装包本身，用不上
-        // 根目录那个 300MB 的 QQ.exe 和 versions/9.9.33-52230 里的是同一份，
-        // 只留 versions 里的（locate.ts 找的是 NapCat.*.Shell/QQ.exe 那个 1.6MB 启动器）
-        if (name === 'QQ.exe' && dirname(src) === NC_SRC) {
-          return false
+        const p = src.replace(/\\/g, '/')
+
+        // ---- 运行产物 ----
+        if (/\.log$/i.test(name)) return false
+        if (/\.bak\d*$/i.test(name)) return false
+        if (/\.db-(wal|shm)$/i.test(name)) return false
+        if (name === 'NapCat.Shell.zip') return false // 安装包本身
+
+        // ---- 用户数据，绝对不能带走 ----
+        //
+        // 这些是 NapCat 运行后生成的，里面有你自己的东西：
+        //   webui.json            WebUI 的 token（别人拿到能登你的 WebUI）
+        //   passkey.json          通行密钥
+        //   napcat_<QQ号>.json    账号配置（文件名就暴露 QQ 号）
+        //   onebot11_<QQ号>.json  里面有 WS token
+        //   qrcode.png            登录二维码
+        //   guild1.db             群缓存（群列表、成员）
+        if (/\/config\/webui\.json$/i.test(p)) return false
+        if (/\/config\/passkey\.json$/i.test(p)) return false
+        if (/\/config\/napcat_\d+\.json$/i.test(p)) return false
+        if (/\/config\/napcat_protocol_\d+\.json$/i.test(p)) return false
+        if (/\/config\/onebot11_\d+\.json$/i.test(p)) return false
+        if (/\/cache\/qrcode\.png$/i.test(p)) return false
+        if (/\/guild1\.db$/i.test(p)) return false
+
+        // ---- 开发/安装留下的杂项，运行不需要 ----
+        // 根目录的 OneKey 三件套（我们的 manager.ts 用 NapCatWinBootMain.exe，
+        // 它在 versions\<ver>\resources\app\napcat\ 里，不需要这些）
+        if (dirname(src) === NC_SRC) {
+          if (name === 'QQ.exe') return false // 和 versions 里那份重复，300MB
+          if (name === '7z.exe' || name === '7z.dll') return false // OneKey 解压用
+          if (name === 'NapCatInstaller.exe') return false // OneKey 安装器
+          if (name === 'open-webui.bat') return false
+          if (name.startsWith('启动NapCat')) return false
+          if (name === 'guild1.db') return false
         }
+        // 目录本身传进来时没有结尾斜杠（E:/NapCat/bootmain），所以两种都匹配
+        if (/\/bootmain(\/|$)/i.test(p)) return false // OneKey 的壳模板
+
         return true
       },
     })
