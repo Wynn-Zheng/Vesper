@@ -71,7 +71,18 @@
   .log div{display:flex;gap:10px;padding:1px 0}
   .log .ts{color:var(--dim2);flex-shrink:0}
   .log .lvl{flex-shrink:0;width:44px}
-  .log .info{color:var(--blue)} .log .warn{color:var(--yellow)} .log .error{color:var(--red)}
+  .log .lvl.info{color:var(--blue)} .log .lvl.warn{color:var(--yellow)} .log .lvl.error{color:var(--red)}
+.log .line{padding:2px 0 2px 7px;border-left:2px solid transparent;align-items:baseline}
+.log .line .t{color:var(--dim2);flex-shrink:0;font-size:11px;opacity:.75}
+.log .line .lv{flex-shrink:0;width:44px;font-size:10.5px;font-weight:600}
+.log .line.info .lv{color:var(--blue)}
+.log .line.warn .lv{color:var(--yellow)}
+.log .line.error .lv{color:var(--red)}
+.log .line.error{border-left-color:var(--red);background:#f851490d}
+.log .line.warn{border-left-color:var(--yellow);background:#d299220a}
+.log .line .m{color:var(--fg);flex-shrink:0}
+.log .line .ex{color:var(--dim);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;padding-left:4px;border-left:1px solid var(--line);margin-left:2px;line-height:1.5}
+.log .line .wh{color:var(--dim2);flex-shrink:0;margin-left:auto;font-size:10.5px;opacity:.55;padding-left:10px}
   .item{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #21262d}
   .item:last-child{border-bottom:0}
   .item .tag{font-size:10.5px;padding:1px 7px;border-radius:5px;height:fit-content;background:#1f6feb22;color:var(--blue);flex-shrink:0;margin-top:2px}
@@ -3655,16 +3666,71 @@ function renderPicker(person) {
 // 把后面整段启动代码（首屏加载）全带崩 —— 表现就是页面空白。
 // ---------- 日志级别过滤 ----------
 const logFilter = { level: 'all', rows: [] }
+/**
+ * 把 extra 拆成「正文」和「出处」两段。
+ *
+ * 以前是 JSON.stringify 直接摊开，长这样：
+ *   {"err":"HTTP 500 {\"error\":\"boom\"}","where":"src/llm/deepseek.ts:131"}
+ * 反斜杠满天飞，而且 where 每行都跟着，占掉半行 —— 普通用户不看这个。
+ *
+ * 现在：where 只留 文件名:行号，挪到行尾灰字；其余字段 key=value 用 · 连起来。
+ */
+function fmtLogExtra(extra) {
+  if (!extra || typeof extra !== 'object') return { main: '', where: '', whereFull: '' }
+  const parts = []
+  let where = ''
+  let whereFull = ''
+
+  for (const [k, v] of Object.entries(extra)) {
+    if (k === 'where') {
+      whereFull = String(v)
+      // 只留最后一段（文件名:行号），前面的目录没意义
+      where = whereFull.split(/[\\/]/).pop() || ''
+      continue
+    }
+    let s
+    if (typeof v === 'string') {
+      // 嵌套 JSON 字符串（比如 HTTP 500 的响应体）去掉转义反斜杠
+      s = v.replace(/\\"/g, '"')
+    } else if (v && typeof v === 'object') {
+      s = JSON.stringify(v)
+    } else {
+      s = String(v)
+    }
+    if (s.length > 90) s = s.slice(0, 90) + '…'
+    parts.push(k + '=' + s)
+  }
+  return { main: parts.join(' · '), where, whereFull }
+}
+
 function renderLogRows() {
   const box = $('full-log')
   if (!box) return
-  const show = logFilter.level === 'all' ? logFilter.rows : logFilter.rows.filter((r) => r.level === logFilter.level)
+  const show =
+    logFilter.level === 'all'
+      ? logFilter.rows
+      : logFilter.rows.filter((r) => r.level === logFilter.level)
   box.innerHTML = ''
+
   for (const r of show.slice(-300)) {
     const line = el('div', 'line ' + r.level)
-    line.appendChild(el('span', 't', new Date(r.ts).toLocaleTimeString('zh-CN', { hour12: false })))
-    line.appendChild(el('span', 'lv', r.level))
-    line.appendChild(el('span', 'm', r.msg + (r.extra ? ' ' + JSON.stringify(r.extra) : '')))
+    line.appendChild(
+      el('span', 't', new Date(r.ts).toLocaleTimeString('zh-CN', { hour12: false })),
+    )
+    line.appendChild(el('span', 'lv', (r.level || '').toUpperCase()))
+    line.appendChild(el('span', 'm', r.msg))
+
+    const { main, where, whereFull } = fmtLogExtra(r.extra)
+    if (main) {
+      const ex = el('span', 'ex', main)
+      ex.title = main
+      line.appendChild(ex)
+    }
+    if (where) {
+      const wh = el('span', 'wh', where)
+      wh.title = whereFull
+      line.appendChild(wh)
+    }
     box.appendChild(line)
   }
   const c = $('log-count')
@@ -3724,7 +3790,9 @@ setTimeout(() => {
   loadDashboard().catch((e) => console.error('首屏 loadDashboard 失败:', e))
   loadStatus().catch((e) => console.error('首屏 loadStatus 失败:', e))
 }, 0)
-api('/api/logs/recent?n=40')
+// 打开页面时先拉最近 200 条（后端上限就是 200）。
+// 原来是 40 条，排查问题时经常看不到前因，得往下翻半天 —— 拉满更实用。
+api('/api/logs/recent?n=200')
   .then((rows) => {
     for (const r of rows) {
       logFilter.rows.push(r)
