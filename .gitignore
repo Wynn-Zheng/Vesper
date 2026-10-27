@@ -24,3 +24,6 @@ shots/
 # Electron 打包产物
 release/
 build/
+
+# 临时测试目录
+.tmp-*

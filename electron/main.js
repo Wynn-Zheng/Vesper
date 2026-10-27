@@ -253,6 +253,9 @@ async function ensureBackend() {
         ...process.env,
         ...readDotEnv(), // .env 手动注入（不能靠 --env-file，见文件头注释）
         ELECTRON_RUN_AS_NODE: '1', // 让 electron.exe 以 Node 模式跑，而不是再开一个 Electron
+        // 关掉 Electron 的 asar 补丁：后端要复制 NapCat（里面含 QQ 的 application.asar），
+        // 开着的话 fs 会把 .asar 当包解析，直接抛 "Invalid package"。
+        ELECTRON_NO_ASAR: '1',
         DESKTOP_MODE: '1',
         // 程序资源目录（console/ 等）在哪 —— 打包后 cwd 是用户数据目录，
         // 后端不能再用 resolve('console') 找前端文件

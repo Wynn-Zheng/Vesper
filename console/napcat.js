@@ -468,6 +468,72 @@
       '<div>· <b>端口不对</b>：WebUI 不是 6099 的话，改 NapCat 的 webui 配置</div>'
     box.appendChild(tips)
 
+    // ---- 一键安装（包里带了 NapCat 才显示） ----
+    //
+    // 装的是包里那份完整目录（含 QQ 本体），复制到数据目录再写好配置，
+    // 全程离线 —— 从 GitHub 下 34MB 实测都拉不动，所以改用内置复制。
+    const installBtn = document.createElement('button')
+    installBtn.className = 'mini-btn'
+    installBtn.textContent = '一键安装 NapCat'
+    installBtn.style.display = 'none'
+    box.appendChild(installBtn)
+
+    const prog = document.createElement('div')
+    prog.style.cssText = 'font-size:12px;color:#8b949e;min-height:18px;max-width:460px;line-height:1.6'
+    box.appendChild(prog)
+
+    api('/api/napcat/install/status')
+      .then((s) => {
+        if (s && s.bundleAvailable) installBtn.style.display = ''
+        else prog.textContent = '包里没带 NapCat，只能手动装（见 docs/NapCat安装.md）'
+      })
+      .catch(() => {})
+
+    installBtn.onclick = async () => {
+      installBtn.disabled = true
+      installBtn.textContent = '安装中…'
+      prog.textContent = '正在准备…'
+
+      try {
+        await api('/api/napcat/install', { method: 'POST' })
+      } catch (e) {
+        installBtn.disabled = false
+        installBtn.textContent = '一键安装 NapCat'
+        prog.textContent = '启动安装失败：' + (e && e.message ? e.message : String(e))
+        return
+      }
+
+      // 复制 1.2GB 要一两分钟，轮询进度
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000))
+        let s
+        try {
+          s = await api('/api/napcat/install/status')
+        } catch {
+          continue
+        }
+        if (!s) continue
+
+        if (s.state === 'copying' || s.state === 'configuring') {
+          prog.textContent = s.message || '正在安装…'
+          continue
+        }
+        if (s.state === 'done') {
+          prog.textContent = '装好了：' + (s.shellDir || '') + '（可以点上面的「启动」了）'
+          installBtn.textContent = '重新检查'
+          installBtn.disabled = false
+          installBtn.onclick = () => loadWebuiFrame(url).catch(() => {})
+          return
+        }
+        if (s.state === 'error') {
+          prog.textContent = '装失败：' + (s.error || s.message || '?')
+          installBtn.textContent = '重试安装'
+          installBtn.disabled = false
+          return
+        }
+      }
+    }
+
     const btn = document.createElement('button')
     btn.className = 'mini-btn'
     btn.textContent = '重试'

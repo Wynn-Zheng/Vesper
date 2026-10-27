@@ -28,7 +28,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 const ROOT = resolve('.')
 const ELECTRON_DIR = join(ROOT, 'electron')
@@ -166,6 +166,37 @@ async function main(): Promise<void> {
     } else {
       console.log('  · 跳过 ' + f + '（源文件没有）')
     }
+  }
+
+  /* ---------- 5b. 内置 NapCat ---------- */
+  step('内置 NapCat（含 QQ 本体，约 1.2 GB）')
+  // 为什么要内置：从 GitHub 下 release 包实测拉不动（34MB 走镜像也断流）。
+  // 本机 E:\NapCat 那份是完整的（含 QQ 本体），复制过去最可靠，而且离线。
+  // 用户点 NapCat 页签的「一键安装」时，后端把这里复制到数据目录。
+  const NC_SRC = 'E:\\NapCat'
+  const ncDst = join(OUT, 'resources', 'napcat')
+  if (existsSync(NC_SRC)) {
+    mkdirSync(ncDst, { recursive: true })
+    cpSync(NC_SRC, ncDst, {
+      recursive: true,
+      force: true,
+      filter: (src) => {
+        const name = src.replace(/\\/g, '/').split('/').pop() ?? ''
+        if (/\.log$/i.test(name)) return false // 运行日志
+        if (/\.bak\d*$/i.test(name)) return false // 备份
+        if (/\.db-(wal|shm)$/i.test(name)) return false // sqlite 临时文件
+        if (name === 'NapCat.Shell.zip') return false // 安装包本身，用不上
+        // 根目录那个 300MB 的 QQ.exe 和 versions/9.9.33-52230 里的是同一份，
+        // 只留 versions 里的（locate.ts 找的是 NapCat.*.Shell/QQ.exe 那个 1.6MB 启动器）
+        if (name === 'QQ.exe' && dirname(src) === NC_SRC) {
+          return false
+        }
+        return true
+      },
+    })
+    ok(`resources/napcat（${dirSizeMB(ncDst).toFixed(0)} MB）`)
+  } else {
+    console.log('  · 跳过：本机没有 ' + NC_SRC)
   }
 
   /* ---------- 6. 不打包 asar，保留裸目录 ---------- */

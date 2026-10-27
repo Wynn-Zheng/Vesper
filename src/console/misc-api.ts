@@ -6,10 +6,12 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { resolve } from 'node:path'
 import { loadRules } from '../core/config.ts'
 // NapCat 的定位和启停交给这个模块：它从配置的 Shell目录 推导所有路径，
 // 不写死盘符和版本号。misc-api 只做 HTTP → 它的转发。
 import * as NC from '../napcat/manager.ts'
+import { installStatus, startInstall } from '../napcat/install.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
@@ -167,6 +169,35 @@ export async function handleMiscApi(
   if (method === 'POST' && path === '/api/napcat/start') {
     const r = NC.start()
     json(res, 200, r)
+    return true
+  }
+
+  // ---- 装 NapCat（从包内自带的那份复制过来，不联网） ----
+  //
+  // 源：包里的 resources/napcat（打包时从本机 E:\NapCat 复制过来的完整目录，
+  //     含 QQ 本体 1.2GB）；开发环境下退回 E:\NapCat。
+  // 注意是 QQBOT_ROOT 的**上一级**：QQBOT_ROOT 指向 resources/app，
+  // 而 napcat 放在 resources/napcat（和 app 平级）。
+  // 目标：<数据目录>/napcat（cwd 就是数据目录）。
+  // 装完自动把 rules.yaml 的 NapCat.Shell目录 指过去。
+  const napcatBundle = (): string =>
+    process.env['QQBOT_ROOT'] ? resolve(process.env['QQBOT_ROOT'], '..', 'napcat') : 'E:/NapCat'
+
+  if (method === 'POST' && path === '/api/napcat/install') {
+    const r = startInstall({
+      bundleDir: napcatBundle(),
+      targetDir: resolve('napcat'),
+      rulesFile: 'persona/rules.yaml',
+    })
+    json(res, r.ok ? 200 : 400, r)
+    return true
+  }
+
+  if (method === 'GET' && path === '/api/napcat/install/status') {
+    const s = installStatus()
+    // 顺带告诉前端包里的源在不在，好决定显不显示「安装」按钮
+    const bundleDir = napcatBundle()
+    json(res, 200, { ...s, bundleAvailable: existsSync(bundleDir), bundleDir })
     return true
   }
 
