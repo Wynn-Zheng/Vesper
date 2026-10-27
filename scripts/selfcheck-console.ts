@@ -78,7 +78,9 @@ check(
 /* ============ 4. 静态路由 ============ */
 console.log('\n=== 4. 静态路由 ===')
 check('只允许 .js/.css', srv.includes('(js|css)'), '')
-check('目录穿越检查', srv.includes("startsWith(resolve('console'))"), '')
+// 静态文件根目录改成 staticRoot() 了（打包后 cwd 不是项目根），
+// 但目录穿越检查必须还在：拼出来的路径要以根目录开头
+check('目录穿越检查', srv.includes('startsWith(root)') && srv.includes('function staticRoot'), '')
 check('在 token 之前', srv.indexOf('(js|css)') < iToken, '')
 
 /* ============ 5. 前端 onclick ============ */

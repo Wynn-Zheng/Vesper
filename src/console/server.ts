@@ -45,6 +45,19 @@ export interface ConsoleOptions {
 
 const RULES_FILE = 'persona/rules.yaml'
 
+/**
+ * 前端静态文件（console/）在哪个目录。
+ *
+ * 开发时 cwd 是项目根，resolve('console') 就对；
+ * 打包后 cwd 变成用户数据目录（%APPDATA%/QQBot/data-root），
+ * 而 console/ 还在程序目录里 —— 由 Electron 主进程用 QQBOT_ROOT 告诉这里。
+ */
+function staticRoot(): string {
+  const fromEnv = process.env['QQBOT_ROOT']
+  if (fromEnv) return resolve(fromEnv, 'console')
+  return resolve('console')
+}
+
 function json(res: ServerResponse, code: number, data: unknown): void {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(data))
@@ -495,8 +508,9 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
       const rel = path === '/' || path === '/index.html' ? 'index.html' : path.slice(1)
-      const full = resolve('console', rel)
-      if (!full.startsWith(resolve('console')) || !existsSync(full)) {
+      const root = staticRoot()
+      const full = resolve(root, rel)
+      if (!full.startsWith(root) || !existsSync(full)) {
         text(res, 404, '没有这个文件')
         return
       }

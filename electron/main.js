@@ -13,10 +13,44 @@
  * 断网也能启动：
  *   前端零 CDN（系统字体 + emoji/SVG），后端只连 DeepSeek。
  *   断网时界面照常打开，只是体检会报"API 连不上"。
+ *
+ * ── 打包后的三个关键差异（都在这文件里处理）────────────────────
+ *   1. 后端用 Electron 自带的 Node 跑，不用系统 node
+ *      用户机器不一定装了 Node；process.execPath + ELECTRON_RUN_AS_NODE=1
+ *      就等于一个 node。
+ *   2. 后端入口是编译产物 build/index.js，不是 src/index.ts
+ *      Electron 33 内置 Node 20.18，不支持直接跑 TypeScript。
+ *   3. .env 自己读，不靠 node --env-file
+ *      Node 20 没有 --env-file-if-exists（22.9 才有），--env-file 缺文件会直接退出。
  */
+/**
+ * 崩溃诊断：Windows 下 GUI 程序的 stdout/stderr 会被丢掉，看不到任何错误。
+ * 所以早期日志直接写文件 —— 注意不能写 %TEMP%，这个环境（DSH 沙箱）会 EPERM。
+ */
+const _traceFile = require('node:path').join(
+  process.env.APPDATA || require('node:os').homedir(),
+  'qqbot-main.log',
+)
+function trace(msg) {
+  try {
+    require('node:fs').appendFileSync(_traceFile, `[${new Date().toISOString()}] ${msg}\n`)
+  } catch {
+    /* 写不了就算了 */
+  }
+}
+trace('=== main.cjs 启动 ===')
+process.on('uncaughtException', (e) => {
+  trace('uncaughtException: ' + (e && e.stack ? e.stack : String(e)))
+})
+process.on('unhandledRejection', (e) => {
+  trace('unhandledRejection: ' + (e && e.stack ? e.stack : String(e)))
+})
+
 const { app, BrowserWindow, shell, Menu, Tray, nativeImage } = require('electron')
+trace('electron 模块已加载')
 const { spawn } = require('node:child_process')
-const { existsSync, readFileSync } = require('node:fs')
+const { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync } = require('node:fs')
+const { randomBytes } = require('node:crypto')
 const path = require('node:path')
 const http = require('node:http')
 
@@ -24,8 +58,15 @@ const http = require('node:http')
  * 路径
  * ============================================================ */
 
-// 打包后，源码在 resources/app；开发时就是当前目录
-const APP_ROOT = app.isPackaged ? path.join(process.resourcesPath, 'app') : path.join(__dirname, '..')
+// 打包后源码在 resources/app（或 app.asar）里；开发时就是项目根。
+// 两种都支持：这台机器上 Electron 加载 app.asar 会 0xC0000005 崩溃，
+// 所以默认用裸目录，asar 只作为备选。
+const APP_ROOT = app.isPackaged
+  ? (() => {
+      const asar = path.join(process.resourcesPath, 'app.asar')
+      return existsSync(asar) ? asar : path.join(process.resourcesPath, 'app')
+    })()
+  : path.join(__dirname, '..')
 
 // 数据目录：打包后必须是用户可写的地方（Program Files 是只读的）
 // 开发时用项目目录，保持和 npm start 一样
@@ -41,15 +82,103 @@ let win = null
 let tray = null
 
 /* ============================================================
- * 读 token
+ * 读 .env
  * ============================================================ */
-function consoleToken() {
+
+/**
+ * 把 .env 读成对象。
+ *
+ * 为什么不用 node --env-file：
+ *   打包后跑的是 Electron 自带的 Node 20，它没有 --env-file-if-exists（22.9 才加）；
+ *   --env-file（20.6+）虽然有，但文件缺失会直接报错退出。
+ *   所以自己读，文件不存在就当空。
+ */
+function readDotEnv() {
+  const out = {}
   try {
-    const env = readFileSync(path.join(DATA_ROOT, '.env'), 'utf8')
-    const m = /CONSOLE_TOKEN\s*=\s*(\S+)/.exec(env)
-    return m ? m[1] : ''
+    const text = readFileSync(path.join(DATA_ROOT, '.env'), 'utf8')
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim()
+      if (!line || line.startsWith('#')) continue
+      const eq = line.indexOf('=')
+      if (eq < 1) continue
+      const key = line.slice(0, eq).trim()
+      let value = line.slice(eq + 1).trim()
+      // 去掉两端引号
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1)
+      }
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) out[key] = value
+    }
   } catch {
-    return ''
+    /* 没有 .env 就返回空 */
+  }
+  return out
+}
+
+/** 取控制台 token（先看环境变量，再看 .env） */
+function consoleToken() {
+  const fromEnv = process.env.CONSOLE_TOKEN
+  if (fromEnv) return fromEnv
+  return readDotEnv().CONSOLE_TOKEN || ''
+}
+
+/* ============================================================
+ * 首次启动：初始化数据目录
+ * ============================================================ */
+
+/**
+ * 打包后 DATA_ROOT = %APPDATA%/QQBot/data-root，第一次是空的。
+ *
+ * 不初始化的话两个后果：
+ *   - 没有 .env → CONSOLE_TOKEN 和 DEEPSEEK_API_KEY 全空 → 控制台白屏、模型不可用
+ *   - 没有 persona/ → 机器人没有规则和记忆
+ */
+function ensureDataRoot() {
+  if (!app.isPackaged) return
+
+  try {
+    mkdirSync(DATA_ROOT, { recursive: true })
+  } catch {
+    /* 建不出来后面也会报，不用在这拦 */
+  }
+
+  // 1. .env：没有就生成一份（随机 token；API key 留空，让用户在设置页填）
+  const envPath = path.join(DATA_ROOT, '.env')
+  if (!existsSync(envPath)) {
+    const token = randomBytes(16).toString('hex')
+    writeFileSync(
+      envPath,
+      [
+        '# 首次启动自动生成。',
+        '# DEEPSEEK_API_KEY 可以在控制台「设置 → 模型」里填，也可以直接改这里。',
+        `CONSOLE_TOKEN=${token}`,
+        'DEEPSEEK_API_KEY=',
+        'DEEPSEEK_MODEL=deepseek-chat',
+        '',
+      ].join('\n'),
+      'utf8',
+    )
+    console.log('[main] 首次启动：已生成 .env')
+  }
+
+  // 2. persona/：从模板复制（模板在有 resources/persona-template）
+  const personaDir = path.join(DATA_ROOT, 'persona')
+  if (!existsSync(personaDir)) {
+    const template = path.join(process.resourcesPath, 'persona-template')
+    if (existsSync(template)) {
+      try {
+        cpSync(template, personaDir, { recursive: true })
+        console.log('[main] 首次启动：已从模板初始化 persona/')
+      } catch (e) {
+        console.error('[main] 初始化 persona/ 失败：', e && e.message)
+      }
+    } else {
+      console.warn('[main] 没有 persona-template，跳过 persona 初始化')
+    }
   }
 }
 
@@ -89,18 +218,34 @@ async function ensureBackend() {
     return true
   }
 
-  // 2. 没有，自己拉一个
-  const entry = path.join(APP_ROOT, 'src', 'index.ts')
+  // 2. 没在跑，自己拉一个
+  //
+  // 打包后跑编译产物：Electron 33 内置 Node 20.18，不支持直接跑 .ts。
+  const entry = app.isPackaged
+    ? path.join(APP_ROOT, 'build', 'index.js')
+    : path.join(APP_ROOT, 'src', 'index.ts')
+
   if (!existsSync(entry)) {
     console.error('[main] 找不到入口：', entry)
     return false
   }
 
-  console.log('[main] 启动后端：', entry)
+  // 打包后用 Electron 自带的 Node —— 用户机器不一定装了 Node。
+  const nodeCmd = app.isPackaged ? process.execPath : 'node'
 
-  backend = spawn(process.execPath === '' ? 'node' : 'node', [entry], {
+  console.log(`[main] 启动后端：${entry}（用 ${nodeCmd}）`)
+
+  backend = spawn(nodeCmd, [entry], {
     cwd: DATA_ROOT, // 关键：数据目录由 cwd 决定（源码里全是相对路径）
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', DESKTOP_MODE: '1' },
+    env: {
+      ...process.env,
+      ...readDotEnv(), // .env 手动注入（不能靠 --env-file，见文件头注释）
+      ELECTRON_RUN_AS_NODE: '1', // 让 electron.exe 以 Node 模式跑，而不是再开一个 Electron
+      DESKTOP_MODE: '1',
+      // 程序资源目录（console/ 等）在哪 —— 打包后 cwd 是用户数据目录，
+      // 后端不能再用 resolve('console') 找前端文件
+      QQBOT_ROOT: APP_ROOT,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   })
@@ -128,6 +273,10 @@ async function ensureBackend() {
  * 窗口
  * ============================================================ */
 function createWindow() {
+  // 打包时 preload 会被改名成 .cjs（app/manifest 里是 type:module，
+  // .js 会被当 ESM 解析，而 preload 必须是 CJS）。开发时还是 preload.js。
+  const preloadName = existsSync(path.join(__dirname, 'preload.cjs')) ? 'preload.cjs' : 'preload.js'
+
   win = new BrowserWindow({
     width: 1360,
     height: 900,
@@ -138,7 +287,7 @@ function createWindow() {
     // 断网/白屏时至少有个背景色，不是刺眼的纯白
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, preloadName),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -211,10 +360,18 @@ function createTray() {
  * 生命周期
  * ============================================================ */
 app.whenReady().then(async () => {
+  trace('app ready；isPackaged=' + app.isPackaged + ' resources=' + process.resourcesPath)
+  trace('APP_ROOT=' + APP_ROOT)
+  trace('DATA_ROOT=' + DATA_ROOT)
+  ensureDataRoot()
+  trace('ensureDataRoot 完成')
   await ensureBackend()
+  trace('ensureBackend 完成')
   createWindow()
+  trace('createWindow 完成')
   try {
     createTray()
+    trace('createTray 完成')
   } catch {
     /* 没有托盘也不影响主功能 */
   }
