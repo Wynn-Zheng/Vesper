@@ -10,3 +10,6 @@ node_modules/
 .acl-recovery/
 .agenttree/
 *.tmp
+
+electron/node_modules/
+electron/dist/
