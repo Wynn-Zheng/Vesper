@@ -13,7 +13,13 @@
    * 状态
    * ============================================================ */
   let DATA = { rows: [], nameless: [], stats: {} }
-  let IF = { q: '', src: 'all', sort: 'relation', onlyChat: false }
+  // 两个筛选是独立的，可以任意组合：
+  //   onlyChat —— 只看"聊过天"的（对话 > 0）
+  //   onlyReal —— 只看"有记忆"的（事实/经历/洞察/核心 至少一个）
+  //
+  // 默认开 onlyChat：聊过就算有记录，比"有记忆"宽一点 ——
+  // 不然只聊过几句还没沉淀成事实的人就看不到了（实测只剩 1 个）。
+  let IF = { q: '', src: 'all', sort: 'relation', onlyChat: true, onlyReal: false }
   let DRAW = { open: false, person: null, tab: 'memory', chat: [], detail: null }
 
   /* ============================================================
@@ -50,6 +56,15 @@
     else if (IF.src === 'group') list = list.filter((r) => (r.来源 || []).some((s) => s.kind === 'group'))
     else if (IF.src === 'none') list = list.filter((r) => r.未建档)
     if (IF.onlyChat) list = list.filter((r) => (r.对话 || {}).turns > 0)
+    // 只留"有记忆"的：事实 / 经历 / 洞察 / 核心 任一 > 0
+    if (IF.onlyReal) {
+      list = list.filter((r) => {
+        const m = r.记忆 || {}
+        const hasMemory = (m.facts || 0) + (m.episodes || 0) + (m.insights || 0) > 0
+        const hasCore = (r.核心 || {}).count > 0
+        return hasMemory || hasCore
+      })
+    }
 
     if (IF.sort === 'relation') list.sort((a, b) => (b.关系?.值 || 0) - (a.关系?.值 || 0))
     else if (IF.sort === 'recent') list.sort((a, b) => (b.对话?.lastAt || 0) - (a.对话?.lastAt || 0))
@@ -59,10 +74,12 @@
 
     const head = document.getElementById('mt-head')
     if (head) {
+      const totalAll = all.length
+      const filtered = IF.q || IF.src !== 'all' || IF.onlyChat || IF.onlyReal
       head.textContent =
-        list.length + ' 个成员' +
-        (IF.q || IF.src !== 'all' || IF.onlyChat ? '（已筛选）' : '') +
-        (DATA.stats && DATA.stats.chatted ? ' · ' + DATA.stats.chatted + ' 个聊过' : '')
+        list.length +
+        ' 个成员' +
+        (filtered ? `（共 ${totalAll} 个，已筛选）` : '')
     }
 
     const box = document.getElementById('mt-body')
@@ -70,7 +87,10 @@
     box.innerHTML = ''
 
     if (!list.length) {
-      box.innerHTML = '<tr><td colspan="7" class="empty" style="padding:20px">没有符合的成员</td></tr>'
+      const hint = IF.onlyReal
+        ? '没有"有记忆"的成员。勾掉「只看有记忆的」能看到全部 ' + all.length + ' 个。'
+        : '没有符合的成员'
+      box.innerHTML = '<tr><td colspan="7" class="empty" style="padding:20px">' + hint + '</td></tr>'
       return
     }
 
@@ -432,6 +452,10 @@
   }
   window.memberSort = function (v) {
     IF.sort = v
+    renderTable()
+  }
+  window.memberOnlyReal = function (v) {
+    IF.onlyReal = v
     renderTable()
   }
   window.memberOnlyChat = function (v) {

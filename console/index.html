@@ -674,7 +674,10 @@
             <option value="name">按名字</option>
           </select>
           <label class="hint" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
-            <input type="checkbox" id="mt-only" onchange="memberOnlyChat(this.checked)"> 只看聊过的
+            <input type="checkbox" id="mt-real" onchange="memberOnlyReal(this.checked)"> 只看有记忆的
+          </label>
+          <label class="hint" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="mt-only" checked onchange="memberOnlyChat(this.checked)"> 只看聊过的
           </label>
           <button class="mini-btn" onclick="loadMembers()">刷新</button>
         </div>
