@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { loadRules } from '../core/config.ts'
 import { autoLocate, resolvePaths, type NapcatPaths } from './locate.ts'
+import { hideQqConsole } from './win.ts'
 
 /* ============================================================
  * 定位
@@ -130,6 +131,22 @@ export function start(): { ok: boolean; detail: string } {
       }
 
       child.unref()
+
+      // QQ 起来之后会多出一个控制台窗口（NapCatWinBootMain 启动 QQ 时没加
+      // CREATE_NO_WINDOW，QQ 就继承到一个）。Node 的 windowsHide 管不到孙进程，
+      // 只能等它出现后用 Win32 藏起来。
+      //
+      // 为什么要试好几次：QQ 起得有快有慢，5 秒时窗口可能还没建好；
+      // 后台还会补开新的（实测有 3 个 QQ 进程各带一个控制台）。
+      //
+      // 不用 unref：这几个定时器最多活 40 秒，不差这点；unref 过的话
+      // 万一 event loop 短暂空转就永远不执行了（踩过）。
+      for (const delay of [5_000, 12_000, 25_000, 40_000]) {
+        setTimeout(() => {
+          hideQqConsole().catch(() => {})
+        }, delay)
+      }
+
       return {
         ok: true,
         detail: wantLog ? '已启动（无窗口）。日志会写到 napcat-console.log。' : '已启动（无窗口）。',
