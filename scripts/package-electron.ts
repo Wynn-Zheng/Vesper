@@ -115,6 +115,13 @@ async function main(): Promise<void> {
   cpSync(join(ROOT, 'console'), join(APP, 'console'), { recursive: true })
   ok('main.js / preload.js / build / console')
 
+  if (existsSync(join(ELECTRON_DIR, 'icon.png'))) {
+    cpSync(join(ELECTRON_DIR, 'icon.png'), join(APP, 'icon.png'))
+    ok('icon.png（窗口 + 托盘）')
+  } else {
+    console.log('  · 没有 icon.png，用 Electron 默认图标')
+  }
+
   // build/ 下的 .js 是 ESM：用子目录 package.json 覆盖父级的 CommonJS 默认
   writeFileSync(join(APP, 'build', 'package.json'), JSON.stringify({ type: 'module' }, null, 2) + '\n', 'utf8')
   ok('build/package.json（type: module）')

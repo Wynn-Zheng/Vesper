@@ -284,6 +284,9 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0d1117',
     title: 'QQ Bot 控制台',
+    // 窗口/任务栏图标。exe 本身的图标是 PE 资源，改名改不了（要 rcedit），
+    // 但运行时图标用这个就够看了。
+    icon: path.join(__dirname, 'icon.png'),
     // 断网/白屏时至少有个背景色，不是刺眼的纯白
     show: false,
     webPreferences: {
