@@ -784,6 +784,13 @@
 
     <section class="view" id="v-settings">
       <div class="set-head">
+        <b>NapCat</b>
+        <span class="hint">QQ 协议端 —— 消息从它进来，回复也从它出去</span>
+        <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadNapcatSettings()">刷新</button></div>
+      </div>
+      <div id="napcat-body"></div>
+
+      <div class="set-head">
         <b>连接</b>
         <span class="hint">模型接入</span>
         <div style="margin-left:auto;display:flex;gap:6px"><button class="mini-btn" onclick="loadModel()">刷新</button></div>
@@ -1260,6 +1267,82 @@ function showTokenHelp() {
   document.body.appendChild(mask)
 }
 
+/**
+ * 代替 window.prompt 的自定义弹窗。
+ *
+ * Electron 里 prompt() 是被禁用的，点了只在控制台报
+ * "prompt() is not supported." —— 这几个改名字/改参数的入口在桌面版全是坏的。
+ *
+ * 返回 Promise<string|null>：确定 → 输入的文字，取消 → null。
+ */
+function askText(title, defaultValue) {
+  return new Promise((resolve) => {
+    const mask = document.createElement('div')
+    mask.style.cssText =
+      'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99998;display:flex;align-items:center;justify-content:center;padding:24px'
+
+    const card = document.createElement('div')
+    card.style.cssText =
+      'background:var(--panel,#161b22);border:1px solid var(--line,#30363d);border-radius:12px;' +
+      'padding:18px 20px;width:min(520px,100%);box-shadow:0 12px 40px rgba(0,0,0,.5)'
+
+    const h = document.createElement('div')
+    h.textContent = title
+    h.style.cssText = 'font-size:14px;font-weight:600;margin-bottom:12px;line-height:1.6'
+    card.appendChild(h)
+
+    const inp = document.createElement('input')
+    inp.type = 'text'
+    inp.value = defaultValue == null ? '' : String(defaultValue)
+    inp.style.cssText =
+      'width:100%;box-sizing:border-box;background:var(--panel2,#0d1117);border:1px solid var(--line,#30363d);' +
+      'border-radius:8px;padding:9px 12px;font-size:13px;color:inherit;font-family:ui-monospace,Consolas,monospace'
+    card.appendChild(inp)
+
+    const row = document.createElement('div')
+    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px'
+
+    const cancel = document.createElement('button')
+    cancel.className = 'mini-btn'
+    cancel.textContent = '取消'
+
+    const ok = document.createElement('button')
+    ok.className = 'mini-btn'
+    ok.textContent = '确定'
+    ok.style.cssText += ';background:#238636;color:#fff;border-color:#238636'
+
+    row.appendChild(cancel)
+    row.appendChild(ok)
+    card.appendChild(row)
+    mask.appendChild(card)
+
+    let settled = false
+    const finish = (v) => {
+      if (settled) return
+      settled = true
+      mask.remove()
+      document.removeEventListener('keydown', onKey)
+      resolve(v)
+    }
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish(null)
+      if (e.key === 'Enter') finish(inp.value)
+    }
+
+    cancel.onclick = () => finish(null)
+    ok.onclick = () => finish(inp.value)
+    mask.onclick = (e) => {
+      if (e.target === mask) finish(null)
+    }
+    document.addEventListener('keydown', onKey)
+
+    document.body.appendChild(mask)
+    inp.focus()
+    inp.select()
+  })
+}
+
 async function api(path, init) {
   // token 走 header，不拼在 URL 里：URL 会进浏览器历史和 Referer
   const headers = { 'x-console-token': token, ...(init?.headers || {}) }
@@ -1347,6 +1430,7 @@ function runLoaders(viewId) {
   if (viewId === 'v-settings') {
     // 一页里有六块，进来全加载一次。各自独立，一块挂了不影响别的。
     loadHealth()
+    if (typeof loadNapcatSettings === 'function') loadNapcatSettings()
     if (typeof loadModel === 'function') loadModel()
     if (typeof loadRules === 'function') loadRules()
     if (typeof loadAccessPolicy === 'function') loadAccessPolicy()
@@ -2089,7 +2173,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (rn) {
     rn.onclick = async () => {
       if (!PD) return
-      const name = prompt('新的名字（全局名，群名片不受影响）', PD.名字)
+      const name = await askText('新的名字（全局名，群名片不受影响）', PD.名字)
       if (name === null) return
       const v = name.trim()
       if (!v) return alert('名字不能空')
@@ -3072,7 +3156,7 @@ function formatParam(p) {
 
 async function editAbilityParam(p) {
   const cur = formatParam(p)
-  const input = prompt(p.label + (p.hint ? '（' + p.hint + '）' : ''), cur === '（没设）' ? '' : cur)
+  const input = await askText(p.label + (p.hint ? '（' + p.hint + '）' : ''), cur === '（没设）' ? '' : cur)
   if (input === null) return
   let value = input
   if (p.kind === 'number') {
@@ -3988,9 +4072,9 @@ async function cycleVisibility(x) {
 }
 // ---------- 记忆编辑 ----------
 async function editFactFlow(x) {
-  const next = prompt('改这条事实（留空则不改文字）：', x.text)
+  const next = await askText('改这条事实（留空则不改文字）：', x.text)
   if (next === null) return
-  const conf = prompt('置信度 0~1（留空保持不变）：', String(x.confidence))
+  const conf = await askText('置信度 0~1（留空保持不变）：', String(x.confidence))
   if (conf === null) return
   try {
     await api('/api/facts', {

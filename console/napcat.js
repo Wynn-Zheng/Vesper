@@ -641,24 +641,21 @@
   /**
    * 改安装目录。
    *
+   * 注意不能用 prompt()：Electron 里 window.prompt 是被禁用的，
+   * 点了只会在控制台报 "prompt() is not supported."。
+   * 所以改成跳到「设置 → NapCat」，那里有正经的输入框。
+   *
    * 留空 = 恢复自动探测。填的应该是 <版本>.Shell 那一层。
    */
   async function editNapcatShelldir() {
-    const cur = (document.getElementById('nc-shelldir')?.textContent ?? '').replace(/（自动探测）$/, '').trim()
-
-    const input = prompt(
-      'NapCat 安装目录（那个 <版本>.Shell 目录）\n\n留空 = 自动探测常见位置\n例如：E:/NapCat/NapCat.52230.Shell',
-      cur === '检查中…' || cur === '没找到' ? '' : cur,
-    )
-    if (input === null) return
-
-    try {
-      const r = await sendJson('/api/napcat/shelldir', { shellDir: input.trim() }, 'PUT')
-      toast(r.resolved ? '已保存，解析到 ' + r.resolved.shellDir : '已保存')
-      loadShelldir()
-      loadNapcatLogin()
-    } catch (e) {
-      alert('改不了：' + e.message)
+    toast('去「设置 → NapCat」里改，那里有输入框')
+    if (typeof showGroup === 'function') {
+      showGroup('settings', 'v-settings')
+      setTimeout(() => {
+        const box = document.getElementById('napcat-body')
+        if (box) box.scrollIntoView({ block: 'center' })
+        if (typeof loadNapcatSettings === 'function') loadNapcatSettings()
+      }, 300)
     }
   }
 

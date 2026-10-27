@@ -14,6 +14,7 @@
  *      它是等 QQ 注入用的，拿普通 node 跑必崩。
  */
 import { existsSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 export type NapcatMode = 'inject' | 'shell'
 
@@ -48,6 +49,20 @@ export interface NapcatPaths {
 export function commonDirs(): string[] {
   const home = process.env['USERPROFILE'] ?? process.env['HOME'] ?? ''
   const out: string[] = []
+
+  // 一键安装的默认位置：<数据目录>/napcat
+  //
+  // 之前漏了这个 —— 一键安装时 install.ts 会往 rules.yaml 写 Shell目录，
+  // 所以平时没事；一旦那行丢了（换数据目录、手滑清空），就成了
+  // 「NapCat 明明在跑，控制台说找不到」，而它就在自己脚下。
+  out.push(join(process.cwd(), 'napcat'))
+
+  // 打包后 cwd 是数据目录，但万一不是（比如手动 npm start），
+  // 也试一下 %APPDATA%/qqbot/data-root/napcat
+  const appData = process.env['APPDATA']
+  if (appData) {
+    out.push(join(appData, 'qqbot', 'data-root', 'napcat'))
+  }
 
   // 盘符 × 常见目录名
   for (const drive of ['C', 'D', 'E', 'F']) {
