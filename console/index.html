@@ -628,6 +628,10 @@
       <div id="ability-groups"></div>
     </section>
 
+    <section class="view" id="v-plugins">
+      <div id="plugins-panel"></div>
+    </section>
+
     <section class="view" id="v-napcat">
       <div id="nc-main" style="transition:margin-right .2s ease-out">
         <!-- 状态卡 -->
@@ -1243,7 +1247,7 @@ async function api(path, init) {
 const GROUPS = {
   dashboard: [['v-dashboard', '总览']],
   self: [['v-self', '自我']],
-  ability: [['v-ability', '插件']],
+  ability: [['v-ability', '插件'], ['v-plugins', '插件管理']],
   people: [['v-members', '成员'], ['v-groups', '群'], ['v-search', '搜索']],
   logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志'], ['v-qzone', '说说']],
   // 设置是一页滚到底，所以只有一个入口。
@@ -1298,6 +1302,7 @@ function runLoaders(viewId) {
     if (typeof loadAbout === 'function') loadAbout()
   }
   if (viewId === 'v-ability') loadAbility()
+  if (viewId === 'v-plugins') window.renderPlugins?.()
   if (viewId === 'v-data') window.loadData?.()
   if (viewId === 'v-model') window.loadModel?.()
   if (viewId === 'v-about') window.loadAbout?.()
@@ -4150,6 +4155,7 @@ setInterval(loadStatus, 15000)
   <script src="/members.js"></script>
   <script src="/groups.js"></script>
   <script src="/napcat.js"></script>
+  <script src="plugins.js"></script>
   <script src="/settings.js"></script>
   <script src="/test.js"></script>
 </body>
