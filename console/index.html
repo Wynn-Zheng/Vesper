@@ -575,20 +575,18 @@
     </section>
 
     <section class="view" id="v-napcat">
-      <!-- 主区：登录成功后的正常样子。右边登录面板出现时会 margin-right 300px -->
+      <!-- 主区：登录状态。不再嵌 WebUI —— 那个还要再登一次 token，纯多余。
+           所有信息（状态/账号/二维码）后端都能直接给。 -->
       <div id="nc-main" style="transition:margin-right .2s ease-out">
-        <div class="card" style="margin-bottom:14px">
-          <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="card">
+          <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
             <b style="font-size:15px">NapCat</b>
             <span id="nc-state" class="tag">检查中…</span>
             <button class="mini-btn" onclick="loadNapcatLogin()">刷新</button>
-            <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开</button>
+            <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开 WebUI</button>
           </div>
-          <div class="hint" id="nc-hint" style="margin-top:6px"></div>
-        </div>
 
-        <div class="card" style="padding:0;overflow:hidden">
-          <iframe id="nc-frame" src="about:blank" style="width:100%;height:calc(100vh - 260px);border:0;background:#fff"></iframe>
+          <div id="nc-info"></div>
         </div>
       </div>
 
@@ -2311,7 +2309,8 @@ async function loadNapcat() {
 async function openNapcatWeb() {
   try {
     const r = await api('/api/napcat')
-    if (r.webui) window.open(r.webui, '_blank')
+    // 必须用 /webui/ —— 根路径是个空壳
+    window.open(r.webuiPage || r.webui + '/webui/', '_blank')
   } catch {
     /* 打不开就算了 */
   }

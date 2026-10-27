@@ -9,8 +9,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
-/** NapCat WebUI 的默认端口 */
+/** NapCat WebUI 的 API 根（不带路径） */
 const NAPCAT_WEBUI = 'http://127.0.0.1:6099'
+/** WebUI 页面地址。注意必须带 /webui/，根路径 / 只是个空壳 */
+const NAPCAT_WEBUI_PAGE = 'http://127.0.0.1:6099/webui/'
 
 export async function handleMiscApi(
   req: IncomingMessage,
@@ -33,7 +35,7 @@ export async function handleMiscApi(
     } catch {
       running = false
     }
-    json(res, 200, { running, webui: NAPCAT_WEBUI })
+    json(res, 200, { running, webui: NAPCAT_WEBUI, webuiPage: NAPCAT_WEBUI_PAGE })
     return true
   }
 
@@ -172,6 +174,7 @@ async function napcatLoginStatus(): Promise<{
   qrcodeurl?: string
   account?: string
   nick?: string
+  webui?: string
 }> {
   const cfgPath = findWebuiConfig()
   if (!cfgPath) return { available: false, reason: '找不到 NapCat 的 webui.json' }
@@ -239,6 +242,7 @@ async function napcatLoginStatus(): Promise<{
     return {
       available: true,
       isLogin: d.isLogin === true,
+      webui: NAPCAT_WEBUI_PAGE,
       phase: d.loginPhase ?? '',
       qrcodeurl: d.qrcodeurl ?? '',
       account,
