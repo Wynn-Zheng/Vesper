@@ -150,10 +150,6 @@ export async function handleMiscApi(
     }
 
     try {
-      // PowerShell 的 Tee-Object 默认写 UTF-16LE（带 BOM），
-      // 直接 readFileSync(f, 'utf8') 读出来是一堆 \u0000 夹着的乱码。
-      // 这里按 BOM 判断编码。
-      const buf = readFileSync(f)
       // 让 PowerShell 自己读。
       //
       // 为什么不用 readFileSync + 自己解码：日志是 PowerShell 的 Tee-Object
@@ -542,55 +538,6 @@ function findConsoleLog(): string | null {
   return null
 }
 
-/**
- * 确保 NapCat 开了文件日志。
- *
- * 为什么要这个：NapCat 默认 fileLog=false，所以 logs/ 一直是空的 ——
- * 用户想在控制台看日志，只能靠那个 cmd 窗口。
- * 这里自动把配置改成 true，用户什么都不用做。
- *
- * 只在值不对的时候写文件，而且先备份一次。
- */
-function ensureFileLog(): { ok: boolean; changed: boolean; detail?: string } {
-  const dir = findNapcatDir()
-  if (!dir) return { ok: false, changed: false, detail: '找不到 NapCat 目录' }
-
-  const cfgDir = dir + '/config'
-  if (!existsSync(cfgDir)) return { ok: false, changed: false, detail: '找不到 config 目录' }
-
-  // NapCat 有两套配置，优先级是 **分账号 > 全局**：
-  //   napcat.json            ← 全局
-  //   napcat_<QQ号>.json     ← 单个账号（会覆盖全局！）
-  //
-  // 踩过的坑：只改了 napcat.json，但 napcat_552388771.json 里 fileLog 还是 false，
-  // 结果 logs/ 一直是空的。
-  // 所以要把所有 napcat*.json 都过一遍。
-  const targets = readdirSync(cfgDir).filter((f) => /^napcat.*\.json$/.test(f) && !f.endsWith('.bak'))
-
-  let changed = false
-  const errors: string[] = []
-
-  for (const f of targets) {
-    const cfgPath = cfgDir + '/' + f
-    try {
-      const raw = readFileSync(cfgPath, 'utf8')
-      const cfg = JSON.parse(raw) as Record<string, unknown>
-      if (cfg.fileLog === true) continue
-
-      if (!existsSync(cfgPath + '.bak')) writeFileSync(cfgPath + '.bak', raw, 'utf8')
-
-      cfg.fileLog = true
-      if (cfg.fileLogLevel === 'debug' || cfg.fileLogLevel === undefined) cfg.fileLogLevel = 'info'
-      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n', 'utf8')
-      changed = true
-    } catch (e) {
-      errors.push(f + ': ' + String(e).slice(0, 60))
-    }
-  }
-
-  if (errors.length) return { ok: false, changed, detail: errors.join('; ') }
-  return { ok: true, changed }
-}
 
 /** 启动脚本的位置。找不到就试旁边几个可能的名字。 */
 function findLauncher(): string | null {
