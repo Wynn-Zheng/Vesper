@@ -588,6 +588,13 @@
             <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开 WebUI</button>
           </div>
 
+          <!-- 安装目录：留空就自动探测，探测不到让用户手填 -->
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);margin-top:4px;flex-wrap:wrap">
+            <span style="font-size:12.5px;color:#8b949e;flex:none">安装目录</span>
+            <span id="nc-shelldir" style="font-size:12px;word-break:break-all;flex:1;min-width:0">检查中…</span>
+            <button class="mini-btn" onclick="editNapcatShelldir()">改</button>
+          </div>
+
           <div style="display:flex;align-items:center;gap:14px;padding:8px 0;border-top:1px solid var(--line);margin-top:4px;flex-wrap:wrap">
             <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
               <input type="checkbox" id="nc-log-toggle" onchange="toggleNapcatLog(this.checked)">

@@ -20,8 +20,9 @@
     if (!panel) return
 
     try {
-      // 顺手把日志开关的状态同步一下
+      // 顺手把日志开关和安装目录同步一下
       loadLogSetting().catch(() => {})
+      loadShelldir().catch(() => {})
 
       const d = await api('/api/napcat/login')
 
@@ -421,7 +422,58 @@
     frame.setAttribute('data-src', want)
   }
 
+  /**
+   * 读安装目录。
+   *
+   * 配置里留空 = 自动探测。这里显示的是"最终解析到哪"，
+   * 没配置的话会带上「（自动）」的标记。
+   */
+  async function loadShelldir() {
+    const el0 = document.getElementById('nc-shelldir')
+    if (!el0) return
+
+    try {
+      const d = await api('/api/napcat/shelldir')
+      if (d.ok) {
+        el0.textContent = d.shellDir + (d.configured ? '' : '（自动探测）')
+        el0.style.color = ''
+      } else {
+        el0.textContent = d.error || '没找到'
+        el0.style.color = '#d29922'
+      }
+    } catch (e) {
+      el0.textContent = '读不到：' + e.message
+      el0.style.color = '#f85149'
+    }
+  }
+
+  /**
+   * 改安装目录。
+   *
+   * 留空 = 恢复自动探测。填的应该是 <版本>.Shell 那一层。
+   */
+  async function editNapcatShelldir() {
+    const cur = (document.getElementById('nc-shelldir')?.textContent ?? '').replace(/（自动探测）$/, '').trim()
+
+    const input = prompt(
+      'NapCat 安装目录（那个 <版本>.Shell 目录）\n\n留空 = 自动探测常见位置\n例如：E:/NapCat/NapCat.52230.Shell',
+      cur === '检查中…' || cur === '没找到' ? '' : cur,
+    )
+    if (input === null) return
+
+    try {
+      const r = await sendJson('/api/napcat/shelldir', { shellDir: input.trim() }, 'PUT')
+      toast(r.resolved ? '已保存，解析到 ' + r.resolved.shellDir : '已保存')
+      loadShelldir()
+      loadNapcatLogin()
+    } catch (e) {
+      alert('改不了：' + e.message)
+    }
+  }
+
   window.loadNapcatLogin = loadNapcatLogin
+  window.loadShelldir = loadShelldir
+  window.editNapcatShelldir = editNapcatShelldir
   window.switchNapcatView = switchNapcatView
   window.toggleNapcatLog = toggleNapcatLog
   window.loadLogSetting = loadLogSetting
