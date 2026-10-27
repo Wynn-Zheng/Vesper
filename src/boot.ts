@@ -454,7 +454,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       ensurePerson('qq', senderKey, globalName || undefined)
     }
 
-    // 群聊里把 @QQ号 换成 @昵称：模型看到 @552388771 不知道那是谁。
+    // 群聊里把 @QQ号 换成 @昵称：模型看到一串数字不知道那是谁。
     // OneBot 的 at 段不一定带 name，所以用群成员列表兜底替换一次。
     let displayText = m.text
     if (m.from.kind === 'group') {

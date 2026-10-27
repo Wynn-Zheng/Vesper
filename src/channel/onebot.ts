@@ -139,7 +139,7 @@ function messageSegments(message: OBEvent['message']): Array<{ type: string; dat
 function atText(data: Record<string, string>): string {
   const qq = (data['qq'] ?? '').trim()
   if (qq === 'all') return '@全体成员'
-  // 用昵称而不是 QQ 号：模型看到 @552388771 不知道那是谁
+  // 用昵称而不是 QQ 号：模型看到一串纯数字不知道那是谁
   const name = (data['name'] ?? '').trim()
   if (name) return `@${name}`
   return qq ? `@${qq}` : ''
