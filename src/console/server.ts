@@ -904,6 +904,17 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           plays,
           episodes,
           insights,
+          // 「只属于我自己的记忆」：scope === 'shared' 的那些。
+          // 现实里几乎没有（都跟某人/某群绑着），所以前端拿到空数组就整块不显示。
+          // 留这个字段是为了：真有独立记忆时它有地方出现。
+          ownMemories: [
+            ...episodes
+              .filter((e) => e.scope === 'shared')
+              .map((e) => ({ kind: 'episode', text: e.title, date: e.date, importance: e.importance })),
+            ...insights
+              .filter((i) => i.scope === 'shared')
+              .map((i) => ({ kind: 'insight', text: i.text, date: '' })),
+          ],
         })
         return
       }

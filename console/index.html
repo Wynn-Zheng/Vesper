@@ -1963,7 +1963,6 @@ const SELF_TABS = [
   ['card', '角色卡'],
   ['mind', '心事'],
   ['mood', '情绪'],
-  ['memory', '我的记忆'],
   ['core', '底线'],
   ['issues', '我觉得有问题'],
   ['plays', '学说话'],
@@ -2087,6 +2086,25 @@ function renderSelfV2() {
     addRow.appendChild(addb)
     c2.appendChild(addRow)
     body.appendChild(c2)
+
+    // 只属于它自己的记忆：scope === 'shared' 的经历/洞察。
+    // 这些不属于任何一个人，所以放这里；如果一条都没有，整块不显示。
+    const own = d.ownMemories || []
+    if (own.length) {
+      const c3 = el('div', 'card')
+      c3.style.marginTop = '12px'
+      c3.appendChild(el('div', 'op-t', '只属于我自己的记忆'))
+      c3.appendChild(el('div', 'hint', '不跟某个人、某个群绑在一起的')).style.marginBottom = '8px'
+      for (const x of own) {
+        const row = el('div', 'item')
+        row.style.cssText = 'padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+        row.appendChild(el('div', 'txt', x.text || x.title || ''))
+        const meta = [x.date, x.kind === 'insight' ? '想法' : '经历'].filter(Boolean).join(' · ')
+        if (meta) row.appendChild(el('div', 'sub', meta)).style.fontSize = '11px'
+        c3.appendChild(row)
+      }
+      body.appendChild(c3)
+    }
   }
 
   if (SELF_TAB === 'mood') {
@@ -2105,47 +2123,6 @@ function renderSelfV2() {
       }
     }
     body.appendChild(c)
-  }
-
-  if (SELF_TAB === 'memory') {
-    // 它自己的经历和洞察。只显示 shared scope —— 那些不属于某个人/某个群。
-    const eBox = el('div', 'card')
-    eBox.appendChild(el('div', 'op-t', '我经历过的事'))
-    eBox.appendChild(el('div', 'hint', '这些是我自己记得的，不是谁跟我说的')).style.marginBottom = '8px'
-    const eps = d.episodes || []
-    if (!eps.length) {
-      eBox.appendChild(el('div', 'empty', '还没有属于自己的经历'))
-    } else {
-      for (const e of eps) {
-        const row = el('div', 'item')
-        row.style.cssText = 'padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)'
-        row.appendChild(el('div', 'txt', e.title || '（没有标题）'))
-        if (e.body) row.appendChild(el('div', 'sub', e.body)).style.cssText = 'color:#8b949e;font-size:12px;margin-top:2px'
-        const meta = [e.date, '重要度 ' + e.importance, e.emotion].filter(Boolean).join(' · ')
-        if (meta) row.appendChild(el('div', 'sub', meta)).style.cssText = 'font-size:11px;opacity:.7;margin-top:2px'
-        eBox.appendChild(row)
-      }
-    }
-    body.appendChild(eBox)
-
-    const iBox = el('div', 'card')
-    iBox.style.marginTop = '12px'
-    iBox.appendChild(el('div', 'op-t', '我形成的一些看法'))
-    const ins = d.insights || []
-    if (!ins.length) {
-      iBox.appendChild(el('div', 'empty', '还没有自己的看法'))
-    } else {
-      for (const x of ins) {
-        const row = el('div', 'item')
-        row.style.cssText = 'padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)'
-        row.appendChild(el('div', 'txt', x.text))
-        if ((x.evidence || []).length) {
-          row.appendChild(el('div', 'sub', '依据：' + x.evidence.slice(0, 2).join('、'))).style.fontSize = '11px'
-        }
-        iBox.appendChild(row)
-      }
-    }
-    body.appendChild(iBox)
   }
 
   if (SELF_TAB === 'core') {
