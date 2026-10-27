@@ -84,6 +84,7 @@ const STEPS: Step[] = [
   { name: '插件安装', cmd: 'node scripts/selfcheck-plugin-installer.ts', expect: /全部通过/ },
   { name: '插件接口', cmd: 'node scripts/selfcheck-plugin-api.ts', expect: /全部通过/ },
   { name: '插件前端', cmd: 'node scripts/selfcheck-console-plugins.ts', expect: /全部通过/ },
+  { name: '插件端到端', cmd: 'node --env-file-if-exists=.env scripts/test-plugins-e2e.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
 ]
 
 const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
