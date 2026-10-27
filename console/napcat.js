@@ -118,8 +118,9 @@
       t2.style.cssText = 'font-size:12px'
       wrap.appendChild(t2)
 
-      // 具体原因（fetch failed 之类）用更小的字附在下面
-      if (reason) {
+      // 具体原因用更小的字附在下面。
+      // fetch failed / ECONNREFUSED 这类是内部错误，用户看了也没用，过滤掉。
+      if (reason && !/fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(reason)) {
         const t3 = el('div', 'hint', reason)
         t3.style.cssText = 'font-size:10.5px;opacity:.6;margin-top:8px'
         wrap.appendChild(t3)
@@ -412,12 +413,94 @@
     if (view === 'log') loadNapcatConsole()
   }
 
+  /** 一个地址能不能连上（不管 CORS：连上是 opaque 响应，连不上才抛） */
+  async function probeReachable(url) {
+    try {
+      await fetch(url, { mode: 'no-cors', signal: AbortSignal.timeout(1500) })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * NapCat 没跑时，用一块人话提示盖住 iframe。
+   *
+   * 不这么做的话 iframe 会显示 Chromium 的 ERR_CONNECTION_REFUSED 白页 ——
+   * 用户看到的就是"打不开"，也不知道该装 NapCat 还是该点启动。
+   */
+  function showWebuiDown(url) {
+    const frame = document.getElementById('nc-frame')
+    if (!frame) return
+
+    let box = document.getElementById('nc-webui-down')
+    if (!box) {
+      box = document.createElement('div')
+      box.id = 'nc-webui-down'
+      box.style.cssText =
+        'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;' +
+        'min-height:420px;padding:40px;background:#0d1117;border:1px solid #30363d;' +
+        'border-radius:10px;text-align:center;line-height:1.8'
+      frame.parentNode.insertBefore(box, frame)
+    }
+    box.style.display = ''
+    frame.style.display = 'none'
+    frame.removeAttribute('data-src')
+    box.innerHTML = ''
+
+    const title = document.createElement('div')
+    // 标题用「WebUI 打不开」而不是「NapCat 没在运行」：
+    // 上面卡片里已经说了"没在跑"，这里说的是"这个嵌进来的页面连不上"，两件事
+    title.textContent = 'WebUI 打不开'
+    title.style.cssText = 'font-size:16px;font-weight:600'
+    box.appendChild(title)
+
+    const addr = document.createElement('div')
+    addr.textContent = '连不上 ' + url
+    addr.style.cssText = 'font-size:12px;color:#8b949e;word-break:break-all'
+    box.appendChild(addr)
+
+    const tips = document.createElement('div')
+    tips.style.cssText = 'font-size:13px;color:#8b949e;max-width:460px;text-align:left;margin-top:6px'
+    tips.innerHTML =
+      '<div>· <b>还没装</b>：看项目里的 <code>docs/NapCat安装.md</code></div>' +
+      '<div>· <b>装了没开</b>：点上面那张卡片的「启动」</div>' +
+      '<div>· <b>端口不对</b>：WebUI 不是 6099 的话，改 NapCat 的 webui 配置</div>'
+    box.appendChild(tips)
+
+    const btn = document.createElement('button')
+    btn.className = 'mini-btn'
+    btn.textContent = '重试'
+    btn.onclick = () => {
+      btn.disabled = true
+      btn.textContent = '检查中…'
+      loadWebuiFrame(url).catch(() => {})
+    }
+    box.appendChild(btn)
+  }
+
+  function hideWebuiDown() {
+    const box = document.getElementById('nc-webui-down')
+    if (box) box.style.display = 'none'
+    const frame = document.getElementById('nc-frame')
+    if (frame) frame.style.display = ''
+  }
+
   /** 把 iframe 指到 WebUI。地址必须带 /webui/（根路径是空壳） */
-  function loadWebuiFrame(webuiUrl) {
+  async function loadWebuiFrame(webuiUrl) {
     const frame = document.getElementById('nc-frame')
     if (!frame) return
     const want = webuiUrl || 'http://127.0.0.1:6099/webui/'
     if (frame.getAttribute('data-src') === want) return
+
+    // 先探一下再设 src：直接设的话 NapCat 没跑时就是一个白页 + Chromium 报错，
+    // 用户根本判断不出是"程序坏了"还是"NapCat 没开"。
+    if (!(await probeReachable(want))) {
+      showWebuiDown(want)
+      return
+    }
+
+    hideWebuiDown()
     frame.src = want
     frame.setAttribute('data-src', want)
   }
