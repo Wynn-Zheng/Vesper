@@ -94,6 +94,23 @@ if (apiKey) {
   const registry = new ToolRegistry()
   for (const tool of codeTools) registry.register(tool)
 
+  // 电脑操作：默认关。开了才把工具放进注册表——
+  // 不放进去的话模型根本不知道有这些工具，谈不上"误用"。
+  {
+    const rules = getRules()
+    if (rules.电脑操作?.enabled) {
+      const { desktopReadTools, desktopWriteTools } = await import('./tools/desktop.ts')
+      for (const tool of desktopReadTools) registry.register(tool)
+      if (rules.电脑操作.允许操作) {
+        for (const tool of desktopWriteTools) registry.register(tool)
+      }
+      info(
+        `电脑操作已启用：${registry.size} 个工具` +
+          (rules.电脑操作.允许操作 ? '（含点击/打字）' : '（只读：截图/窗口列表）'),
+      )
+    }
+  }
+
   info(`模型已就绪：${llm.model}`)
   boot(transport, { getRules, reply: (m, r) => generateReply(m, { rules: r, llm: llm!, tools: registry }), llm })
 

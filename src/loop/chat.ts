@@ -218,6 +218,11 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     speech: renderSpeechHabit(),
     // 成长的痕迹（以前怎么看自己 vs 现在）
     growth: renderGrowth(),
+    // 电脑操作开了没：决定 prompt 里说"能看屏幕"还是"不能"
+    desktop: {
+      只读: opts.rules.电脑操作?.enabled === true,
+      可操作: opts.rules.电脑操作?.enabled === true && opts.rules.电脑操作?.允许操作 === true,
+    },
     // 只用精选模式：只注入人工审过的经验
     memory: [
       renderRecalled(recalled),

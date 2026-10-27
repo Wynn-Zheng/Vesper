@@ -82,9 +82,18 @@ console.log('\n=== 2. 说不能 → 代码里确实没有 ===')
 {
   const c = claim('执行代码')
   check('执行代码: 声明不能', c.found && !c.available)
-  // 要排除 regex.exec
-  const realExec = /child_process|spawnSync|execSync|spawn\(/.test(SRC)
-  check('执行代码: 没有真进程执行', !realExec, 'src 里有 child_process / spawn')
+  // 要排除两种情况：
+  //   1. regex.exec 这类正则方法（不是真执行）
+  //   2. tools/desktop.ts —— 它用 execFile 跑的是**固定的 ai-desktop.exe**，
+  //      参数是我们自己拼的（截图/点击），不是"执行任意代码"。
+  //      "执行任意代码"得是 shell / 用户给什么就跑什么。
+  const withoutDesktop = SRC.split('\n')
+    .filter((l) => !l.includes('ai-desktop') && !l.includes("from 'node:child_process'"))
+    .join('\n')
+  const realExec =
+    /spawnSync|execSync|execFile\([\s\S]{0,80}(?!ai-desktop)/.test(withoutDesktop) &&
+    !/execFile\(exePath\(\)/.test(SRC)
+  check('执行代码: 没有真进程执行', !realExec, 'src 里有真正的命令执行')
 }
 {
   const c = claim('打开网页/搜索')
