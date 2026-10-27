@@ -20,6 +20,9 @@
     if (!panel) return
 
     try {
+      // 顺手把日志开关的状态同步一下
+      loadLogSetting().catch(() => {})
+
       const d = await api('/api/napcat/login')
 
       // 拿不到 —— 通常是 NapCat 没跑（fetch failed），也可能是 token 变了。
@@ -249,6 +252,10 @@
    * （Tee-Object 把 cmd 窗口的输出同时写一份）。
    */
   async function loadNapcatConsole() {
+    // 开关关着就别费劲读了（文件可能压根没有）
+    const card = document.getElementById('nc-console-card')
+    if (card && card.style.display === 'none') return
+
     const box = document.getElementById('nc-console')
     const hint = document.getElementById('nc-console-hint')
     const meta = document.getElementById('nc-console-meta')
@@ -325,7 +332,58 @@
     }
   }
 
+  /**
+   * 日志开关。
+   *
+   * 关（默认）：启动完全无窗口，状态和二维码都在界面里。
+   * 开：走 .cmd 启动，多一个最小化窗口，但能拿到 NapCat 的原始日志。
+   *
+   * 改完要重启 NapCat 才生效（模式是启动时决定的）。
+   */
+  async function toggleNapcatLog(on) {
+    try {
+      await sendJson('/api/napcat/logsetting', { 记录日志: on }, 'PUT')
+      toast(on ? '已开启日志记录，重启 NapCat 后生效' : '已关闭日志记录，重启 NapCat 后生效')
+      updateLogHint(on)
+      // 日志卡片只有在"开着 + 有文件"时才有意义
+      const card = document.getElementById('nc-console-card')
+      if (card) card.style.display = on ? '' : 'none'
+      if (on) loadNapcatConsole()
+    } catch (e) {
+      alert('改不了：' + e.message)
+      // 失败就把勾选还原
+      const cb = document.getElementById('nc-log-toggle')
+      if (cb) cb.checked = !on
+    }
+  }
+
+  function updateLogHint(on) {
+    const hint = document.getElementById('nc-log-hint')
+    if (!hint) return
+    hint.textContent = on
+      ? '会多一个最小化的窗口。重启 NapCat 后生效。'
+      : '启动完全无窗口。重启 NapCat 后生效。'
+  }
+
+  /** 读配置，把开关和卡片的初始状态摆好 */
+  async function loadLogSetting() {
+    try {
+      const d = await api('/api/napcat/logsetting')
+      const on = d.记录日志 === true
+      const cb = document.getElementById('nc-log-toggle')
+      if (cb) cb.checked = on
+      updateLogHint(on)
+      const card = document.getElementById('nc-console-card')
+      if (card) card.style.display = on ? '' : 'none'
+      return on
+    } catch {
+      return false
+    }
+  }
+
   window.loadNapcatLogin = loadNapcatLogin
+  window.toggleNapcatLog = toggleNapcatLog
+  window.loadLogSetting = loadLogSetting
   window.napcatAction = napcatAction
   window.loadNapcatConsole = loadNapcatConsole
   window.refreshNapcatQrcode = () => {

@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { loadRules } from '../core/config.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
@@ -78,6 +79,36 @@ export async function handleMiscApi(
     return true
   }
 
+  /* ============ NapCat 日志开关 ============ */
+  // 关着（默认）：无窗口启动，状态/二维码在控制台里
+  // 打开：走 .cmd 启动，多一个最小化窗口，但能拿到 NapCat 的原始日志
+  if (method === 'GET' && path === '/api/napcat/logsetting') {
+    try {
+      json(res, 200, { 记录日志: loadRules().rules.NapCat?.记录日志 === true })
+    } catch (e) {
+      json(res, 200, { 记录日志: false, error: String(e).slice(0, 100) })
+    }
+    return true
+  }
+
+  if (method === 'PUT' && path === '/api/napcat/logsetting') {
+    // 自己读 body（handleMiscApi 的签名里没有 readBody，不想改所有调用方）
+    const chunks: Buffer[] = []
+    for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
+    const rawBody = Buffer.concat(chunks).toString('utf8')
+    const body = JSON.parse(rawBody || '{}') as { 记录日志?: boolean }
+    const { setConfigPath } = await import('./config-write.ts')
+    const raw = readFileSync('persona/rules.yaml', 'utf8')
+    const r = setConfigPath(raw, 'NapCat.记录日志', body.记录日志 === true)
+    if (!r.ok) {
+      json(res, 400, { error: r.error ?? '改不了' })
+      return true
+    }
+    writeFileSync('persona/rules.yaml', r.text, 'utf8')
+    json(res, 200, { ok: true, 记录日志: body.记录日志 === true })
+    return true
+  }
+
   /* ============ NapCat 启动 / 停止 / 重启 ============ */
   // 为什么能做：NapCat 是独立进程，不是我们服务的一部分。
   // 启动脚本自己会处理提权（net session 判断 + Start-Process -Verb RunAs）。
@@ -123,47 +154,43 @@ export async function handleMiscApi(
       // 直接 readFileSync(f, 'utf8') 读出来是一堆 \u0000 夹着的乱码。
       // 这里按 BOM 判断编码。
       const buf = readFileSync(f)
-      let raw = ''
-      if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
-        raw = buf.subarray(2).toString('utf16le')
-      } else if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
-        raw = buf.subarray(3).toString('utf8')
-      } else {
-        raw = buf.toString('utf8')
-      }
+      // 让 PowerShell 自己读。
+      //
+      // 为什么不用 readFileSync + 自己解码：日志是 PowerShell 的 Tee-Object
+      // 写的 UTF-16LE，我在 Node 里按 BOM 判断再 toString('utf16le')，
+      // 试了几轮读出来都是"ㅛ㨷ㄴ〺"这种乱码（可能是字节序/对齐的问题）。
+      // PowerShell 天然认识自己写的格式，直接让它读、输出 UTF-8 最省事。
+      const { execFile } = await import('node:child_process')
+      const text = await new Promise<string>((resolve, reject) => {
+        execFile(
+          'powershell',
+          [
+            '-NoProfile',
+            '-Command',
+            // -Tail 取最后 N 行；不给 -Encoding，让它按 BOM 自动判断
+            `Get-Content -LiteralPath '${f.replace(/'/g, "''")}' -Tail ${limit} | Out-String`,
+          ],
+          { maxBuffer: 4 * 1024 * 1024 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout)),
+        )
+      })
 
       // 去掉 ANSI 颜色码（NapCat 输出里有 \u001b[33m 这种）
-      raw = raw.replace(/\u001b\[[0-9;]*m/g, '')
-
-      // 去掉乱码行。
-      //
-      // 为什么会有乱码：napcat-console.log 是 PowerShell 的 Tee-Object 写的，
-      // 编码是 UTF-16LE。但如果这个文件之前被别的程序（比如我们早期版本）
-      // 用 UTF-8 追加过，同一个文件里就混了两种编码 —— 按 BOM 判断整体编码
-      // 只能救其中一种，另一种读出来就是"ㅛ㨷ㄴ〺"这种。
-      //
-      // 这些行对我们的用途（看 NapCat 在干什么）没有价值，直接扔掉。
-      const isGarbage = (line: string): boolean => {
-        if (!line.trim()) return true
-        let bad = 0
-        for (const ch of line) {
-          const c = ch.codePointAt(0) ?? 0
-          // 汉字/常见符号/ASCII 都算正常；控制字符、私用区、替换字符算坏
-          if (c === 0xfffd) bad++
-          else if (c < 0x20 && c !== 0x09) bad++
-          else if (c >= 0xe000 && c <= 0xf8ff) bad++
-        }
-        return bad / line.length > 0.3
-      }
-
-      const all = raw.split(/\r?\n/).filter((l) => l.trim() && !isGarbage(l))
+      const cleaned = text.replace(/\u001b\[[0-9;]*m/g, '')
+      const all = cleaned.split(/\r?\n/).filter((l) => l.trim())
       json(res, 200, {
         available: true,
         path: f,
         total: all.length,
         lines: all.slice(-limit),
         // 文件大小和最后修改时间，方便判断"是不是新的"
-        bytes: raw.length,
+        bytes: (() => {
+          try {
+            return statSync(f).size
+          } catch {
+            return 0
+          }
+        })(),
         mtime: (() => {
           try {
             const st = statSync(f)
@@ -661,10 +688,27 @@ function startNapcat(): { ok: boolean; detail: string } {
   // 想看 NapCat 的原始控制台输出（排查启动失败用），把环境变量改成 cmd：
   //   NAPCAT_START_MODE=cmd
   // 那样会跑 .cmd，任务栏里有个最小化的窗口。
-  const mode = (process.env['NAPCAT_START_MODE'] ?? 'direct').toLowerCase()
+  // 模式由配置 NapCat.记录日志 决定（默认 false = 无窗口）：
+  //
+  //   记录日志 = false（默认）
+  //     直接 spawn NapCatWinBootMain.exe，**完全不弹窗口**。
+  //     状态、二维码、启停都在控制台里。
+  //
+  //   记录日志 = true
+  //     跑 启动NapCat.cmd（任务栏一个最小化的窗口）。
+  //     NapCat 的原始输出会写成 napcat-console.log，排查启动失败时有用。
+  //
+  // 环境变量 NAPCAT_START_MODE 可以强制覆盖（cmd / direct），调试用。
+  const forced = (process.env['NAPCAT_START_MODE'] ?? '').toLowerCase()
+  if (forced === 'cmd') return startNapcatViaCmd()
+  if (forced === 'direct') return startNapcatDirect()
 
-  if (mode === 'cmd') return startNapcatViaCmd()
-  return startNapcatDirect()
+  try {
+    // 静态 import 在文件顶部（loadRules），这里直接用
+    return loadRules().rules.NapCat?.记录日志 === true ? startNapcatViaCmd() : startNapcatDirect()
+  } catch {
+    return startNapcatDirect()
+  }
 }
 
 /** 官方路径：跑启动脚本，窗口最小化 */

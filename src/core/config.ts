@@ -160,6 +160,17 @@ export interface Rules {
    * 压缩后最近 keepRecent 条消息保留原文。
    */
   /**
+   * NapCat 的启动方式。
+   *
+   * 默认 **不记录日志**：启动完全无窗口，NapCat 的状态/二维码都在控制台里。
+   * 打开之后会走 启动NapCat.cmd（任务栏里一个最小化窗口），
+   * 好处是 NapCat 的原始输出会写成 napcat-console.log，排查启动失败时有用。
+   */
+  NapCat: {
+    /** 是否记录 NapCat 的原始控制台日志。默认 false。 */
+    记录日志: boolean
+  }
+  /**
    * 电脑操作（看屏幕 / 点鼠标 / 打字）。
    *
    * 默认关。开了之后它才能调 ai-desktop 那套工具。
@@ -274,6 +285,11 @@ export const DEFAULTS: Rules = {
     每分钟上限: 10,
     群每分钟上限: 6,
     主动消息: { 去重相似度: 0.6, 每日上限: '由阶段决定' },
+  },
+  NapCat: {
+    // 默认 false：启动完全无窗口，状态和二维码都在控制台里。
+    // 打开后走 启动NapCat.cmd（任务栏一个最小化窗口），能拿到原始日志。
+    记录日志: false,
   },
   电脑操作: {
     enabled: false,

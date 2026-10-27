@@ -589,13 +589,23 @@
             <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开 WebUI</button>
           </div>
 
+          <!-- 日志开关。默认关：启动完全无窗口，状态和二维码都在界面里。
+               打开后会走 .cmd 启动（多一个最小化窗口），但能拿到 NapCat 的原始日志。 -->
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);margin-top:4px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer">
+              <input type="checkbox" id="nc-log-toggle" onchange="toggleNapcatLog(this.checked)">
+              记录 NapCat 日志
+            </label>
+            <span id="nc-log-hint" class="hint" style="font-size:11px"></span>
+          </div>
+
           <div id="nc-info"></div>
         </div>
 
         <!-- NapCat 控制台输出。它自己不写日志，靠启动脚本的 Tee 落到 napcat-console.log -->
-        <div class="card" style="margin-top:14px">
+        <div class="card" id="nc-console-card" style="margin-top:14px;display:none">
           <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <b style="font-size:13.5px">控制台输出</b>
+            <b style="font-size:13.5px">NapCat 日志</b>
             <span id="nc-console-meta" class="hint" style="font-size:11px"></span>
             <button class="mini-btn" onclick="loadNapcatConsole()" style="margin-left:auto">刷新</button>
           </div>
