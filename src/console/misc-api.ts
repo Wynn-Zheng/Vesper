@@ -5,7 +5,7 @@
  */
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
