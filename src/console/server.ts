@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
@@ -900,15 +900,57 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         return
       }
 
+      // 能力清单（控制台版）：分组 + 参数 + 使用统计。
+      // 和 self/abilities.ts 分开：那个是给模型看的（"我能干什么"），
+      // 这个是给人看的（"怎么开、参数是什么、用过几次"）。
       if (req.method === 'GET' && path === '/api/ability') {
-        const { listAbilities } = await import('../self/abilities.ts')
-        const rules = opts.getRules()
-        const list = listAbilities(rules).map((a) => ({
-          name: a.name,
-          on: a.available,
-          hint: a.hint,
-        }))
-        json(res, 200, { list })
+        const { abilityCards } = await import('./ability.ts')
+        json(res, 200, { cards: abilityCards(opts.getRules()) })
+        return
+      }
+
+      // 开/关一个能力：只改 rules.yaml 里对应的那一行
+      if (req.method === 'PUT' && path === '/api/ability/toggle') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; on?: boolean }
+        const { abilityCards } = await import('./ability.ts')
+        const card = abilityCards(opts.getRules()).find((c) => c.id === body.id)
+        if (!card) {
+          json(res, 404, { error: '没有这个能力' })
+          return
+        }
+        if (!card.toggleKey) {
+          json(res, 400, { error: '这个能力不能开关（恒开）' })
+          return
+        }
+        const { setConfigPath } = await import('./config-write.ts')
+        const raw = readFileSync('persona/rules.yaml', 'utf8')
+        const r = setConfigPath(raw, card.toggleKey, body.on === true)
+        if (!r.ok) {
+          json(res, 400, { error: r.error ?? '改不了' })
+          return
+        }
+        writeFileSync('persona/rules.yaml', r.text, 'utf8')
+        json(res, 200, { ok: true })
+        return
+      }
+
+      // 改一个参数
+      if (req.method === 'PUT' && path === '/api/ability/param') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { key?: string; value?: unknown }
+        const key = String(body.key ?? '')
+        if (!key) {
+          json(res, 400, { error: '缺少 key' })
+          return
+        }
+        const { setConfigPath } = await import('./config-write.ts')
+        const raw = readFileSync('persona/rules.yaml', 'utf8')
+        const r = setConfigPath(raw, key, body.value)
+        if (!r.ok) {
+          json(res, 400, { error: r.error ?? '改不了' })
+          return
+        }
+        writeFileSync('persona/rules.yaml', r.text, 'utf8')
+        json(res, 200, { ok: true })
         return
       }
 
