@@ -12,10 +12,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { info, warnAt } from '../core/log.ts'
+import { srcRoot } from '../core/paths.ts'
 import { writeAtomic } from '../store/fs.ts'
 
 const FILE = 'persona/codemap.md'
-const SRC = 'src'
+// 源码目录：开发时是 cwd/src，打包后是 resources/app/src（见 core/paths.ts）。
+// 写死 'src' 的话打包版每次启动都报「扫不了 src/」。
+const SRC = srcRoot()
 
 /**
  * 每个目录干什么——这个手写，因为机器从代码里猜不准。

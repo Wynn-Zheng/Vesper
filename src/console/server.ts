@@ -1105,6 +1105,21 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         return
       }
 
+      // 能力卡片的「测试」按钮。
+      // 这个接口之前压根不存在，前端一直在调 → 11 个卡片全是 not found。
+      if (req.method === 'POST' && path === '/api/ability/test') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const id = String(body.id ?? '')
+        if (!id) {
+          json(res, 400, { ok: false, detail: '缺少 id', ms: 0 })
+          return
+        }
+        const { testAbility } = await import('./ability-test.ts')
+        const r = await testAbility(id)
+        json(res, 200, r)
+        return
+      }
+
       if (req.method === 'GET' && path === '/api/health') {
         const { healthReport } = await import('./health.ts')
         const r = await healthReport({

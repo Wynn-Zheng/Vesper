@@ -10,23 +10,31 @@
  * 仍然只读。改是人做的事。
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { warnAt } from '../core/log.ts'
+import { resolveSrcPath, srcRoot } from '../core/paths.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import type { Issue } from './observe.ts'
 
 /* ---------- 只读工具 ---------- */
 
-/** 只允许 src/ 下的文件，且必须在仓内 */
+/**
+ * 只允许 src/ 下的文件。
+ *
+ * 注意不能再用 resolve() + includes('QQbot')：
+ *   - resolve 是相对 cwd 的，打包后 cwd 是 %APPDATA%/qqbot/data-root，那里没有 src
+ *   - 而且数据目录是小写 qqbot，跟 'QQbot' 匹配不上，等于永远拒绝
+ * 改成走 resolveSrcPath：它接受逻辑路径 "src/xxx.ts"，映射到真实的源码目录。
+ */
 function safePath(where: string): string | null {
   if (!where) return null
   const file = where.split(':')[0] ?? ''
   if (!file.startsWith('src/')) return null
   if (file.includes('..')) return null
-  const abs = resolve(file)
-  if (!abs.includes('QQbot')) return null
-  return existsSync(abs) ? abs : null
+  const abs = resolveSrcPath(file)
+  if (!abs || !existsSync(abs)) return null
+  return abs
 }
 
 export interface SourceSlice {
@@ -71,7 +79,7 @@ export function readSourceAt(where: string, around = 35): SourceSlice | null {
   return readSlice(where.split(':')[0]!, Math.max(1, lineNo - around), lineNo + around)
 }
 
-function walkSrc(dir = 'src', out: string[] = []): string[] {
+function walkSrc(dir = srcRoot(), out: string[] = []): string[] {
   try {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name)

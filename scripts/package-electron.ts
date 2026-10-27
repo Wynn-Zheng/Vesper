@@ -154,6 +154,12 @@ async function main(): Promise<void> {
   }
   ok('node_modules/{ws,yaml}')
 
+  // 源码也带上（约 2MB）：「读自己的代码」这个能力要读 .ts，
+  // 只带 build/ 的话它读到的是编译后的 JS，跟仓库里的对不上。
+  // core/paths.ts 的 srcRoot() 会优先找 QQBOT_ROOT/src。
+  cpSync(join(ROOT, 'src'), join(APP, 'src'), { recursive: true })
+  ok('src/（让「读自己的代码」有东西可读）')
+
   /* ---------- 5. persona 模板 ---------- */
   step('放 persona 模板（首次启动复制到用户数据目录）')
   const tpl = join(OUT, 'resources', 'persona-template')
