@@ -17,6 +17,17 @@ export interface PersonMeta {
   name: string
   accounts: Account[]
   firstSeen: number
+  /** 和这个人的关系：主人/朋友/同事/网友/陌生人 */
+  role?: string
+  /** 名字被用户锁住了：群名单同步时不要覆盖 */
+  nameLocked?: boolean
+}
+
+/** 关系只允许这几档，别让模型或前端随手写别的 */
+export const PERSON_ROLES = ['主人', '朋友', '同事', '网友', '陌生人'] as const
+
+export function isPersonRole(v: unknown): v is (typeof PERSON_ROLES)[number] {
+  return typeof v === 'string' && (PERSON_ROLES as readonly string[]).includes(v)
 }
 
 let ROOT = 'persona/people'
@@ -80,6 +91,9 @@ function normalizeMeta(id: string, raw: unknown): PersonMeta | null {
     name: typeof r.name === 'string' && r.name.trim() ? r.name : id,
     accounts: Array.isArray(r.accounts) ? r.accounts.filter(isAccount) : [],
     firstSeen: typeof r.firstSeen === 'number' && Number.isFinite(r.firstSeen) ? r.firstSeen : 0,
+    // 这两个是用户手动设的，原样读回来；类型不对就当没写过，别把整份档案判坏。
+    ...(typeof r.role === 'string' ? { role: r.role } : {}),
+    ...(typeof r.nameLocked === 'boolean' ? { nameLocked: r.nameLocked } : {}),
   }
 }
 
@@ -96,6 +110,11 @@ export function loadPerson(id: string): PersonMeta | null {
 export function savePerson(meta: PersonMeta): void {
   mkdirSync(personDir(meta.id), { recursive: true })
   writeAtomic(metaFile(meta.id), `${JSON.stringify(meta, null, 2)}\n`)
+  // 缓存里可能还挂着旧对象：savePerson 之后如果不换掉，下一次 ensurePerson /
+  // syncPersonName 会拿旧对象写盘，把刚存的 role / nameLocked 又抹掉。
+  for (const [key, cached] of cache) {
+    if (cached.id === meta.id) cache.set(key, meta)
+  }
 }
 
 /** 账号 → 人 的内存缓存，避免每条消息都扫目录 */
@@ -119,7 +138,8 @@ export function ensurePerson(platform: Platform, accountId: string, name?: strin
   const hit = cache.get(key)
   if (hit) {
     let dirty = bindAccount(hit, platform, accountId)
-    if (display && display !== hit.name) {
+    // 用户锁了名字就不自动改，账号该补还得补
+    if (display && !hit.nameLocked && display !== hit.name) {
       hit.name = display
       dirty = true
     }
@@ -132,7 +152,7 @@ export function ensurePerson(platform: Platform, accountId: string, name?: strin
   // 先看有没有别的目录已经绑定了这个账号（微信/QQ 双入口的情况）
   for (const p of listPeople()) {
     if (p.accounts.some((a) => a.platform === platform && a.id === accountId)) {
-      if (display && display !== p.name) {
+      if (display && !p.nameLocked && display !== p.name) {
         p.name = display
         savePerson(p)
       }
@@ -146,7 +166,7 @@ export function ensurePerson(platform: Platform, accountId: string, name?: strin
     // 目录名对得上，但 accounts 里可能还没有这个账号（手改过 meta、老数据迁移），
     // 必须补上，否则重启后 findPersonByAccount 又找不到它。
     let dirty = bindAccount(existing, platform, accountId)
-    if (display && display !== existing.name) {
+    if (display && !existing.nameLocked && display !== existing.name) {
       existing.name = display
       dirty = true
     }
@@ -255,6 +275,8 @@ export function syncPersonName(platform: Platform, accountId: string, name: stri
   // 没档案就不建：名单里的人不等于认识的人。
   // 真聊过之后 ensurePerson 会建档。
   if (!hit) return false
+  // 用户锁定名字后，群名单只用来对号，不再覆盖显示名。
+  if (hit.nameLocked) return false
 
   if (hit.name === display) return false
   hit.name = display

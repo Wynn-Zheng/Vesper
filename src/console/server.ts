@@ -1061,6 +1061,42 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       return
     }
 
+    // 人格快照列表（历史版本）
+    if (req.method === 'GET' && path === '/api/self/versions') {
+      const { listSelfVersions, loadSelfVersion } = await import('../self/store.ts')
+      const list = listSelfVersions(30).map((v) => {
+        const doc = loadSelfVersion(v.id)
+        const text = doc ? [doc.about, doc.thinking, doc.abilities].filter(Boolean).join('\n') : ''
+        return { id: v.id, at: v.at, chars: text.length }
+      })
+      json(res, 200, { versions: list })
+      return
+    }
+
+    // 两个版本的行级对比
+    if (req.method === 'GET' && path === '/api/self/versions/diff') {
+      const a = url.searchParams.get('a') ?? ''
+      const b = url.searchParams.get('b') ?? ''
+      const { loadSelfVersion, lineDiff } = await import('../self/store.ts')
+      const da = loadSelfVersion(a)
+      const db = loadSelfVersion(b)
+      if (!da || !db) {
+        json(res, 404, { error: '版本不存在' })
+        return
+      }
+      const textOf = (d: typeof da): string =>
+        [d.about, d.thinking, d.abilities].filter(Boolean).join('\n\n')
+      json(res, 200, { a, b, lines: lineDiff(textOf(da), textOf(db)) })
+      return
+    }
+
+    // 漂移记录（它明显变过的时刻）
+    if (req.method === 'GET' && path === '/api/self/drift') {
+      const { loadDrifts } = await import('../self/store.ts')
+      json(res, 200, { items: loadDrifts(20) })
+      return
+    }
+
     if (req.method === 'PUT' && path === '/api/self/owner') {
       const body = JSON.parse((await readBody(req)) || '{}') as { owner?: string }
       const owner = body.owner === 'me' ? 'me' : 'it'

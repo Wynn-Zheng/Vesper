@@ -2215,32 +2215,11 @@ document.addEventListener('DOMContentLoaded', () => {
 // 自我（7 个子栏）
 // ============================================================
 
-let SELF_TAB = 'card'
 let SELF_DATA = null
 let SELF_REQUESTS = []
 
-const SELF_TABS = [
-  ['card', '角色卡'],
-  ['mind', '心事'],
-  ['mood', '情绪'],
-  ['core', '底线'],
-  ['issues', '我觉得有问题'],
-  ['plays', '学说话'],
-]
 
 async function loadSelfV2() {
-  const bar = $('self-tabs')
-  if (bar) {
-    bar.innerHTML = ''
-    for (const [k, label] of SELF_TABS) {
-      const b = el('button', 'gtab' + (k === SELF_TAB ? ' on' : ''), label)
-      b.onclick = () => {
-        SELF_TAB = k
-        renderSelfV2()
-      }
-      bar.appendChild(b)
-    }
-  }
 
   const body = $('self-body')
   if (body) body.innerHTML = '<div class="hint">加载中…</div>'
@@ -2324,40 +2303,174 @@ async function decideRequest(id, action, grant) {
 }
 
 
+/** 一页三段的段标题 */
+function selfSection(title, hint) {
+  const head = el('div', 'set-head')
+  head.style.marginTop = '18px'
+  const b = el('b', '', title)
+  head.appendChild(b)
+  head.appendChild(el('span', 'hint', hint))
+  return head
+}
+
+/** 小标题（卡片内部的区块名） */
+function selfBlockTitle(text, extra) {
+  const t = el('div', 'op-t', text)
+  if (extra) t.appendChild(el('span', 'sub', extra)).style.cssText = 'font-size:11px;color:#8b949e;margin-left:8px'
+  return t
+}
+
 function renderSelfV2() {
   const body = $('self-body')
   if (!body || !SELF_DATA) return
   const d = SELF_DATA
 
-  // 高亮当前 tab
-  for (const b of document.querySelectorAll('#self-tabs .gtab')) {
-    b.classList.toggle('on', b.textContent === (SELF_TABS.find((x) => x[0] === SELF_TAB) || [])[1])
+  body.innerHTML = ''
+
+  // 顶部说明：让人一眼知道这页为什么这么排
+  const tip = el('div', 'hint', '三段：你设的 / 协商中 / 它长的 —— 每段标了谁说了算')
+  tip.style.cssText = 'font-size:12px;color:#8b949e;padding:0 0 4px'
+  body.appendChild(tip)
+
+  /* ============================================================
+   * 第一段：你设的
+   * ============================================================ */
+  body.appendChild(selfSection('你设的', '这些话是你的，它照做'))
+
+  // 不能越的线
+  {
+    const c = el('div', 'card')
+    c.appendChild(selfBlockTitle('不能越的线', '只有你能改，它只能提申请'))
+    const core = d.core || {}
+    const keys = Object.keys(core)
+    if (!keys.length) {
+      c.appendChild(el('div', 'empty', '还是空的。加几条它一定不能弄错的事。'))
+    } else {
+      for (const kind of keys) {
+        const items = core[kind]
+        if (!Array.isArray(items) || !items.length) continue
+        const kt = el('div', 'op-t', kind)
+        kt.style.cssText = 'font-size:12px;color:#8b949e;margin-top:10px'
+        c.appendChild(kt)
+        for (const it of items) {
+          c.appendChild(el('div', 'item', '· ' + it)).style.fontSize = '13px'
+        }
+      }
+    }
+    body.appendChild(c)
   }
 
-  body.innerHTML = ''
-  
-  // 它想改的：放在所有 tab 之前，因为这是要你处理的事，不该藏在某个 tab 里
-  if (SELF_REQUESTS.length) body.appendChild(renderRequestBlock())
-
-  if (SELF_TAB === 'card') {
+  // 怎么称呼你 + 说话风格
+  {
     const c = el('div', 'card')
-    c.appendChild(el('div', 'op-t', '名字'))
-    c.appendChild(el('div', 'txt', d.name || '（还没取名字）')).style.cssText = 'font-size:15px;margin-bottom:14px'
+    c.style.marginTop = '12px'
+    c.appendChild(selfBlockTitle('它怎么称呼你', ''))
 
-    c.appendChild(el('div', 'op-t', '我是谁'))
+    const sal = el('div')
+    sal.style.cssText = 'font-size:13px;line-height:1.8'
+    sal.textContent = '按关系阶段自动变：陌生叫「你」，熟了叫「哎」，亲近了才叫昵称或专属称呼。'
+    c.appendChild(sal)
+
+    c.appendChild(selfBlockTitle('说话方式', '')).style.marginTop = '14px'
+
+    const styleRow = el('div')
+    styleRow.style.cssText = 'display:flex;align-items:center;gap:10px;font-size:12.5px'
+    const styleText = el('span', '', '每轮几条、多少字、引用频率、回复延迟 —— 这些在设置页里调')
+    styleText.style.cssText = 'flex:1;color:#8b949e'
+    styleRow.appendChild(styleText)
+    const goBtn = el('button', 'mini-btn', '去设置')
+    goBtn.style.cssText += ';font-size:11px;padding:1px 8px'
+    goBtn.onclick = () => showGroup('settings', 'v-settings')
+    styleRow.appendChild(goBtn)
+    c.appendChild(styleRow)
+
+    body.appendChild(c)
+  }
+
+  /* ============================================================
+   * 第二段：协商中
+   * ============================================================ */
+  body.appendChild(selfSection('协商中', '这些是它想动、等你点头的'))
+
+  // 它想改的
+  if (SELF_REQUESTS.length) {
+    body.appendChild(renderRequestBlock())
+  } else {
+    const c = el('div', 'card')
+    c.appendChild(selfBlockTitle('它想改的', ''))
+    c.appendChild(el('div', 'hint', '暂时没有。它想改被锁住的东西时会提申请，出现在这儿。')).style.fontSize = '11.5px'
+    body.appendChild(c)
+  }
+
+  // 名字
+  {
+    const c = el('div', 'card')
+    c.style.marginTop = '12px'
+    c.appendChild(selfBlockTitle('名字', d.nameReason ? '它自己取的' : '还没定'))
+
+    const nameRow = el('div')
+    nameRow.style.cssText = 'display:flex;align-items:center;gap:10px'
+    const nm = el('div', 'txt', d.name || '（还没取名字）')
+    nm.style.cssText = 'font-size:15px;font-weight:600'
+    nameRow.appendChild(nm)
+    if (d.nameReason) {
+      const why = el('span', 'hint', d.nameReason)
+      why.style.cssText = 'font-size:11.5px;color:#8b949e'
+      nameRow.appendChild(why)
+    }
+    c.appendChild(nameRow)
+    body.appendChild(c)
+  }
+
+  // 它自己写的规矩
+  {
+    const c = el('div', 'card')
+    c.style.marginTop = '12px'
+    c.appendChild(selfBlockTitle('它自己写的规矩', '进 prompt 当约束'))
+
+    const traits = d.traits || []
+    if (!traits.length) {
+      c.appendChild(el('div', 'empty', '还没有。它会在反思里慢慢总结出来。'))
+    } else {
+      for (const [k, v] of traits) {
+        const row = el('div')
+        row.style.cssText = 'padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:13px'
+        const kb = el('b', '', k + '：')
+        kb.style.cssText = 'color:#8b949e;font-weight:500'
+        row.appendChild(kb)
+        row.appendChild(el('span', '', v))
+        c.appendChild(row)
+      }
+    }
+    body.appendChild(c)
+  }
+
+  /* ============================================================
+   * 第三段：它长的
+   * ============================================================ */
+  body.appendChild(selfSection('它长的', '这些是它自己积出来的，你不改'))
+
+  // 我是谁
+  {
+    const c = el('div', 'card')
+    c.appendChild(selfBlockTitle('我是谁', d.aboutOwner === 'me' ? '你写的' : '它自己写的'))
+
     const ta = el('textarea')
     ta.value = d.selfText || ''
     ta.rows = 5
-    ta.style.cssText = 'width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--text);font-size:13px;line-height:1.6'
+    ta.style.cssText =
+      'width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--text);font-size:13px;line-height:1.6'
     c.appendChild(ta)
+
     const b1 = el('button', 'mini-btn', '保存自述')
     b1.style.marginTop = '8px'
-c.appendChild(b1)
+    b1.onclick = () => saveSelfText(ta.value)
+    c.appendChild(b1)
 
-    // 所有权：谁写的决定它能不能覆盖。
-    // 之前没这个概念，用户改完 12 小时就被自我反思盖掉了。
+    // 所有权切换
     const ownerRow = el('div')
-    ownerRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11.5px;line-height:1.7'
+    ownerRow.style.cssText =
+      'display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11.5px;line-height:1.7'
     const isMine = d.aboutOwner === 'me'
     const ownerTag = el('span')
     ownerTag.innerHTML = isMine
@@ -2369,14 +2482,15 @@ c.appendChild(b1)
     ownerBtn.onclick = () => switchSelfOwner(isMine ? 'it' : 'me')
     ownerRow.appendChild(ownerBtn)
     c.appendChild(ownerRow)
-    
-    // 「我写」模式下，它只能在用户那段下面补充，不能改原文。
-    // 单独显示成一块，让用户一眼看出哪些是自己写的、哪些是它加的。
+
     if (d.aboutOwner === 'me' && d.aboutExtra) {
       const extraBox = el('div')
-      extraBox.style.cssText = 'margin-top:14px;padding:10px 12px;border-radius:8px;background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.25)'
-      extraBox.appendChild(el('div', 'op-t', '它补充的')).style.cssText = 'color:#3fb950;margin-bottom:6px'
-      extraBox.appendChild(el('div', 'txt', d.aboutExtra)).style.cssText = 'font-size:12.5px;line-height:1.7;white-space:pre-wrap'
+      extraBox.style.cssText =
+        'margin-top:14px;padding:10px 12px;border-radius:8px;background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.25)'
+      extraBox.appendChild(selfBlockTitle('它补充的', '')).style.color = '#3fb950'
+      const et = el('div', 'txt', d.aboutExtra)
+      et.style.cssText = 'font-size:12.5px;line-height:1.7;white-space:pre-wrap'
+      extraBox.appendChild(et)
       const note = el('div', 'hint', '这段它会随反思更新；上面那段是你的，它不会动。')
       note.style.cssText = 'font-size:11px;margin-top:6px;color:#8b949e'
       extraBox.appendChild(note)
@@ -2386,188 +2500,229 @@ c.appendChild(b1)
       note.style.cssText = 'font-size:11px;margin-top:10px;color:#8b949e'
       c.appendChild(note)
     }
-    c.appendChild(b1)
 
-    c.appendChild(el('div', 'op-t', '我给自己定的规矩')).style.marginTop = '16px'
-    if (!(d.traits || []).length) {
-      c.appendChild(el('div', 'empty', '还没有特征'))
+    body.appendChild(c)
+  }
+
+  // 心情 + 生活
+  {
+    const c = el('div', 'card')
+    c.style.marginTop = '12px'
+    c.appendChild(selfBlockTitle('它现在的心情', ''))
+
+    if (!d.mood) {
+      c.appendChild(el('div', 'empty', '现在没有特别的心情'))
     } else {
-      for (const [k, v] of d.traits) {
-        const row = el('div', 'item')
-        row.appendChild(el('b', '', k + '：')).style.fontSize = '13px'
-        row.appendChild(el('span', 'sub', v))
+      const mrow = el('div')
+      mrow.style.cssText = 'display:flex;align-items:baseline;gap:10px'
+      const emo = el('b', '', d.mood.情绪 || '—')
+      emo.style.cssText = 'font-size:15px'
+      mrow.appendChild(emo)
+      const inten = Number(d.mood.强度 ?? 0)
+      mrow.appendChild(el('span', 'hint', `强度 ${inten.toFixed(2)}`)).style.fontSize = '11.5px'
+      c.appendChild(mrow)
+      if (d.mood.原因) {
+        const why = el('div', 'txt', '因为：' + d.mood.原因)
+        why.style.cssText = 'font-size:12.5px;margin-top:6px;color:#8b949e'
+        c.appendChild(why)
+      }
+    }
+
+    const life = d.life || []
+    if (life.length) {
+      c.appendChild(selfBlockTitle('它的生活', '')).style.marginTop = '14px'
+      for (const l of life.slice(-8).reverse()) {
+        const row = el('div', 'item', '· ' + l)
+        row.style.cssText = 'font-size:12.5px;line-height:1.7;padding:2px 0'
         c.appendChild(row)
       }
     }
     body.appendChild(c)
   }
 
-  if (SELF_TAB === 'mind') {
-    // 生活
-    const c1 = el('div', 'card')
-    c1.appendChild(el('div', 'op-t', '我自己的生活'))
-    const life = d.life || []
-    if (!life.length) c1.appendChild(el('div', 'empty', '还没有生活记录'))
-    for (const l of life.slice(-12).reverse()) {
-      c1.appendChild(el('div', 'item', '· ' + l)).style.fontSize = '13px'
-    }
-    body.appendChild(c1)
-
-    // 准备做的事
-    const c2 = el('div', 'card')
-    c2.style.marginTop = '12px'
-    c2.appendChild(el('div', 'op-t', '我准备做的事'))
-    c2.appendChild(el('div', 'hint', '这些是我自己记着要做的，不是等人回答')).style.marginBottom = '8px'
-
-    const todo = d.intent?.todo || []
-    if (!todo.length) c2.appendChild(el('div', 'empty', '没有待办'))
-    for (const x of todo) {
-      const row = el('div', 'item')
-      row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)'
-      const mid = el('div')
-      mid.style.cssText = 'flex:1'
-      mid.appendChild(el('div', 'txt', x.text))
-      mid.appendChild(el('div', 'sub', x.source + ' · ' + x.date))
-      row.appendChild(mid)
-
-      const okb = el('button', 'mini-btn', '完成')
-      okb.onclick = () => intentAction('complete', x.text)
-      const delb = el('button', 'mini-btn danger', '删')
-      delb.onclick = () => intentAction('drop', x.text)
-      row.appendChild(okb)
-      row.appendChild(delb)
-      c2.appendChild(row)
-    }
-
-    // 加一条
-    const addRow = el('div')
-    addRow.style.cssText = 'display:flex;gap:8px;margin-top:10px'
-    const inp = el('input')
-    inp.placeholder = '加一条……'
-    inp.style.cssText = 'flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px'
-    const addb = el('button', 'mini-btn', '加')
-    addb.onclick = () => {
-      if (inp.value.trim()) intentAction('add', inp.value.trim())
-    }
-    addRow.appendChild(inp)
-    addRow.appendChild(addb)
-    c2.appendChild(addRow)
-    body.appendChild(c2)
-
-    // 只属于它自己的记忆：scope === 'shared' 的经历/洞察。
-    // 这些不属于任何一个人，所以放这里；如果一条都没有，整块不显示。
-    const own = d.ownMemories || []
-    if (own.length) {
-      const c3 = el('div', 'card')
-      c3.style.marginTop = '12px'
-      c3.appendChild(el('div', 'op-t', '只属于我自己的记忆'))
-      c3.appendChild(el('div', 'hint', '不跟某个人、某个群绑在一起的')).style.marginBottom = '8px'
-      for (const x of own) {
-        const row = el('div', 'item')
-        row.style.cssText = 'padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)'
-        row.appendChild(el('div', 'txt', x.text || x.title || ''))
-        const meta = [x.date, x.kind === 'insight' ? '想法' : '经历'].filter(Boolean).join(' · ')
-        if (meta) row.appendChild(el('div', 'sub', meta)).style.fontSize = '11px'
-        c3.appendChild(row)
-      }
-      body.appendChild(c3)
-    }
-  }
-
-  if (SELF_TAB === 'mood') {
+  // 学到的说话方式 + 问题 + 自己的记忆
+  {
     const c = el('div', 'card')
-    if (!d.mood) {
-      c.appendChild(el('div', 'empty', '现在没有特别的心情'))
-    } else {
-      c.appendChild(el('div', 'op-t', d.mood.情绪 || '—'))
-      c.appendChild(el('div', 'sub', '强度 ' + (d.mood.强度 ?? '?') + (d.mood.效价 !== undefined ? ' · 效价 ' + d.mood.效价 : '')))
-      if (d.mood.原因) c.appendChild(el('div', 'txt', '因为：' + d.mood.原因)).style.marginTop = '8px'
-    }
-    if ((d.moodHistory || []).length) {
-      c.appendChild(el('div', 'op-t', '最近变化')).style.marginTop = '16px'
-      for (const h of d.moodHistory.slice(-5).reverse()) {
-        c.appendChild(el('div', 'sub', (h.情绪 || '?') + ' ' + (h.强度 ?? '') + '  ' + (h.at ? new Date(h.at).toLocaleString() : '')))
-      }
-    }
-    body.appendChild(c)
-  }
+    c.style.marginTop = '12px'
+    c.appendChild(selfBlockTitle('它学到的说话方式', '从"回得好的"里挑出来的'))
 
-  if (SELF_TAB === 'core') {
-    const c = el('div', 'card')
-    c.appendChild(el('div', 'op-t', '我一定不能弄错的'))
-    c.appendChild(el('div', 'hint', '这个只有你能改。它只能提申请。')).style.marginBottom = '8px'
-    const core = d.core || {}
-    for (const [kind, items] of Object.entries(core)) {
-      if (!Array.isArray(items) || !items.length) continue
-      c.appendChild(el('div', 'op-t', kind)).style.marginTop = '10px'
-      for (const it of items) c.appendChild(el('div', 'item', '· ' + it))
-    }
-    if (!Object.keys(core).length) c.appendChild(el('div', 'empty', '还是空的'))
-    body.appendChild(c)
-  }
-
-  if (SELF_TAB === 'issues') {
-    const c = el('div', 'card')
-    c.appendChild(el('span', 'tag', '自动生成')).style.cssText = 'background:rgba(255,255,255,.08);font-size:11px'
-    c.appendChild(el('div', 'op-t', '它自己发现的问题')).style.marginTop = '8px'
-    const issues = d.issues || []
-    if (!issues.length) c.appendChild(el('div', 'empty', '没有发现问题'))
-    for (const it of issues.slice(-15).reverse()) {
-      const row = el('div', 'item')
-      row.appendChild(el('div', 'txt', it.text || it.msg || String(it)))
-      if (it.at) row.appendChild(el('div', 'sub', new Date(it.at).toLocaleString()))
-      c.appendChild(row)
-    }
-    body.appendChild(c)
-  }
-
-  if (SELF_TAB === 'plays') {
-    const c = el('div', 'card')
-    c.appendChild(el('div', 'op-t', '我学到的说话方式'))
-    c.appendChild(
-      el('div', 'hint', '从"回得好的"那些对话里挑出来的。下次遇到类似场景，我会参考。'),
-    ).style.marginBottom = '10px'
-
-    // loadPlays() 返回的是 { score, scene, reply, date }，不是字符串。
-    // 之前直接 String(x) 所以显示成 [object Object]。
     const plays = d.plays || []
     if (!plays.length) {
       c.appendChild(el('div', 'empty', '还没学到'))
     } else {
-      for (const x of plays.slice(0, 20)) {
-        const row = el('div', 'item')
-        row.style.cssText = 'padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)'
-
-        // 场景
+      for (const x of plays.slice(0, 5)) {
+        const row = el('div')
+        row.style.cssText = 'padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)'
         if (x.scene) {
-          const sc = el('div')
-          sc.style.cssText = 'font-size:11.5px;color:#8b949e;margin-bottom:3px'
-          sc.textContent = '他会说：' + x.scene
+          const sc = el('div', 'hint', '他会说：' + x.scene)
+          sc.style.cssText = 'font-size:11px;color:#8b949e;margin-bottom:2px'
           row.appendChild(sc)
         }
-
-        // 我的回法
-        const rp = el('div')
-        rp.style.cssText = 'font-size:13px;line-height:1.5'
-        rp.textContent = x.reply || '（没有内容）'
-        row.appendChild(rp)
-
-        // 评分 + 日期
-        const meta = []
-        if (x.score !== undefined) meta.push('评分 ' + x.score)
-        if (x.date) meta.push(x.date)
-        if (meta.length) {
-          const m = el('div')
-          m.style.cssText = 'font-size:11px;opacity:.65;margin-top:3px'
-          m.textContent = meta.join(' · ')
-          row.appendChild(m)
-        }
+        row.appendChild(el('div', 'txt', x.reply || '（没有内容）')).style.fontSize = '12.5px'
         c.appendChild(row)
       }
     }
+
+    const issues = d.issues || []
+    if (issues.length) {
+      c.appendChild(selfBlockTitle('它发现的问题', '')).style.marginTop = '14px'
+      for (const it of issues.slice(-5).reverse()) {
+        const row = el('div', 'item', '· ' + (it.text || it.msg || String(it)))
+        row.style.cssText = 'font-size:12px;line-height:1.7;padding:2px 0;color:#8b949e'
+        c.appendChild(row)
+      }
+    }
+
+    const own = d.ownMemories || []
+    if (own.length) {
+      c.appendChild(selfBlockTitle('只属于它自己的记忆', '不和某个人绑在一起')).style.marginTop = '14px'
+      for (const x of own.slice(0, 5)) {
+        const row = el('div', 'item', '· ' + (x.text || x.title || ''))
+        row.style.cssText = 'font-size:12px;line-height:1.7;padding:2px 0;color:#8b949e'
+        c.appendChild(row)
+      }
+    }
+
+    body.appendChild(c)
+  }
+
+  /* ============================================================
+   * 观察：它是怎么变的
+   * ============================================================ */
+  body.appendChild(selfSection('它是怎么变的', '看它改了什么，不是让你改'))
+
+  {
+    const c = el('div', 'card')
+    c.appendChild(selfBlockTitle('人格变化', '选两个版本对比'))
+
+    const row = el('div')
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px'
+
+    const mkSelect = () => {
+      const s = el('select')
+      s.style.cssText =
+        'flex:1;min-width:120px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:inherit;font-size:12px'
+      return s
+    }
+
+    const selOld = mkSelect()
+    const selNew = mkSelect()
+    row.appendChild(selOld)
+    row.appendChild(el('span', 'hint', '→')).style.fontSize = '12px'
+    row.appendChild(selNew)
+
+    const cmp = el('button', 'mini-btn', '对比')
+    cmp.style.cssText += ';font-size:11px;padding:1px 10px'
+    row.appendChild(cmp)
+    c.appendChild(row)
+
+    const diffBox = el('div')
+    diffBox.style.cssText =
+      'margin-top:10px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.7;max-height:360px;overflow:auto'
+    c.appendChild(diffBox)
+
+    // 载入版本列表
+    api('/api/self/versions')
+      .then((r) => {
+        const vs = r.versions || []
+        if (!vs.length) {
+          diffBox.innerHTML = '<div class="hint" style="color:#8b949e;font-family:inherit">还没有历史快照。改一次自述就会留一份。</div>'
+          return
+        }
+        const fill = (s, idx) => {
+          s.innerHTML = ''
+          vs.forEach((v, i) => {
+            const o = document.createElement('option')
+            o.value = v.id
+            o.textContent = v.id.replace(/^(\d{8})-(\d{6})$/, '$1 $2').replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')
+            s.appendChild(o)
+          })
+          if (vs[idx]) s.value = vs[idx].id
+        }
+        fill(selOld, 1)
+        fill(selNew, 0)
+
+        const run = async () => {
+          diffBox.innerHTML = '<div class="hint" style="color:#8b949e;font-family:inherit">对比中…</div>'
+          try {
+            const r2 = await api(
+              `/api/self/versions/diff?a=${encodeURIComponent(selOld.value)}&b=${encodeURIComponent(selNew.value)}`,
+            )
+            diffBox.innerHTML = ''
+            for (const ln of r2.lines || []) {
+              const div = document.createElement('div')
+              div.style.cssText = 'white-space:pre-wrap;padding:1px 6px;border-radius:3px'
+              if (ln.type === 'add') {
+                div.style.background = 'rgba(63,185,80,.12)'
+                div.textContent = '+ ' + ln.text
+              } else if (ln.type === 'del') {
+                div.style.background = 'rgba(248,81,73,.12)'
+                div.textContent = '- ' + ln.text
+              } else {
+                div.style.color = '#8b949e'
+                div.textContent = '  ' + ln.text
+              }
+              if (!ln.text.trim()) div.textContent = ''
+              diffBox.appendChild(div)
+            }
+          } catch (e) {
+            diffBox.innerHTML = '<div class="hint" style="color:#f85149;font-family:inherit">对比失败：' + esc(e.message) + '</div>'
+          }
+        }
+        cmp.onclick = run
+        run()
+      })
+      .catch(() => {
+        diffBox.innerHTML = '<div class="hint" style="color:#8b949e;font-family:inherit">版本列表读不到</div>'
+      })
+
+    body.appendChild(c)
+  }
+
+  // 漂移时间线
+  {
+    const c = el('div', 'card')
+    c.style.marginTop = '12px'
+    c.appendChild(selfBlockTitle('它变过几次', '相似度低于 45% 才算明显变了'))
+
+    const box = el('div')
+    box.style.cssText = 'margin-top:8px'
+    box.innerHTML = '<div class="hint" style="color:#8b949e">读取中…</div>'
+    c.appendChild(box)
+
+    api('/api/self/drift')
+      .then((r) => {
+        const items = r.items || []
+        box.innerHTML = ''
+        if (!items.length) {
+          box.innerHTML = '<div class="hint" style="color:#8b949e">还没记到明显的变化。</div>'
+          return
+        }
+        for (const it of items.slice(0, 10)) {
+          const row = el('div')
+          row.style.cssText = 'padding:8px 0;border-bottom:1px solid rgba(255,255,255,.04)'
+          const head = el('div')
+          head.style.cssText = 'font-size:11px;color:#8b949e;margin-bottom:3px'
+          head.textContent =
+            new Date(it.at).toLocaleString() + ' · 相似度 ' + Math.round((it.sim || 0) * 100) + '%'
+          row.appendChild(head)
+          const f = el('div', 'hint', '旧：' + String(it.from || '').slice(0, 60))
+          f.style.cssText = 'font-size:11.5px;color:#8b949e;line-height:1.6'
+          row.appendChild(f)
+          const t2 = el('div', 'txt', '新：' + String(it.to || '').slice(0, 60))
+          t2.style.cssText = 'font-size:12px;line-height:1.6'
+          row.appendChild(t2)
+          box.appendChild(row)
+        }
+      })
+      .catch(() => {
+        box.innerHTML = '<div class="hint" style="color:#8b949e">漂移记录读不到</div>'
+      })
+
     body.appendChild(c)
   }
 }
+
 
 /**
  * 切换「我是谁」归谁写。

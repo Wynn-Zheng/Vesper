@@ -25,6 +25,12 @@ export interface PersonFact {
   date: string
   confidence: number
   visibility: Visibility
+  /**
+   * 这条是谁确认的：
+   *   it → 它从聊天里提炼的（默认）
+   *   me → 用户确认过的，模型整理时不许覆盖/删除
+   */
+  by?: 'it' | 'me'
   /** 从哪句话来的 */
   source?: string
   /** 最后一次被提起/确认的日期；没有就是首次记录的日期 */
@@ -69,9 +75,16 @@ function parseFactLine(line: string): PersonFact | null {
   const confidence = Number(m[3])
   if (!Number.isFinite(confidence)) return null
 
-  const label = m[5]?.trim()
-  const visibility: Visibility =
-    label === '公开' ? 'public' : label === '私密' ? 'private' : label === '待确认' ? 'unsure' : 'private'
+  // 括号里除了可见性，还可能有「你确认」。两种顺序都认：
+  //   公开，你确认 / 你确认，公开
+  // 老行没有这个记号 → 默认 it。
+  const extras = (m[5] ?? '')
+    .split('，')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const by: 'it' | 'me' = extras.includes('你确认') ? 'me' : 'it'
+  const label = extras.find((x) => x === '公开' || x === '私密' || x === '待确认')
+  const visibility: Visibility = label === '公开' ? 'public' : label === '私密' ? 'private' : label === '待确认' ? 'unsure' : 'private'
   const date = m[2]!
   const lastConfirmed = m[4]?.trim()
   const source = m[6]?.trim()
@@ -82,6 +95,7 @@ function parseFactLine(line: string): PersonFact | null {
     confidence: Math.min(1, Math.max(0, confidence)),
     lastConfirmed: lastConfirmed || date,
     visibility,
+    by,
     ...(source ? { source } : {}),
   }
 }
@@ -163,7 +177,9 @@ export function renderFacts(facts: PersonFact[]): string {
 
 function formatFact(x: PersonFact): string {
   const confirmed = x.lastConfirmed && x.lastConfirmed !== x.date ? `，确认 ${x.lastConfirmed}` : ''
-  return `- ${safe(x.text)}（${x.date}，置信 ${x.confidence}${confirmed}，${LABEL[x.visibility]}）${x.source ? `｜${safe(x.source)}` : ''}`
+  // 只有用户确认过的才写记号；默认 it 不写，老行的格式保持不变。
+  const byMe = x.by === 'me' ? '，你确认' : ''
+  return `- ${safe(x.text)}（${x.date}，置信 ${x.confidence}${confirmed}，${LABEL[x.visibility]}${byMe}）${x.source ? `｜${safe(x.source)}` : ''}`
 }
 
 export function appendFacts(personId: string, facts: PersonFact[]): void {
@@ -193,12 +209,15 @@ export function appendFacts(personId: string, facts: PersonFact[]): void {
       return
     }
 
-    // 合并：同一条（文字完全一样）就更新，新的追加
+    // 合并：同一条（文字完全一样）就更新，新的追加。
+    // 用户确认过的条目是锁定的：模型再怎么提炼也不覆盖。
     const merged = [...parsed]
     for (const item of allowed) {
       const i = merged.findIndex((x) => x.text === item.text)
-      if (i >= 0) merged[i] = { ...merged[i]!, ...item }
-      else merged.push(item)
+      if (i >= 0) {
+        if (merged[i]!.by === 'me') continue
+        merged[i] = { ...merged[i]!, ...item }
+      } else merged.push(item)
     }
 
     writeAtomic(f, renderFacts(merged))
@@ -217,7 +236,24 @@ export function touchFact(personId: string, text: string, date: string): boolean
     .map((f) => ({ f, sim: similarity(f.text, text) }))
     .sort((a, b) => b.sim - a.sim)[0]
   if (!best || best.sim < 0.85) return false
+  // 用户确认过的事实，连确认日期也不让模型改
+  if (best.f.by === 'me') return false
   return rewrite(personId, (f) => (f.text === best.f.text ? { ...f, lastConfirmed: date } : f))
+}
+
+/**
+ * 用户确认 / 取消确认一条事实（按 facts.md 里的顺序，0 开始）。
+ * confirmed 对应 by=me；取消后回到 by=it，模型才能继续更新它。
+ */
+export function setFactBy(personId: string, index: number, by: 'it' | 'me'): boolean {
+  const f = factsFile(personId)
+  if (!existsSync(f)) return false
+  const facts = loadFacts(personId)
+  if (!Number.isInteger(index) || index < 0 || index >= facts.length) return false
+  if (facts[index]!.by === by) return true
+  const next = facts.map((x, i) => (i === index ? { ...x, by } : x))
+  writeAtomic(f, renderFacts(next))
+  return true
 }
 
 function rewrite(personId: string, fn: (f: PersonFact) => PersonFact): boolean {
@@ -260,7 +296,11 @@ export function factsFilePath(personId: string): string {
   return factsFile(personId)
 }
 
-/** 删掉一条事实（记错的就删，不留着误导） */
+/**
+ * 删掉一条事实（记错的就删，不留着误导）。
+ *
+ * 这是用户操作，by=me 也允许删；防模型覆盖/删除的锁在 distill 和 appendFacts 里。
+ */
 export function deleteFact(personId: string, text: string): boolean {
   const f = factsFile(personId)
   if (!existsSync(f)) return false

@@ -216,6 +216,62 @@ export function logDrift(to: string, from: string, sim: number): void {
   appendJsonl(DRIFT_LOG, { at: Date.now(), from: from.slice(0, 200), to: to.slice(0, 200), sim })
 }
 
+/**
+ * 两份自述的行级对比。
+ *
+ * 用于「人格变化」：让人看见它到底哪几句变了，而不是只给一个相似度。
+ * 自己实现 LCS，不引依赖 —— 项目运行时依赖只有 ws / yaml。
+ *
+ * 超过 2000 行直接退化成「全删 + 全加」：自述不可能这么长，
+ * 真到这么长就是数据出问题了，没必要为它跑 O(n²)。
+ */
+export function lineDiff(
+  a: string,
+  b: string,
+): Array<{ type: 'same' | 'add' | 'del'; text: string }> {
+  const A = a.split(/\r?\n/)
+  const B = b.split(/\r?\n/)
+
+  if (A.length > 2000 || B.length > 2000) {
+    return [
+      ...A.map((text) => ({ type: 'del' as const, text })),
+      ...B.map((text) => ({ type: 'add' as const, text })),
+    ]
+  }
+
+  // 经典 LCS 表。A.length*B.length 最多 4e6，可接受。
+  const n = A.length
+  const m = B.length
+  const dp: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i]![j] = A[i] === B[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!)
+    }
+  }
+
+  const out: Array<{ type: 'same' | 'add' | 'del'; text: string }> = []
+  let i2 = 0
+  let j2 = 0
+  while (i2 < n && j2 < m) {
+    if (A[i2] === B[j2]) {
+      out.push({ type: 'same', text: A[i2]! })
+      i2++
+      j2++
+    } else if (dp[i2 + 1]![j2]! >= dp[i2]![j2 + 1]!) {
+      out.push({ type: 'del', text: A[i2]! })
+      i2++
+    } else {
+      out.push({ type: 'add', text: B[j2]! })
+      j2++
+    }
+  }
+  while (i2 < n) out.push({ type: 'del', text: A[i2++]! })
+  while (j2 < m) out.push({ type: 'add', text: B[j2++]! })
+
+  return out
+}
+
+
 export function loadDrifts(limit = 20): Array<{ at: number; from: string; to: string; sim: number }> {
   if (!existsSync(DRIFT_LOG)) return []
   const out: Array<{ at: number; from: string; to: string; sim: number }> = []

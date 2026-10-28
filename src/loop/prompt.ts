@@ -1,5 +1,6 @@
 import type { Rules } from '../core/config.ts'
 import type { ChatMessage } from '../llm/types.ts'
+import { listPeople } from '../people/store.ts'
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -33,6 +34,8 @@ export interface PromptParts {
   self?: string
   /** 现在跟你说话的是谁 */
   personName?: string
+  /** 和这个人的关系（主人/朋友/同事/网友/陌生人） */
+  personRole?: string
   /** 他是谁（一段画像） */
   profile?: string
   /** 关于你们的关系 */
@@ -56,6 +59,26 @@ export function replyBudget(rules: Rules, userChars = 0): number {
   return Math.round(base * 1.4)
 }
 
+/**
+ * 调用方没直接传关系时，按名字 / 账号 / id 回档案里找。
+ *
+ * chat/preview 目前只把 personName 传进来，没有 personId；
+ * 在这里补一次查找，role 才能真正进 prompt，而不是只有测试能看到。
+ */
+function roleOfPerson(personName?: string): string | undefined {
+  const key = personName?.trim()
+  if (!key) return undefined
+  try {
+    const hit = listPeople().find(
+      (p) => p.name === key || p.id === key || p.accounts.some((a) => a.id === key),
+    )
+    return hit?.role?.trim() || undefined
+  } catch {
+    // prompt 组装不能因为读档案失败就整轮崩掉
+    return undefined
+  }
+}
+
 /** 由 rules.yaml + 自我 + 画像 + 关系 + 记忆拼出 system prompt。 */
 export function buildSystem(parts: PromptParts): string {
   const {
@@ -64,6 +87,7 @@ export function buildSystem(parts: PromptParts): string {
     self,
     codeMap,
     personName,
+    personRole,
     profile,
     relation,
     memory,
@@ -73,7 +97,11 @@ export function buildSystem(parts: PromptParts): string {
   } = parts
   const lines: string[] = []
 
-  lines.push(`你在 QQ 上跟${personName ? `「${personName}」` : '一个人'}聊天。这不是客服，是两个人说话。`)
+  // 关系跟在人物称呼后面，让模型知道现在是谁在说话。调用方显式传了就用，
+  // 没传就回档案里按名字找一次（见 roleOfPerson）。
+  const role = personRole?.trim() || roleOfPerson(personName)
+  const who = personName ? `「${personName}」` : '一个人'
+  lines.push(`你在 QQ 上跟${who}${role ? `（关系：${role}）` : ''}聊天。这不是客服，是两个人说话。`)
   lines.push('')
 
   if (self?.trim()) {

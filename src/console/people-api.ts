@@ -98,6 +98,8 @@ async function handlePeopleApiInner(
         id: person.id,
         名字: person.name || person.id,
         账号: primaryAccount(person.id),
+        角色: person.role ?? '',
+        名字锁: person.nameLocked === true,
         在群: inGroups,
         群数: inGroups.length,
         关系: Math.round(rel.closeness),
@@ -170,6 +172,8 @@ async function handlePeopleApiInner(
       名字: meta.name || id,
       账号: primaryAccount(id),
       账号列表: accounts,
+      角色: meta.role ?? '',
+      名字锁: meta.nameLocked === true,
       首次见到: meta.firstSeen ?? 0,
       在群: inGroups,
       关系: {
@@ -189,6 +193,43 @@ async function handlePeopleApiInner(
         .filter((e) => accounts.some((a) => e.scope === `private:${a}`))
         .slice(-30),
     })
+    return true
+  }
+
+  /* ============ 确认 / 取消确认一条事实 ============ */
+  if (method === 'POST' && path === '/api/person/fact/confirm') {
+    const raw = JSON.parse((await readBody(req)) || '{}') as unknown
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { id?: unknown; index?: unknown; confirmed?: unknown }) : {}
+    const id = String(body.id ?? '')
+    const indexValue = body.index
+    const index =
+      typeof indexValue === 'number'
+        ? indexValue
+        : typeof indexValue === 'string' && indexValue.trim()
+          ? Number(indexValue)
+          : Number.NaN
+    const { isValidPersonId, loadPerson } = await import('../people/store.ts')
+    if (!isValidPersonId(id)) {
+      json(res, 400, { error: 'id 不对' })
+      return true
+    }
+    if (!Number.isInteger(index) || index < 0) {
+      json(res, 400, { error: 'index 不对' })
+      return true
+    }
+    if (!loadPerson(id)) {
+      json(res, 404, { error: '没有这个人的档案' })
+      return true
+    }
+
+    // 用户确认过 → me；取消 → it。其他值一律按取消处理，和 body 的布尔语义一致。
+    const by: 'it' | 'me' = body.confirmed === true ? 'me' : 'it'
+    const { setFactBy } = await import('../memory/facts.ts')
+    if (!setFactBy(id, index, by)) {
+      json(res, 404, { error: '没有这条事实' })
+      return true
+    }
+    json(res, 200, { ok: true, index, by })
     return true
   }
 
@@ -234,6 +275,52 @@ async function handlePeopleApiInner(
     }
     savePerson({ ...meta, name })
     json(res, 200, { ok: true })
+    return true
+  }
+
+  /* ============ 改关系标签 / 锁名字 ============ */
+  if (method === 'PUT' && path === '/api/person/role') {
+    const raw = JSON.parse((await readBody(req)) || '{}') as unknown
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { id?: unknown; role?: unknown; nameLocked?: unknown }) : {}
+    const id = String(body.id ?? '')
+    const hasRole = Object.prototype.hasOwnProperty.call(body, 'role')
+    const hasLock = Object.prototype.hasOwnProperty.call(body, 'nameLocked')
+    if (!hasRole && !hasLock) {
+      json(res, 400, { error: '要给 role 或 nameLocked' })
+      return true
+    }
+
+    const { isValidPersonId, isPersonRole, loadPerson, savePerson } = await import('../people/store.ts')
+    if (!isValidPersonId(id)) {
+      json(res, 400, { error: 'id 不对' })
+      return true
+    }
+
+    // 先校验完再写盘：两个字段一起传时，坏的那个不能留下半截修改。
+    if (hasRole && !isPersonRole(body.role)) {
+      json(res, 400, { error: 'role 只能是 主人/朋友/同事/网友/陌生人' })
+      return true
+    }
+    if (hasLock && typeof body.nameLocked !== 'boolean') {
+      json(res, 400, { error: 'nameLocked 只能是 true / false' })
+      return true
+    }
+
+    const meta = loadPerson(id)
+    if (!meta) {
+      json(res, 404, { error: '没有这个人的档案' })
+      return true
+    }
+
+    const next = { ...meta }
+    if (hasRole) next.role = body.role as string
+    if (hasLock) next.nameLocked = body.nameLocked as boolean
+    savePerson(next)
+    json(res, 200, {
+      ok: true,
+      ...(next.role !== undefined ? { role: next.role } : {}),
+      ...(next.nameLocked !== undefined ? { nameLocked: next.nameLocked } : {}),
+    })
     return true
   }
 

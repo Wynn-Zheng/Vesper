@@ -277,6 +277,10 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
         .map((old) => ({ old, sim: similarity(old.text, text) }))
         .sort((a, b) => b.sim - a.sim)[0]
 
+      // 用户确认过的事实是锁定的：像它的新说法一律不碰，既不刷新也不覆盖，
+      // 更不把它当成冲突去问用户。只有确实无关的新事实才继续往下走。
+      if (best && best.old.by === 'me' && best.sim >= 0.45) continue
+
       if (best && best.sim > 0.9) {
         // 这条又提到了：刷新确认日期，别让它慢慢过期
         touchFact(opts.personId, best.old.text, date)
