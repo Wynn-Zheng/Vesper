@@ -3,6 +3,7 @@ import { boot } from './boot.ts'
 import { ToolRegistry } from './tools/registry.ts'
 import { codeTools } from './tools/code.ts'
 import { sendImageTool } from './tools/image.ts'
+import { requestChangeTool } from './tools/request.ts'
 import { refreshCodeMap } from './self/codemap.ts'
 import { startConsole } from './console/server.ts'
 import { loadRules } from './core/config.ts'
@@ -98,6 +99,9 @@ if (apiKey) {
   // 发图：截图工具只返回本地 path，模型有路径却没手段发出去 ——
   // 于是出现「截到了」但对方什么也没收到。
   registry.register(sendImageTool)
+
+  // 它想改自己被锁住的设定时，只能提申请（和 core 一个道理）
+  registry.register(requestChangeTool)
 
   // 电脑操作：默认关。开了才把工具放进注册表——
   // 不放进去的话模型根本不知道有这些工具，谈不上"误用"。

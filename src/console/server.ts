@@ -1024,6 +1024,43 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
     // 切换「我是谁」归谁写。'me' = 用户锁住，reflect/distill 不许覆盖。
+    // 它提的申请：列出来 / 批准 / 忽略
+    if (req.method === 'GET' && path === '/api/self/requests') {
+      const { loadRequests, labelOf } = await import('../self/requests.ts')
+      const list = loadRequests().map((r) => ({ ...r, label: labelOf(r.target) }))
+      json(res, 200, { requests: list })
+      return
+    }
+
+    if (req.method === 'POST' && path === '/api/self/requests/approve') {
+      const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; grant?: boolean }
+      const { takeRequest } = await import('../self/requests.ts')
+      const { applyRequest, recordApproval } = await import('../self/apply.ts')
+      const one = takeRequest(String(body.id ?? ''))
+      if (!one) {
+        json(res, 404, { error: '没有这条申请' })
+        return
+      }
+      const r = applyRequest(one, Boolean(body.grant))
+      if (r.ok) recordApproval(one, r.detail)
+      json(res, r.ok ? 200 : 400, r)
+      return
+    }
+
+    if (req.method === 'POST' && path === '/api/self/requests/reject') {
+      const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+      const { takeRequest, markRejected } = await import('../self/requests.ts')
+      const one = takeRequest(String(body.id ?? ''))
+      if (!one) {
+        json(res, 404, { error: '没有这条申请' })
+        return
+      }
+      // 记一笔冷却：同一条 24 小时内不许再提
+      markRejected(one.target, one.subject)
+      json(res, 200, { ok: true })
+      return
+    }
+
     if (req.method === 'PUT' && path === '/api/self/owner') {
       const body = JSON.parse((await readBody(req)) || '{}') as { owner?: string }
       const owner = body.owner === 'me' ? 'me' : 'it'

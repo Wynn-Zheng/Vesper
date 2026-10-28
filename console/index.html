@@ -2217,6 +2217,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let SELF_TAB = 'card'
 let SELF_DATA = null
+let SELF_REQUESTS = []
 
 const SELF_TABS = [
   ['card', '角色卡'],
@@ -2245,12 +2246,83 @@ async function loadSelfV2() {
   if (body) body.innerHTML = '<div class="hint">加载中…</div>'
 
   try {
-    SELF_DATA = await api('/api/self/v2')
+    // 申请列表和自述数据一起拉，省一次往返
+    const [selfData, reqData] = await Promise.all([
+      api('/api/self/v2'),
+      api('/api/self/requests').catch(() => ({ requests: [] })),
+    ])
+    SELF_DATA = selfData
+    SELF_REQUESTS = reqData.requests || []
     renderSelfV2()
   } catch (e) {
     if (body) body.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
   }
 }
+
+/**
+ * 「它想改的」区块。三个按钮对应三种授权程度：
+ *   批准     = 只改这一次，字段还是锁着
+ *   批准并交权 = 改内容 + 以后都让它自己管
+ *   忽略     = 丢掉，24 小时内同一条不许再提
+ */
+function renderRequestBlock() {
+  const card = el('div', 'card')
+  card.style.cssText = 'margin-bottom:14px;border-color:rgba(210,153,34,.45)'
+  const head = el('div', 'op-t', '它想改的（' + SELF_REQUESTS.length + '）')
+  head.style.color = '#d29922'
+  card.appendChild(head)
+
+  for (const r of SELF_REQUESTS) {
+    const box = el('div')
+    box.style.cssText = 'padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)'
+
+    const t = el('div')
+    t.style.cssText = 'font-size:12.5px;margin-bottom:4px'
+    t.innerHTML = '<b>' + esc(r.label || r.target) + '</b> → ' + esc(r.content)
+    box.appendChild(t)
+
+    if (r.reason) {
+      const why = el('div', 'hint', r.reason)
+      why.style.cssText = 'font-size:11.5px;margin-bottom:8px;color:#8b949e;line-height:1.6'
+      box.appendChild(why)
+    }
+
+    const row = el('div')
+    row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap'
+
+    const ok = el('button', 'mini-btn', '批准')
+    ok.onclick = () => decideRequest(r.id, 'approve', false)
+    row.appendChild(ok)
+
+    // 只有能长期授权的类型才给这个按钮：自述、规矩
+    if (r.target === 'about' || r.target === 'traits') {
+      const grant = el('button', 'mini-btn', '批准并交权')
+      grant.title = '以后这一项它自己就能改，不用再问你'
+      grant.onclick = () => decideRequest(r.id, 'approve', true)
+      row.appendChild(grant)
+    }
+
+    const no = el('button', 'mini-btn', '忽略')
+    no.onclick = () => decideRequest(r.id, 'reject', false)
+    row.appendChild(no)
+
+    box.appendChild(row)
+    card.appendChild(box)
+  }
+
+  return card
+}
+
+async function decideRequest(id, action, grant) {
+  try {
+    const r = await sendJson('/api/self/requests/' + action, { id, grant }, 'POST')
+    toast(action === 'reject' ? '忽略了' : (r.detail || '批了'))
+    loadSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
 
 function renderSelfV2() {
   const body = $('self-body')
@@ -2263,6 +2335,9 @@ function renderSelfV2() {
   }
 
   body.innerHTML = ''
+  
+  // 它想改的：放在所有 tab 之前，因为这是要你处理的事，不该藏在某个 tab 里
+  if (SELF_REQUESTS.length) body.appendChild(renderRequestBlock())
 
   if (SELF_TAB === 'card') {
     const c = el('div', 'card')
