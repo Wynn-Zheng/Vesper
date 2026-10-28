@@ -17,7 +17,7 @@
  *   - 只读命令（截图/窗口列表）直接给；改状态的（点击/打字）由调用方决定要不要确认
  */
 import { execFile, execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { loadRules } from '../core/config.ts'
 import { logDesktopAction } from './desktop-log.ts'
@@ -35,12 +35,16 @@ function ok(o: Record<string, unknown>): string {
  * ai-desktop.exe 的位置。找不到返回 ''（调用方给明确错误，而不是 spawn ENOENT）。
  *
  * 这是外部 Python 包（pip install ai-desktop），打包版不会自带。
- * 三条路找一个：
+ * 四条路找一个：
  *   1. 环境变量 AI_DESKTOP_EXE（最可靠，自己指定）
  *   2. %LOCALAPPDATA%\Programs\Python\Python3xx\Scripts\（默认安装位置）
- *   3. PATH 里的（conda / 系统 Python / 手动加过 PATH）
+ *   3. DSH 自带的 Python 运行时（开发机上 ai-desktop 常常只装在这里）
+ *   4. PATH 里的（conda / 系统 Python / 手动加过 PATH）
+ *
+ * 第 3 条是踩过的坑：一开始只找前两条，结果"体检"能找到（那边硬编码了 DSH 路径）、
+ * "工具连通性"说没装，两个页面结论打架。现在两边共用这一份解析。
  */
-function exePath(): string {
+export function exePath(): string {
   const fromEnv = process.env['AI_DESKTOP_EXE']
   if (fromEnv && existsSync(fromEnv)) return fromEnv
 
@@ -49,6 +53,23 @@ function exePath(): string {
     (v) => `${local}\\Programs\\Python\\Python${v}\\Scripts\\ai-desktop.exe`,
   )
   for (const p of guess) if (existsSync(p)) return p
+
+  // DSH 的 Python 运行时（本机实际就装在这里）
+  const home = process.env['USERPROFILE'] ?? ''
+  if (home) {
+    const runtimes = `${home}\\.dsh\\dsh-runtimes`
+    const direct = `${runtimes}\\dsh-primary-runtime\\dependencies\\python\\Scripts\\ai-desktop.exe`
+    if (existsSync(direct)) return direct
+    try {
+      for (const d of readdirSync(runtimes, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue
+        const p = `${runtimes}\\${d.name}\\dependencies\\python\\Scripts\\ai-desktop.exe`
+        if (existsSync(p)) return p
+      }
+    } catch {
+      /* 没有这个目录就算了 */
+    }
+  }
 
   // PATH 里找：where 是 Windows 自带命令，不会抛异常打断
   try {

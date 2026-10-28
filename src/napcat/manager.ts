@@ -139,9 +139,9 @@ export function start(): { ok: boolean; detail: string } {
       // 为什么要试好几次：QQ 起得有快有慢，5 秒时窗口可能还没建好；
       // 后台还会补开新的（实测有 3 个 QQ 进程各带一个控制台）。
       //
-      // 不用 unref：这几个定时器最多活 40 秒，不差这点；unref 过的话
-      // 万一 event loop 短暂空转就永远不执行了（踩过）。
-      for (const delay of [5_000, 12_000, 25_000, 40_000]) {
+      // 第一次 1.5 秒就开始找：QQ 起来后窗口几乎立刻出现，
+      // 等 5 秒才藏的话用户会看到"弹一下就没了"的闪屏。
+      for (const delay of [1_500, 3_000, 5_000, 8_000, 12_000, 20_000, 35_000]) {
         setTimeout(() => {
           hideQqConsole().catch(() => {})
         }, delay)

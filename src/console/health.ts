@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { loadRules } from '../core/config.ts'
 import { knownGroups, groupMembers } from '../people/groupcache.ts'
 import { listPeople, loadPerson } from '../people/store.ts'
+import { exePath as aiDesktopExe } from '../tools/desktop.ts'
 
 export type CheckLevel = 'ok' | 'warn' | 'fail'
 
@@ -317,12 +318,8 @@ function desktopKit(): CheckItem {
     const on = loadRules().rules.电脑操作?.enabled === true
     if (!on) return { id: 'desktop', name: '电脑操作', level: 'ok', detail: '关着（默认）' }
 
-    const exe = process.env['AI_DESKTOP_EXE'] ?? ''
-    const guess = [
-      exe,
-      'C:\\Users\\Lenovo\\.dsh\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\python\\Scripts\\ai-desktop.exe',
-    ].filter(Boolean)
-    const hit = guess.find((p) => p && existsSync(p))
+    // 和「工具连通性」共用同一份解析，免得一边说"能用"、一边说"没装"
+    const hit = aiDesktopExe()
     if (!hit) {
       return {
         id: 'desktop',
