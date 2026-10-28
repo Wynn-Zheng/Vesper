@@ -124,11 +124,11 @@ test('限流：max<=0 一律拒绝', () => {
 
 /* ---------------- 会话 ---------------- */
 
-test('会话：单会话最多留 40 轮', () => {
+test('会话：单会话最多留 60 轮（要大于压缩阈值 40，否则摘要永远不触发）', () => {
   clearSessions()
-  for (let i = 0; i < 50; i++) pushTurn('private:1', { role: 'user', content: `m${i}`, at: Date.now() })
+  for (let i = 0; i < 70; i++) pushTurn('private:1', { role: 'user', content: `m${i}`, at: Date.now() })
   const turns = getTurns('private:1')
-  assert.equal(turns.length, 40)
+  assert.equal(turns.length, 60)
   assert.equal(turns[0]!.content, 'm10', '最旧的应被挤掉')
 })
 

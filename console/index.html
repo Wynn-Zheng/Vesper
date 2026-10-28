@@ -3801,8 +3801,8 @@ async function loadFeatures() {
     // 上下文压缩
     const c = f.context || {}
     $('feat-context').innerHTML = [
-      ['超过多少条开始压', `${c.摘要阈值 ?? 20} 条`],
-      ['压完保留最近', `${c.保留最近 ?? 6} 条`],
+      ['超过多少条开始压', `${c.摘要阈值 ?? 40} 条`],
+      ['压完保留最近', `${c.保留最近 ?? 12} 条`],
     ].map(([k, val]) => `<div><span class="hint">${k}</span> <b>${esc(String(val))}</b></div>`).join('')
 
     // 情绪序列

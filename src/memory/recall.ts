@@ -1,6 +1,6 @@
 import type { Episode, Insight, RawTurn, Recalled, Scope } from './types.ts'
 import { loadFacts, effectiveConfidence } from './facts.ts'
-import { loadEpisodes, loadInsights, recentRaw, saveEpisode } from './store.ts'
+import { loadEpisodes, loadInsights, readRaw, saveEpisode } from './store.ts'
 import { loadOpen, type OpenItem } from '../people/open.ts'
 import { listPeople } from '../people/store.ts'
 
@@ -40,6 +40,32 @@ export function visible(scope: Scope, current: Scope): boolean {
 }
 
 const DAY = 86_400_000
+
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * 取最近 want 条"这个会话能看见"的原文。
+ *
+ * 原来是 `recentRaw(3).filter(...).slice(-8)`：把三天所有会话的记录全读出来，
+ * 只留 8 条。群多、人多的时候是纯 IO 浪费。现在从今天往前逐天读，凑够就停。
+ */
+function recentVisible(scope: Scope, want: number, maxDays = 3): RawTurn[] {
+  const days: RawTurn[][] = []
+  let total = 0
+  for (let i = 0; i < maxDays && total < want; i++) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    const vis = readRaw(dateKey(d)).filter((t) => visible(t.scope, scope))
+    if (vis.length) {
+      days.push(vis)
+      total += vis.length
+    }
+  }
+  // 从今天往前读，翻回来才是时间正序
+  return days.reverse().flat().sort((a, b) => a.ts - b.ts).slice(-want)
+}
 
 function finiteOr(value: unknown, fallback: number): number {
   const n = Number(value)
@@ -334,7 +360,7 @@ export function recall(opts: RecallOptions): Recalled {
 
   // 取最近 8 条而不是 4 条：群里两个人你来我往，"突然 @ 你"之前
   // 至少得看到完整的一轮，4 条经常只截到半句话。
-  const recent: RawTurn[] = recentRaw(3)
+  const recent: RawTurn[] = recentVisible(scope, 8)
     .filter((t) => visible(t.scope, scope))
     .slice(-8)
     // 补发言人名字（只用于渲染）。raw 里只有 senderId，

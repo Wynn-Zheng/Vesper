@@ -5,7 +5,8 @@
  * 脚本自己崩在输出之前，退出码还是 0。只看退出码会被骗。
  */
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { closeSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 
 interface Step {
   name: string
@@ -14,12 +15,70 @@ interface Step {
   expect: RegExp
   /** 需要服务在跑 */
   live?: boolean
+  /**
+   * 备选命令：正常命令失败、且输出里命中 fallbackWhen 时改跑它。
+   *
+   * 存在的理由：受限沙箱（DSH 的 workspace-write）会拒绝子进程开命名管道，
+   * `node --test` 给每个测试文件 spawn 子进程时报 EPERM。
+   * 这时退回单进程模式重跑，结果一样，只是不再逐文件隔离。
+   */
+  fallback?: string
+  fallbackWhen?: RegExp
+}
+
+/** 临时输出目录：沙箱里不能走 pipe，只能落到文件再读 */
+const TMP_DIR = '.tmp-check'
+
+/**
+ * 跑一条检查命令，把 stdout / stderr 收进同一个文件再读出来。
+ *
+ * 为什么不用 stdio:'pipe'：沙箱禁止命名管道，execSync 会直接 EPERM。
+ * 文件重定向不经过管道，两种环境下都能工作。
+ * 返回值里的 code 为 -1 表示连进程都没起来（被沙箱拒绝）。
+ */
+function runStep(cmd: string, id: number): { out: string; code: number } {
+  mkdirSync(TMP_DIR, { recursive: true })
+  const file = join(TMP_DIR, `${id}.log`)
+  const fd = openSync(file, 'w')
+  let code = 0
+  try {
+    execSync(cmd, {
+      stdio: ['ignore', fd, fd],
+      timeout: 300_000,
+      env: { ...process.env, NO_COLOR: '1' },
+    })
+  } catch (e) {
+    const status = (e as { status?: unknown }).status
+    code = typeof status === 'number' ? status : -1
+  } finally {
+    closeSync(fd)
+  }
+
+  let out = ''
+  try {
+    out = readFileSync(file, 'utf8')
+  } catch {
+    /* 文件没写出来：当作空输出，交给 expect 判失败 */
+  }
+  try {
+    rmSync(file, { force: true })
+  } catch {
+    /* 删不掉不影响判定，下次会覆盖 */
+  }
+  return { out, code }
 }
 
 const STEPS: Step[] = [
   { name: '类型检查', cmd: 'node node_modules/typescript/bin/tsc --noEmit', expect: /^$/ },
   { name: '类型检查（严格）', cmd: 'node node_modules/typescript/bin/tsc --noEmit --noUnusedLocals', expect: /^$/ },
-  { name: '单元测试', cmd: 'node --test test/*.test.ts', expect: /ℹ fail 0/ },
+  {
+    name: '单元测试',
+    cmd: 'node --test test/*.test.ts',
+    expect: /ℹ fail 0/,
+    // 沙箱里测试运行器 spawn 子进程会 EPERM，退回单进程模式重跑
+    fallback: 'node --test --test-isolation=none test/*.test.ts',
+    fallbackWhen: /EPERM|spawn/,
+  },
   { name: '冒烟', cmd: 'node scripts/smoke.ts', expect: /\d+ \/ \d+ 通过/ },
   { name: '数据体检', cmd: 'node scripts/check-data.ts', expect: /数据检查通过/ },
   { name: '配置检查', cmd: 'node scripts/check-config.ts', expect: /\S/ },
@@ -43,6 +102,7 @@ const STEPS: Step[] = [
   { name: '存储层边界', cmd: 'node scripts/test-store-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '记忆层边界', cmd: 'node scripts/test-memory-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '调度器边界', cmd: 'node scripts/test-sched-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '整理分批与游标', cmd: 'node scripts/test-distill-batch.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '通道层边界', cmd: 'node scripts/test-chan-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '核心边界', cmd: 'node scripts/test-core-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '人物边界', cmd: 'node scripts/test-people-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
@@ -55,6 +115,7 @@ const STEPS: Step[] = [
   { name: '功能健康度', cmd: 'node --env-file-if-exists=.env scripts/test-feature-health.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '体验改进', cmd: 'node scripts/test-experience.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '记忆去重', cmd: 'node scripts/test-dedup.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '记忆维护', cmd: 'node scripts/test-memory-maintenance.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '代码工具', cmd: 'node scripts/test-tools.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '代码地图', cmd: 'node scripts/test-codemap.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群成员名单', cmd: 'node --env-file-if-exists=.env scripts/test-group.ts', expect: /通过 \d+ \/ 失败 0/ },
@@ -121,29 +182,22 @@ interface Result {
 
 const results: Result[] = []
 
-for (const step of STEPS) {
+for (const [index, step] of STEPS.entries()) {
   if (step.live && !live) {
     results.push({ name: step.name, ok: true, ms: 0, why: '跳过（服务没跑）' })
     continue
   }
 
   const t0 = Date.now()
-  let out = ''
-  let ok = true
-  let why: string | undefined
+  let { out, code } = runStep(step.cmd, index)
+  let ok = code === 0
+  let why: string | undefined = ok ? undefined : `退出码 ${code}`
 
-  try {
-    out = execSync(step.cmd, {
-      encoding: 'utf8',
-      stdio: 'pipe',
-      timeout: 300_000,
-      env: { ...process.env, NO_COLOR: '1' },
-    })
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; status?: number; message?: string }
-    out = `${err.stdout ?? ''}${err.stderr ?? ''}`
-    ok = false
-    why = `退出码 ${err.status ?? '?'}`
+  // 正常命令在受限环境里起不来（EPERM）时换备选命令再试一次
+  if (!ok && step.fallback && step.fallbackWhen?.test(out)) {
+    ;({ out, code } = runStep(step.fallback, index))
+    ok = code === 0
+    why = ok ? undefined : `退出码 ${code}`
   }
 
   // 关键：校验输出格式，防止"跑了但什么都没发生"

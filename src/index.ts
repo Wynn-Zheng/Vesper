@@ -249,6 +249,23 @@ info('关系降温与限流清理已启动')
 const keepDays = rules.日志?.保留天数 ?? 30
 const prunedLogs = pruneLogs(Number.isFinite(keepDays) && keepDays > 0 ? keepDays : 30)
 if (prunedLogs) info(`清理了 ${prunedLogs} 个过期日志文件（保留 ${keepDays} 天）`)
+
+// 原始对话也清理：distill 读 7 天、recall 读 3 天、关系降温读 30 天，
+// 保留 35 天够了。不清的话 raw/ 会按天无限增长。
+{
+  const { pruneRaw } = await import('./memory/store.ts')
+  const prunedRaw = pruneRaw(35)
+  if (prunedRaw) info(`清理了 ${prunedRaw} 天的原始对话（保留 35 天）`)
+  setInterval(() => {
+    try {
+      const n = pruneRaw(35)
+      if (n) info(`清理了 ${n} 天的原始对话`)
+    } catch {
+      /* 删不掉就下次再说 */
+    }
+  }, 24 * 3_600_000).unref?.()
+}
+
 setInterval(() => {
   const n = pruneSessions()
   if (n) info(`清理了 ${n} 个不活跃会话`)

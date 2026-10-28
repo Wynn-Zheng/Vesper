@@ -1329,8 +1329,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
         // 上下文压缩
         out.context = {
-          摘要阈值: rules.上下文压缩?.摘要阈值 ?? 20,
-          保留最近: rules.上下文压缩?.保留最近 ?? 6,
+          摘要阈值: rules.上下文压缩?.摘要阈值 ?? 40,
+          保留最近: rules.上下文压缩?.保留最近 ?? 12,
         }
 
         // 表达学习

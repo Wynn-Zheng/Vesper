@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadRules } from '../core/config.ts'
+import { loadRules, type Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { distill } from '../memory/distill.ts'
@@ -15,6 +15,15 @@ import { refreshCodeMap } from '../self/codemap.ts'
 interface State {
   /** 每个会话各自的整理游标：A 聊完不该把 B 的进度也推掉 */
   scopes: Record<string, number>
+  /**
+   * 每个会话上次**尝试**整理的时间。
+   *
+   * 为什么不直接用游标：游标现在是"已整理到哪条消息"（数据时间），
+   * 而"每天至少一次"的兜底要看"上次真正跑过是什么时候"。
+   * 两者混在一起的话，低频聊天（一天三句）永远攒不够 20 条，
+   * 兜底又因为"最后一条消息就在刚才"而不触发，记忆就一直不整理。
+   */
+  lastRun?: Record<string, number>
 }
 
 function stateFile(): string {
@@ -26,7 +35,10 @@ function loadState(): State {
   if (!existsSync(f)) return { scopes: {} }
   try {
     const raw = JSON.parse(readFileSync(f, 'utf8')) as Partial<State> & { lastDistillAt?: number }
-    if (raw.scopes && typeof raw.scopes === 'object') return { scopes: raw.scopes }
+    if (raw.scopes && typeof raw.scopes === 'object') {
+      const lastRun = raw.lastRun && typeof raw.lastRun === 'object' ? (raw.lastRun as Record<string, number>) : undefined
+      return lastRun ? { scopes: raw.scopes, lastRun } : { scopes: raw.scopes }
+    }
     // 兼容旧格式：一个全局游标
     return { scopes: raw.lastDistillAt ? { '*': Number(raw.lastDistillAt) } : {} }
   } catch {
@@ -44,6 +56,8 @@ export interface DistillerOptions {
   minTurns?: number
   /** 检查间隔（毫秒），默认 30 分钟 */
   intervalMs?: number
+  /** 测试注入：不传就读 persona/rules.yaml */
+  rules?: Rules
 }
 
 /** 判断该不该整理：攒够了，或者离上次已经超过一天且有新内容 */
@@ -72,12 +86,13 @@ export function shouldDistill(
   return (cfg.每天至少 ?? 1) > 0 && lastAt > 0 && hours >= 24 && turns.length >= 4
 }
 
-async function tick(opts: DistillerOptions): Promise<void> {
+/** 跑一轮整理。导出是为了让测试能直接驱动（不等 30 分钟定时器）。 */
+export async function tick(opts: DistillerOptions): Promise<void> {
   const state = loadState()
   const all = recentRaw(7)
   if (!all.length) return
 
-  const rules = loadRules().rules
+  const rules = opts.rules ?? loadRules().rules
   const cutoff = (scope: string): number => state.scopes[scope] ?? state.scopes['*'] ?? 0
 
   // 按 scope 分组，各自判断该不该整理
@@ -89,9 +104,10 @@ async function tick(opts: DistillerOptions): Promise<void> {
     groups.set(t.scope, list)
   }
 
-  let did = 0
   for (const [scope, list] of groups) {
-    if (!shouldDistill(list, cutoff(scope), Date.now(), rules.记忆.反思)) continue
+    // 兜底判断看"上次真正跑过的时间"；没跑过就用游标（兼容老状态）
+    const lastRun = state.lastRun?.[scope] ?? cutoff(scope)
+    if (!shouldDistill(list, lastRun, Date.now(), rules.记忆.反思)) continue
 
     const personId = scope.startsWith('private:')
       ? personOfAccount('qq', scope.slice('private:'.length))
@@ -111,14 +127,24 @@ async function tick(opts: DistillerOptions): Promise<void> {
 
     info(`开始自动整理：${scope}，${picked.length} 条`)
     const r = await distill({ personId, scope, turns: picked, llm: opts.llm, rules })
+    if (!r.ok) {
+      // 失败就**不动游标**：这批下次还会被读出来重试。
+      // 原来的写法是无论成败都写 Date.now()，一次限流/网络抖动就让那批消息永久消失。
+      warnAt('整理失败，这批下次重试（游标不动）', { scope, 条数: picked.length })
+      continue
+    }
     if (r.episodes || r.facts || r.open || r.insights) {
       info('整理结果', { person: personId, scope, ...r })
     }
-    state.scopes[scope] = Date.now()
-    did++
-  }
 
-  if (did) saveState(state)
+    // 游标推进到这批**最后一条消息的时间**，不是 Date.now()。
+    // 用 Date.now() 会把整理过程中新到的消息一起跳过（分组时 ts <= cutoff 被过滤掉）。
+    const lastTs = list[list.length - 1]?.ts ?? cutoff(scope)
+    state.scopes[scope] = lastTs
+    state.lastRun = { ...(state.lastRun ?? {}), [scope]: Date.now() }
+    // 每批就落盘：进程中途退出时不会重做已经成功的部分
+    saveState(state)
+  }
 }
 
 /** 启动后台整理器：启动时先跑一次，之后按间隔检查 */

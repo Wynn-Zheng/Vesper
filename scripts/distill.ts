@@ -8,6 +8,7 @@ import { loadRules } from '../src/core/config.ts'
 import { info, initLog, warn } from '../src/core/log.ts'
 import { distill } from '../src/memory/distill.ts'
 import { readRaw, today } from '../src/memory/store.ts'
+import { personIdOf, personOfAccount } from '../src/people/store.ts'
 import type { RawTurn, Scope } from '../src/memory/types.ts'
 import type { LlmOptions } from '../src/llm/types.ts'
 
@@ -48,8 +49,13 @@ info(`准备整理 ${date}：${turns.length} 条，${byScope.size} 个会话`)
 
 for (const [scope, list] of byScope) {
   info(`整理 ${scope}（${list.length} 条）`)
-  const r = await distill({ scope, turns: list, llm, rules })
+  // 和定时整理一样：人从 scope 推（群聊没有具体的人，用一个占位 id）
+  const personId = scope.startsWith('private:')
+    ? personOfAccount('qq', scope.slice('private:'.length))
+    : personIdOf('qq', 'group')
+  const r = await distill({ personId, scope, turns: list, llm, rules })
   info(`  → episode ${r.episodes} / fact ${r.facts} / open ${r.open} / insight ${r.insights}`)
+  if (!r.ok) warn(`  ${scope} 整理失败：模型调用或解析出错，这批下次重试`)
 }
 
 info('完成')

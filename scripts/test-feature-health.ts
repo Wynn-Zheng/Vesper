@@ -115,7 +115,9 @@ console.log('\n=== 5. 上下文压缩 ===')
   check('摘要 prompt 非空', prompt.length > 100, String(prompt.length))
 
   const merged = c.mergeSummary('之前聊过 A', '现在聊 B')
-  check('摘要能合并', merged.includes('A') && merged.includes('B'), merged.slice(0, 40))
+  check('短旧摘要直接采用模型合并结果（不再重复拼接）', merged === '现在聊 B', merged.slice(0, 40))
+  const guarded = c.mergeSummary('之前聊过 A，'.repeat(20), '现在聊 B')
+  check('长旧摘要被模型漏掉时保底拼接', guarded.includes('A') && guarded.includes('B'), guarded.slice(0, 40))
 }
 
 /* ============ 6. 会话 ============ */

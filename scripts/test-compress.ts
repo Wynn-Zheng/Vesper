@@ -8,8 +8,10 @@ import type { ChatMessage } from '../src/llm/types.ts'
 import {
   buildSummaryPrompt,
   compressHistory,
+  DIGEST_LIMIT,
   mergeSummary,
   shouldCompress,
+  SUMMARY_LIMIT,
   takeOldest,
 } from '../src/loop/compress.ts'
 
@@ -141,9 +143,10 @@ await checkAsync('callLLM 被调用一次，prompt 含 turns 里的关键文本'
 await checkAsync('buildSummaryPrompt 带上了旧摘要和中文要求', () => {
   const prompt = buildSummaryPrompt('旧：上次聊到四级', makeHistory().slice(0, 3))
   assert.ok(prompt.includes('旧：上次聊到四级'))
-  assert.ok(prompt.includes('200'))
+  assert.ok(prompt.includes(String(DIGEST_LIMIT)))
   assert.ok(prompt.includes('人物身份与关系'))
   assert.ok(prompt.includes('未完成的话题'))
+  assert.ok(prompt.includes('不要原句重复'))
   assert.ok(prompt.includes('只输出摘要正文'))
 })
 
@@ -154,18 +157,30 @@ check('prevSummary 为空时直接用 digest', () => {
   assert.equal(mergeSummary('   ', '新的摘要'), '新的摘要')
 })
 
-check('prevSummary 非空时用中文分隔符拼接并去空白', () => {
-  const merged = mergeSummary('  旧摘要\n第一段  ', ' 新摘要\n第二段 ')
-  assert.equal(merged, '旧摘要 第一段；新摘要 第二段')
+check('短旧摘要不再拼接（模型已经合并过，拼一次就会重复）', () => {
+  // prev 只有 6 个字：正常情况下模型会把旧摘要并进输出
+  assert.equal(mergeSummary('  旧摘要\n第一段  ', ' 新摘要\n第二段 '), '新摘要 第二段')
 })
 
-check('合并结果裁到 400 字以内', () => {
+check('安全网：长旧摘要 + 完全不含它的新摘要 → 拼接保底', () => {
+  const merged = mergeSummary('旧'.repeat(50), '新摘要 第二段')
+  assert.ok(merged.endsWith('；新摘要 第二段'), merged)
+  assert.ok(merged.startsWith('旧'.repeat(50)), merged)
+})
+
+check('模型合并后的摘要不重复旧内容', () => {
+  const prev = '他说最近工作压力很大，晚上总失眠，劝他早点睡。'
+  const digest = `${prev}他还说周末想去爬山。`
+  assert.equal(mergeSummary(prev, digest), digest, '不该把旧摘要再拼一遍')
+})
+
+check(`合并结果裁到 ${SUMMARY_LIMIT} 字以内，且保留较新的尾部`, () => {
   const merged = mergeSummary('旧'.repeat(300), '新'.repeat(300))
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
-  assert.ok(merged.startsWith('旧'))
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
+  assert.ok(merged.endsWith('新'.repeat(300)), '新摘要必须完整保留')
 })
 
-await checkAsync('compressHistory 用 prevSummary 合并', async () => {
+await checkAsync('compressHistory 在短旧摘要时采用模型合并结果', async () => {
   const history = makeHistory()
   const res = await compressHistory(history, {
     threshold: THRESHOLD,
@@ -174,7 +189,20 @@ await checkAsync('compressHistory 用 prevSummary 合并', async () => {
     callLLM: async () => '今天又提了导师和火锅',
   })
   assert.equal(res.compressed, true)
-  assert.ok(res.summary.includes('之前聊过复试'))
+  // 模型拿到的 prompt 里已经有旧摘要，输出就是合并结果——不能再拼一次
+  assert.equal(res.summary, '今天又提了导师和火锅')
+})
+
+await checkAsync('compressHistory 在长旧摘要被模型漏掉时保底拼接', async () => {
+  const history = makeHistory()
+  const res = await compressHistory(history, {
+    threshold: THRESHOLD,
+    keepRecent: KEEP,
+    prevSummary: '之前聊过复试'.repeat(12),
+    callLLM: async () => '今天又提了导师和火锅',
+  })
+  assert.equal(res.compressed, true)
+  assert.ok(res.summary.includes('之前聊过复试'), '旧摘要不能整段消失')
   assert.ok(res.summary.includes('今天又提了导师和火锅'))
   assert.ok(res.summary.includes('；'))
 })

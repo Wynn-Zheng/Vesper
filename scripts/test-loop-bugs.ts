@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ChatMessage } from '../src/llm/types.ts'
-import { buildSummaryPrompt, mergeSummary, shouldCompress, takeOldest } from '../src/loop/compress.ts'
+import { buildSummaryPrompt, mergeSummary, shouldCompress, SUMMARY_LIMIT, takeOldest } from '../src/loop/compress.ts'
 import { buildPrompt } from '../src/loop/prompt.ts'
 import {
   clearSessions,
@@ -130,28 +130,27 @@ check('旧摘要为空时直接使用新摘要并去掉多余空白', () => {
   assert.equal(mergeSummary('   ', '新的摘要'), '新的摘要')
 })
 
-check('旧摘要接近上限：新摘要完整保留，旧摘要从尾部让位，总长不超过 400', () => {
+check('旧摘要接近上限：新摘要完整保留，旧摘要从头部让位，总长不超过上限', () => {
   const prev = '旧'.repeat(350)
   const digest = '新'.repeat(100)
   const merged = mergeSummary(prev, digest)
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
   assert.ok(merged.endsWith(`；${digest}`), '新摘要必须完整保留')
-  assert.ok(merged.startsWith('旧'.repeat(299)), '旧摘要应从头保留，从尾部让位')
 })
 
 check('旧摘要已经塞满时也绝不丢新摘要', () => {
   const digest = '这次刚压掉的重要内容'
-  const merged = mergeSummary('旧'.repeat(400), digest)
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
+  const merged = mergeSummary('旧'.repeat(SUMMARY_LIMIT), digest)
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
   assert.ok(merged.endsWith(`；${digest}`), '旧摘要再满也不能把新摘要挤掉')
 })
 
 check('旧摘要让位时截断点落在 emoji 中间，不会留下半个代理对', () => {
-  // 新摘要 1 字 + 「；」占 2 格，旧摘要只有 398 格；
-  // 397 个「旧」之后放 emoji，正好会跨过截断点。
-  const prev = `${'旧'.repeat(397)}😀${'尾巴'.repeat(10)}`
+  // 新摘要 1 字 + 「；」占 2 格，旧摘要只有 SUMMARY_LIMIT-2 格；
+  // 构造让截断点正好落在 😀 的两个码元之间。
+  const prev = `${'头'.repeat(10)}😀${'尾'.repeat(SUMMARY_LIMIT - 3)}`
   const merged = mergeSummary(prev, '新')
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
   assert.ok(merged.endsWith('；新'), '新摘要仍应完整保留')
   assert.equal(hasLoneSurrogate(merged), false, 'emoji 被切成了半个')
   assert.equal(merged.includes('😀'), false, '整颗放不下时应整颗丢掉')
@@ -159,25 +158,25 @@ check('旧摘要让位时截断点落在 emoji 中间，不会留下半个代理
 
 check('旧摘要让位时不会切碎 ZWJ 组合 emoji', () => {
   const family = '👨‍👩‍👧‍👦'
-  // 新摘要 2 字 + 「；」占 3 格，旧摘要只有 397 格；
-  // 395 个「旧」之后放 family（7 个码元），会跨过截断点。
-  const prev = `${'旧'.repeat(395)}${family}${'尾巴'.repeat(10)}`
+  // 同上：截断点落在 family 中间（它占 7 个码元）
+  const prev = `${'头'.repeat(10)}${family}${'尾'.repeat(SUMMARY_LIMIT - 6)}`
   const merged = mergeSummary(prev, '新新')
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
   assert.ok(merged.endsWith('；新新'), '新摘要仍应完整保留')
   assert.equal(merged.includes('👨'), false, '组合 emoji 被切掉了一半')
   assert.equal(merged.includes('\u200D'), false, '不该留下半个 ZWJ 组合')
 })
 
 check('新摘要自己就超长时才截新摘要，且按字截断', () => {
-  const merged = mergeSummary(null, `${'旧'.repeat(399)}😀`)
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
+  // 没有任何旧摘要：超长的新摘要保留尾部（最近的内容）
+  const merged = mergeSummary(null, `${'旧'.repeat(SUMMARY_LIMIT + 10)}😀`)
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
   assert.equal(hasLoneSurrogate(merged), false, '超长新摘要被切出了半个 emoji')
 })
 
 check('旧摘要本身就超长时也按字截断', () => {
-  const merged = mergeSummary(`${'旧'.repeat(399)}😀`, '')
-  assert.ok(merged.length <= 400, `长度 ${merged.length} 超过 400`)
+  const merged = mergeSummary(`${'旧'.repeat(SUMMARY_LIMIT - 1)}😀`, '')
+  assert.ok(merged.length <= SUMMARY_LIMIT, `长度 ${merged.length} 超过 ${SUMMARY_LIMIT}`)
   assert.equal(hasLoneSurrogate(merged), false, '超长旧摘要被切出了半个 emoji')
 })
 
@@ -243,9 +242,10 @@ check('threshold 为 0：空历史不压、有一条就压', () => {
 
 /* ---------- 5. pushTurn 的 MAX 上限与顺序 ---------- */
 
-console.log('\n=== 5. pushTurn 上限 40 ===')
+console.log('\n=== 5. pushTurn 上限 ===')
 
-const MAX = 40
+// 默认 60：必须大于上下文压缩阈值（默认 40），否则摘要永远不触发
+const MAX = 60
 
 check(`超过 ${MAX} 条后最早的被丢掉，其余顺序不乱`, () => {
   clearSessions()
@@ -275,8 +275,17 @@ check(`超过 ${MAX} 条后最早的被丢掉，其余顺序不乱`, () => {
   )
 })
 
-/* ---------- 6. summary 字段与 historyMessages ---------- */
+check('自定义上限生效（chat 会按压缩阈值动态传）', () => {
+  clearSessions()
+  const key = 'private:max2'
+  for (let i = 0; i < 10; i++) pushTurn(key, turn('user', `n${i}`, 1_700_000_000_000 + i), 5)
+  const turns = getTurns(key)
+  assert.equal(turns.length, 5, `应只剩 5 条，实际 ${turns.length}`)
+  assert.equal(turns[0]!.content, 'n5')
+  assert.equal(turns[turns.length - 1]!.content, 'n9')
+})
 
+/* ---------- 6. summary 字段与 historyMessages ---------- */
 console.log('\n=== 6. summary 字段 ===')
 
 check('没设置 summary 时 historyMessages 只返回原文', () => {

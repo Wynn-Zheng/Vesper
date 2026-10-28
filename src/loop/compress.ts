@@ -1,3 +1,4 @@
+import { sharedBigrams } from '../core/text.ts'
 import type { ChatMessage } from '../llm/types.ts'
 
 /**
@@ -8,10 +9,15 @@ import type { ChatMessage } from '../llm/types.ts'
  * 调模型这件事由调用方通过 callLLM 注进来。
  */
 
-/** 摘要长度上限（合并后） */
-const SUMMARY_LIMIT = 400
-/** 单次滚动摘要的目标字数，写进 prompt */
-const DIGEST_LIMIT = 200
+/**
+ * 摘要长度上限（合并后）。
+ *
+ * 原来是 400：聊两小时的群，历史就被压成 400 字 + 6 条原文，
+ * 真人记得住昨天的具体对话，它记不住。1500 字大约是一屏，还在可控范围。
+ */
+export const SUMMARY_LIMIT = 1500
+/** 单次滚动摘要的目标字数，写进 prompt（比上限低一点，留截断余量） */
+export const DIGEST_LIMIT = 1100
 
 /** 历史超过阈值才值得压缩 */
 export function shouldCompress(history: ChatMessage[], threshold: number, keepRecent: number): boolean {
@@ -70,6 +76,7 @@ export function buildSummaryPrompt(prevSummary: string | null, turns: ChatMessag
   lines.push('要求：')
   lines.push(`- 全文不超过 ${DIGEST_LIMIT} 字。`)
   lines.push('- 必须保留：人物身份与关系、发生的事件、情绪基调、未完成的话题。')
+  lines.push('- 旧摘要里仍然重要的内容要并进来，但**不要原句重复**。')
   lines.push('- 丢掉寒暄、客套和重复内容。')
   lines.push('- 只输出摘要正文，不要标题、不要列表、不要解释你在做什么。')
   lines.push('')
@@ -89,42 +96,57 @@ function squeeze(text: string): string {
 const summaryGraphemes = new Intl.Segmenter('zh', { granularity: 'grapheme' })
 
 /**
- * 按字素边界截断，避免把 emoji / 组合字切成半个。
+ * 按字素边界**保留尾部**地截断。
+ *
+ * 为什么保留尾部：摘要按时间顺序写，尾部才是最近发生的。
+ * 超长时该丢的是最老的头部，原来的实现截的是尾部 ——
+ * 实测跑 6 轮后的结果：最老的 300 字永远在，中间段落永久消失，最新只留 100 字。
+ *
  * 先保证结果不超过上限（text.length 是 UTF-16 长度），
  * 再保证不会留下半个代理对或拆开的组合字符。
  */
-function truncateSummary(text: string, limit: number): string {
+function truncateTail(text: string, limit: number): string {
   if (limit <= 0) return ''
   if (text.length <= limit) return text
+  const segments = [...summaryGraphemes.segment(text)]
   let out = ''
-  for (const { segment } of summaryGraphemes.segment(text)) {
-    if (out.length + segment.length > limit) break
-    out += segment
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const seg = segments[i]!.segment
+    if (out.length + seg.length > limit) break
+    out = seg + out
   }
   return out
 }
 
 /**
- * 把这次的新摘要接到旧摘要后面。
- * 旧摘要为空就直接用新的；否则用「；」拼起来。
+ * 合并滚动摘要。
  *
- * 超长时优先完整保留新摘要：它代表这次刚从 history 里移除的内容，
- * 丢掉就等于那几轮对话彻底没了。让旧摘要从尾部让位；
- * 只有新摘要自己就超过上限时才截新摘要，截的时候按字素切。
+ * **正常情况下不再拼 prev**：`buildSummaryPrompt` 已经把旧摘要喂给模型，
+ * 模型输出的本来就是合并结果。再拼一次会让同一件事说两遍，
+ * 白占一半预算（实测摘要开头是「他说最近工作压力很大…；他说最近工作压力很大…」）。
+ *
+ * 安全网：模型偶尔会忽略旧摘要、只总结这段新对话。
+ * 判据用「旧摘要的 bigram 有多少出现在新摘要里」—— 完全不相关才算没合并。
+ * 阈值故意定得很低（0.05）：正常聊天本来就会重复提到旧摘要里的事，
+ * 判得太敏感会把"模型真的合并了"误判成"没合并"，白拼一次又变回重复。
+ * prev 很短（<= 40 字）时不兜底：丢了损失也不大，不值得引入复杂判断。
  */
 export function mergeSummary(prevSummary: string | null, digest: string): string {
   const prev = squeeze(prevSummary ?? '')
   const next = squeeze(digest ?? '')
 
-  if (!next) return truncateSummary(prev, SUMMARY_LIMIT)
-  const nextPart = truncateSummary(next, SUMMARY_LIMIT)
-  if (!prev) return nextPart
+  if (!next) return truncateTail(prev, SUMMARY_LIMIT)
+  if (!prev) return truncateTail(next, SUMMARY_LIMIT)
 
-  // 「；」占 1 个字符；剩下的空间才轮到旧摘要
+  const cover = sharedBigrams(prev, next) / Math.max(1, prev.length - 1)
+  const modelMerged = prev.length <= 40 || cover >= 0.05
+  if (modelMerged) return truncateTail(next, SUMMARY_LIMIT)
+
+  // 模型显然只写了新对话：接上旧摘要（保留较新的尾部，从头部让位）
+  const nextPart = truncateTail(next, SUMMARY_LIMIT)
   const room = SUMMARY_LIMIT - nextPart.length - 1
   if (room <= 0) return nextPart
-
-  const prevPart = truncateSummary(prev, room)
+  const prevPart = truncateTail(prev, room)
   return prevPart ? `${prevPart}；${nextPart}` : nextPart
 }
 

@@ -127,7 +127,9 @@ async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<voi
         const res = await chat([{ role: 'user', content: prompt }], {
           ...opts.llm,
           temperature: 0.3,
-          maxTokens: 400,
+          // 摘要目标 1100 字：中文大约 0.6 token/字，再加标点余量。
+          // 原来是 400，模型写到一半就被截断，摘要自然短得可怜。
+          maxTokens: 1200,
         })
         return res.text
       },
@@ -335,8 +337,10 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     res = await chat(messages, llmOpts)
   }
 
-  pushTurn(key, { role: 'user', content: userContent, at: m.at })
-  pushTurn(key, { role: 'assistant', content: res.text, at: Date.now() })
+  // 历史保留上限跟着压缩阈值走：必须比阈值大，否则摘要永远不触发（见 pushTurn 注释）
+  const keepTurns = Math.max(60, opts.rules.上下文压缩.摘要阈值 + 20)
+  pushTurn(key, { role: 'user', content: userContent, at: m.at }, keepTurns)
+  pushTurn(key, { role: 'assistant', content: res.text, at: Date.now() }, keepTurns)
 
   // 历史压成滚动摘要，避免 session 无限增长；失败不挡这一轮
   await compressIfNeeded(key, opts)

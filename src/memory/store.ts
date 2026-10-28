@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { similarity } from '../core/text.ts'
 import { appendJsonl, readJsonl, writeAtomic } from '../store/fs.ts'
 import type { Episode, Insight, RawTurn, Scope } from './types.ts'
 
@@ -8,6 +9,7 @@ let ROOT = 'persona/memory'
 /** 测试用：把记忆根目录指向临时目录 */
 export function setMemoryRoot(p: string): void {
   ROOT = p
+  epCache = null
 }
 
 export function memoryRoot(): string {
@@ -104,6 +106,7 @@ export function saveEpisode(ep: Episode): string {
     '',
   ].join('\n')
   writeAtomic(file, text)
+  epCache = null
   return file
 }
 
@@ -119,7 +122,35 @@ export function nextEpisodeId(scope: Scope, date: string): string {
   return `${date}-${String(next).padStart(2, '0')}`
 }
 
+/**
+ * episode 缓存。
+ *
+ * 为什么需要：实测 1000 条时一次 loadEpisodes 要 45ms，2000 条 88ms，
+ * 而 recall 每次都全量扫、flushRecalls 还要再扫一遍——纯 IO 放大。
+ *
+ * 为什么用 5 秒 TTL 而不是"写到就更新"：记忆文件是给人直接改的，
+ * 只靠写操作失效的话，手工编辑要等进程重启才生效。5 秒是折中：
+ * 一次回复里多次 loadEpisodes 共享缓存，手改最多 5 秒后可见。
+ */
+let epCache: { at: number; list: Episode[] } | null = null
+const EP_CACHE_MS = 5000
+
+export function invalidateEpisodes(): void {
+  epCache = null
+}
+
 export function loadEpisodes(): Episode[] {
+  const now = Date.now()
+  if (epCache && now - epCache.at < EP_CACHE_MS) {
+    // 返回浅拷贝：调用方会改 lastRecalled / recallCount，不能让它污染缓存
+    return epCache.list.map((e) => ({ ...e }))
+  }
+  const list = readEpisodes()
+  epCache = { at: now, list }
+  return list.map((e) => ({ ...e }))
+}
+
+function readEpisodes(): Episode[] {
   const base = join(ROOT, 'episodes')
   if (!existsSync(base)) return []
   const out: Episode[] = []
@@ -147,14 +178,70 @@ export function loadEpisodes(): Episode[] {
   return out
 }
 
+/**
+ * 清理过期的原始对话。
+ *
+ * 原来 raw/ 只增不删（一年约 8MB，不致命，但会一直涨）。
+ * 保留 35 天：distill 读 7 天、recall 读 3 天、关系降温读 30 天，
+ * 35 是留出余量后的最小安全值。
+ */
+export function pruneRaw(keepDays = 35): number {
+  const base = join(ROOT, 'raw')
+  if (!existsSync(base)) return 0
+  const cutoff = Date.now() - Math.max(1, keepDays) * 86_400_000
+  let removed = 0
+  for (const f of readdirSync(base)) {
+    const m = /^(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(f)
+    if (!m) continue
+    const t = Date.parse(`${m[1]}T00:00:00`)
+    if (Number.isNaN(t) || t >= cutoff) continue
+    try {
+      rmSync(join(base, f), { force: true })
+      removed++
+    } catch {
+      /* 删不掉就下次再说 */
+    }
+  }
+  return removed
+}
+
 /* ---------------- insights ---------------- */
 
 function insightsFile(): string {
   return join(ROOT, 'insights.jsonl')
 }
 
+/** 同一条看法换个说法也算重复（0.75 只抓"基本一样的句子"） */
+const INSIGHT_DUP_SIM = 0.75
+/**
+ * 洞察总条数上限，保留最近的。
+ *
+ * 原来只 append：同样的看法反复出现，会把 recall 的前 3 个名额占满。
+ * 500 条约够一两年（一天一两条），超了才裁。
+ */
+const INSIGHT_CAP = 500
+
 export function appendInsights(items: Insight[]): void {
-  for (const i of items) appendJsonl(insightsFile(), i)
+  const fresh = items.filter((i) => i.text.trim().length > 1)
+  if (!fresh.length) return
+
+  const existing = loadInsights()
+  const kept: Insight[] = []
+  for (const i of fresh) {
+    const dup =
+      existing.some((old) => similarity(old.text, i.text) >= INSIGHT_DUP_SIM) ||
+      kept.some((old) => similarity(old.text, i.text) >= INSIGHT_DUP_SIM)
+    if (!dup) kept.push(i)
+  }
+  if (!kept.length) return
+
+  for (const i of kept) appendJsonl(insightsFile(), i)
+
+  // 超过上限就整体重写（JSONL 追加没法删头部）：保留最近的
+  if (existing.length + kept.length > INSIGHT_CAP) {
+    const all = [...existing, ...kept].slice(-INSIGHT_CAP)
+    writeAtomic(insightsFile(), all.map((x) => `${JSON.stringify(x)}\n`).join(''))
+  }
 }
 
 export function loadInsights(): Insight[] {
@@ -166,5 +253,6 @@ export function deleteEpisode(id: string, scope: Scope): boolean {
   const file = join(episodeDir(scope), `${id}.md`)
   if (!existsSync(file)) return false
   rmSync(file, { force: true })
+  epCache = null
   return true
 }

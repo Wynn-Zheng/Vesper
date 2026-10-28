@@ -179,7 +179,7 @@ export function getTurns(key: string): Turn[] {
   return sessions.get(key)?.turns ?? []
 }
 
-export function pushTurn(key: string, turn: Turn): void {
+export function pushTurn(key: string, turn: Turn, maxTurns = 60): void {
   let session = sessions.get(key)
   if (!session) {
     // 这里不主动读盘：历史原文原本就是内存态，摘要的持久化由 loadSession 负责
@@ -187,9 +187,13 @@ export function pushTurn(key: string, turn: Turn): void {
     sessions.set(key, session)
   }
   session.turns.push(turn)
-  // 只保留最近 N 轮，防止上下文无限增长
-  const MAX = 40
-  while (session.turns.length > MAX) session.turns.shift()
+  // 只保留最近 N 轮，防止上下文无限增长。
+  //
+  // ⚠️ 这个上限必须**大于**上下文压缩的摘要阈值（默认 40），
+  // 否则 shouldCompress（history.length > 阈值）永远不成立：
+  // 历史被窗口直接丢掉，滚动摘要一次都不会更新，等于把老对话静默删除。
+  const keep = Number.isFinite(maxTurns) ? Math.max(2, Math.floor(maxTurns)) : 60
+  while (session.turns.length > keep) session.turns.shift()
 }
 
 export function clearSessions(): void {

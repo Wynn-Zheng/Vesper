@@ -33,6 +33,11 @@ interface DistillOutput {
     source?: string
     visibility?: string
     tier?: string
+    /**
+     * 群聊里这条事实是谁的事（发言人名字，必须和聊天记录里的名字一致）。
+     * 私聊时忽略——整段都是同一个人的。
+     */
+    who?: string
   }>
   open?: Array<{ text?: string; kind?: 'todo' | 'pending' }>
   insights?: Array<{ text?: string; evidence?: string[] }>
@@ -40,8 +45,26 @@ interface DistillOutput {
   life?: string[]
 }
 
+/** 模型给的一条事实，字段都可能是脏的 */
+type RawFact = NonNullable<DistillOutput['facts']>[number]
+
+/** 清洗后准备写盘的一条事实 */
+interface FactRow {
+  text: string
+  date: string
+  confidence: number
+  visibility: Visibility
+  source?: string
+  tier?: 'major' | 'normal'
+}
+
 /** 把 rules.yaml 里"值得记/不值得记"拼进提示词，让配置真的影响整理 */
-function systemPrompt(rules: Rules, knownFacts: string[] = [], knownEpisodes: Array<{ id: string; title: string }> = []): string {
+function systemPrompt(
+  rules: Rules,
+  knownFacts: string[] = [],
+  knownEpisodes: Array<{ id: string; title: string }> = [],
+  isGroup = false,
+): string {
   const 值得 = rules.记忆.值得记.length ? rules.记忆.值得记 : ['对方的个人信息', '情绪强烈的事', '约定']
   const 不值得 = rules.记忆.不值得记.length ? rules.记忆.不值得记 : ['寒暄', '重复内容', '语气词']
   const known = knownFacts.length
@@ -53,11 +76,15 @@ function systemPrompt(rules: Rules, knownFacts: string[] = [], knownEpisodes: Ar
         .map((e) => `- ${e.id}：${e.title}`)
         .join('\n')}`
     : ''
+  // 群聊里必须标明每条事实是谁的，否则只能整段丢掉（原来的做法）
+  const groupHint = isGroup
+    ? `\n\n# 这是群聊\nfacts 里每一条都必须带 "who"：这句话是关于谁的，用聊天记录里「名字：」的那个名字，一字不差。说不清是谁的事，就不要写进 facts。`
+    : ''
   return `${SYSTEM_BASE}
 
 这个人的主人希望：
 - 值得记：${值得.join('、')}
-- 不值得记：${不值得.join('、')}${known}${eps}`
+- 不值得记：${不值得.join('、')}${known}${eps}${groupHint}`
 }
 
 const SYSTEM_BASE = `你在整理一段聊天记录，把它变成长期记忆。只输出 JSON，不要代码块，不要解释。
@@ -65,7 +92,7 @@ const SYSTEM_BASE = `你在整理一段聊天记录，把它变成长期记忆�
 输出格式：
 {
   "episodes": [{"title": "一句话概括", "body": "发生了什么 + 我当时怎么想", "importance": 1, "emotion": "当时的主要情绪", "related": ["相关的已有 episode id"]}],
-  "facts": [{"text": "稳定的事实", "confidence": 0.9, "source": "他说过的原话，尽量短", "visibility": "public|private|unsure", "tier": "major|normal"}],
+  "facts": [{"text": "稳定的事实", "confidence": 0.9, "source": "他说过的原话，尽量短", "visibility": "public|private|unsure", "tier": "major|normal", "who": "群聊时填说话人名字，私聊不用填"}],
   "open": [{"text": "还没做的事，或我想跟对方确认的事", "kind": "todo"}],
   "insights": [{"text": "我对他或对这段关系的一个看法", "evidence": ["依据"]}],
   "self": {"自述": "我最近对自己的一点认识", "在想": "我最近在想的一件事", "取名": "如果还没有名字且觉得时机到了，给自己取一个"},
@@ -115,6 +142,13 @@ function parseJson(text: string): DistillOutput | null {
 }
 
 export interface DistillResult {
+  /**
+   * 这次整理是否**完整成功**。
+   *
+   * 为什么必须有：原来失败和"没什么可记"都返回全 0，调用方分不出来，
+   * 于是整理失败也把游标推到 Date.now()，那批消息永远不会被再整理。
+   */
+  ok: boolean
   episodes: number
   facts: number
   open: number
@@ -128,6 +162,53 @@ export interface DistillOptions {
   turns: RawTurn[]
   llm: LlmOptions
   rules: Rules
+}
+
+/** 一批最多多少条原文 */
+export const DISTILL_BATCH_TURNS = 40
+/**
+ * 一批 transcript 最多多少字符。
+ *
+ * 12K 中文字大约 8K token，加上 system prompt 和 1400 输出 token，
+ * 对 DeepSeek 的上下文还有很大余量；再大会让单次整理变慢、变贵。
+ */
+export const DISTILL_BATCH_CHARS = 12_000
+
+/**
+ * 把一批原文切成若干小批。
+ *
+ * 依据：原来一次喂 7 天全部 raw（实测 300 条 → 225 条），
+ * 而 prompt 要求"只挑最值得记的 3 件"——一天的对话被压成 3 条 episode，
+ * 超过上下文还会整批失败。分批之后每批 40 条，每条消息都有被看见的机会。
+ *
+ * 切分时**不切断同一毫秒的记录**：游标按批推进，如果两条 ts 相同的消息
+ * 被分到两批，失败重试时 `ts <= 游标` 会把后一条永久过滤掉。
+ */
+export function chunkTurns<T extends { ts: number; text: string }>(
+  turns: T[],
+  maxTurns = DISTILL_BATCH_TURNS,
+  maxChars = DISTILL_BATCH_CHARS,
+): T[][] {
+  const batches: T[][] = []
+  let cur: T[] = []
+  let chars = 0
+
+  for (const t of turns) {
+    const len = t.text.length + 1
+    const overTurns = cur.length >= maxTurns
+    const overChars = cur.length > 0 && chars + len > maxChars
+    // 同 ts 的尾部记录并进当前批，宁可略超也不拆开
+    const sameTs = cur.length > 0 && t.ts === cur[cur.length - 1]!.ts
+    if ((overTurns || overChars) && !sameTs) {
+      batches.push(cur)
+      cur = []
+      chars = 0
+    }
+    cur.push(t)
+    chars += len
+  }
+  if (cur.length) batches.push(cur)
+  return batches
 }
 
 function normVisibility(v: string | undefined): Visibility {
@@ -169,8 +250,8 @@ async function sameFact(a: string, b: string, llm: LlmOptions): Promise<boolean>
   }
 }
 
-export async function distill(opts: DistillOptions): Promise<DistillResult> {
-  const result: DistillResult = { episodes: 0, facts: 0, open: 0, insights: 0 }
+async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
+  const result: DistillResult = { ok: true, episodes: 0, facts: 0, open: 0, insights: 0 }
   if (!opts.turns.length) return result
 
   // 群聊里必须标明谁说的，否则整理出来的人和事会张冠李戴
@@ -183,7 +264,9 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
   const transcript = opts.turns.map((t) => `${speakerOf(t)}：${t.text}`).join('\n')
 
   // 让模型知道已经记了什么，否则它每次从零提炼，必然重复
-  const knownFacts = opts.scope.startsWith('private:') ? loadFacts(opts.personId).map((f) => f.text) : []
+  const isPrivateScope = opts.scope.startsWith('private:')
+  const isGroupScope = opts.scope.startsWith('group:')
+  const knownFacts = isPrivateScope ? loadFacts(opts.personId).map((f) => f.text) : []
   // 定时任务里不能把异常抛出去：一次模型抖动不该让整轮整理变成 unhandled rejection，
   // 更不该让调用方把"出错了"和"没东西可整理"混为一谈。
   let res: { text: string }
@@ -200,6 +283,7 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
           .filter((e) => e.scope === opts.scope)
           .slice(-20)
           .map((e) => ({ id: e.id, title: e.title })),
+        isGroupScope,
       ),
     },
         { role: 'user', content: `聊天记录：\n${transcript}` },
@@ -208,13 +292,13 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
     )
   } catch (err) {
     warnAt('整理的模型调用失败，这轮跳过', { scope: opts.scope, err: String(err).slice(0, 80) })
-    return result
+    return { ...result, ok: false }
   }
 
   const data = parseJson(res.text)
   if (!data) {
     warnAt('整理结果不是合法 JSON，已跳过', { raw: res.text.slice(0, 200) })
-    return result
+    return { ...result, ok: false }
   }
 
   // 用这批消息"发生的那天"，不是"现在"：
@@ -249,66 +333,45 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
     result.episodes++
   }
 
-  // 新事实和旧事实比对：完全重复的跳过，很像但不一样的记为"待确认"
-  // 群聊里不写 facts/open：那是公共场合，分不清哪句是谁的私事
-  const isPrivate = opts.scope.startsWith('private:')
-  const existing = isPrivate ? loadFacts(opts.personId) : []
-  const accepted: Array<{
-    text: string
-    date: string
-    confidence: number
-    visibility: Visibility
-    source?: string
-    tier?: 'major' | 'normal'
-  }> = []
-  const conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
+  // 新事实和旧事实比对：完全重复的跳过，很像但不一样的记为"待确认"。
+  //
+  // 私聊：整段都是同一个人的，直接归他。
+  // 群聊：按每条事实的 "who" 归到具体的人。原来群聊完全不吃 facts，
+  //       代价是"群里认识的人细节永远记不住"；要求模型标 who，
+  //       对不上人的（没说清、重名）就跳过——宁可少记，不能记错人。
+  const isPrivate = isPrivateScope
+  let accepted: FactRow[] = []
+  let conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
 
   if (isPrivate) {
-    for (const raw of data.facts ?? []) {
-      const text = (raw.text ?? '').trim()
-      if (text.length < 2) continue
-      const confidence = Math.min(1, Math.max(0, Number(raw.confidence ?? 0.8)))
-      const source = (raw.source ?? '').trim().slice(0, 60) || undefined
-      const visibility = normVisibility(raw.visibility)
-      // 档位：只认 major，其余一律 normal（宁缺勿滥）
-      const tier: 'major' | 'normal' = raw.tier === 'major' ? 'major' : 'normal'
-
-      const best = existing
-        .map((old) => ({ old, sim: similarity(old.text, text) }))
-        .sort((a, b) => b.sim - a.sim)[0]
-
-      // 用户确认过的事实是锁定的：像它的新说法一律不碰，既不刷新也不覆盖，
-      // 更不把它当成冲突去问用户。只有确实无关的新事实才继续往下走。
-      if (best && best.old.by === 'me' && best.sim >= 0.45) continue
-
-      if (best && best.sim > 0.9) {
-        // 这条又提到了：刷新确认日期，别让它慢慢过期
-        touchFact(opts.personId, best.old.text, date)
+    const r = await mergeFactsInto(opts.personId, data.facts ?? [], date, opts.llm)
+    accepted = r.accepted
+    conflicts = r.conflicts
+  } else if (isGroupScope && (data.facts ?? []).length) {
+    const index = speakerIndex(opts.turns)
+    const byPerson = new Map<string, RawFact[]>()
+    let dropped = 0
+    for (const f of data.facts ?? []) {
+      const pid = matchSpeaker(index, f.who ?? '')
+      if (!pid) {
+        dropped++
         continue
       }
-      // 灰色地带：字符相似度分不出「换个说法」和「另一件事」，问模型。
-      // 之前这里直接当冲突让用户确认，结果同一件事换个说法就被反复问。
-      if (best && best.sim >= 0.45) {
-        const same = await sameFact(best.old.text, text, opts.llm)
-        if (same) {
-          // 同一件事：刷新确认，顺便把更准确的说法留下
-          touchFact(opts.personId, best.old.text, date)
-          if (text.length > best.old.text.length && best.old.text.length < text.length * 0.8) {
-            // 新说法明显更详细，补一条（旧的会被 touch，不会重复计数）
-            accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
-          }
-          continue
-        }
-        // 真是另一件事或互相矛盾：交给用户确认
-        conflicts.push({
-          text: `我记得「${best.old.text}」，这次听到「${text}」，想确认哪个对`,
-          date,
-          kind: 'pending',
-        })
-        continue
-      }
-      accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
+      const list = byPerson.get(pid) ?? []
+      list.push(f)
+      byPerson.set(pid, list)
     }
+    if (dropped) info(`群聊里 ${dropped} 条事实说不清是谁的，跳过`)
+
+    let total = 0
+    for (const [pid, list] of byPerson) {
+      const r = await mergeFactsInto(pid, list, date, opts.llm)
+      const keptGroup = r.accepted.filter((f) => !isDeleted(pid, f.text))
+      if (!keptGroup.length) continue
+      appendFacts(pid, keptGroup)
+      total += keptGroup.length
+    }
+    result.facts = total
   }
 
   // 用户删过的事实不再加回来，否则"删了又被提炼回来"，删了个寂寞
@@ -404,6 +467,138 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
   }
 
   return result
+}
+
+/**
+ * 群聊里「名字 → personId」的索引。
+ *
+ * 重名的记为 null（不归属）：群里两个人都叫「小明」时，
+ * 把事实写到其中任何一个头上都是错的，宁可这条不记。
+ */
+function speakerIndex(turns: RawTurn[]): Map<string, string | null> {
+  const pidsOfName = new Map<string, Set<string>>()
+  for (const t of turns) {
+    if (t.role !== 'user' || !t.senderId) continue
+    const pid = personOfAccount('qq', t.senderId)
+    const name = (loadPerson(pid)?.name ?? '').trim()
+    if (!name) continue
+    const set = pidsOfName.get(name) ?? new Set<string>()
+    set.add(pid)
+    pidsOfName.set(name, set)
+  }
+  const out = new Map<string, string | null>()
+  for (const [name, set] of pidsOfName) {
+    out.set(name, set.size === 1 ? [...set][0]! : null)
+  }
+  return out
+}
+
+/** 模型填的 who 对上谁；对不上、重名、或者没填 → null（这条不记） */
+function matchSpeaker(index: Map<string, string | null>, who: string): string | null {
+  // 模型偶尔会写「小明（刚才说话那个）」，把括号里的解释去掉再比
+  const clean = who.replace(/[（(][^）)]*[）)]/g, '').trim()
+  if (!clean) return null
+  const hit = index.get(clean)
+  if (hit !== undefined) return hit
+  for (const [name, pid] of index) {
+    if (!pid) continue
+    if (clean.includes(name) || name.includes(clean)) return pid
+  }
+  return null
+}
+
+/**
+ * 把一批模型给的事实践并进某个人的档案。
+ *
+ * 拆出来的原因：私聊只有一个人，群聊要按发言人分给不同的人，
+ * 但"去重 / 锁定 / 冲突转待确认"这套判断必须完全一样，
+ * 否则群里记的事实和私聊记的会各走一套规则。
+ */
+async function mergeFactsInto(
+  personId: string,
+  raws: RawFact[],
+  date: string,
+  llm: LlmOptions,
+): Promise<{ accepted: FactRow[]; conflicts: Array<{ text: string; date: string; kind: 'pending' }> }> {
+  const accepted: FactRow[] = []
+  const conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
+  const existing = loadFacts(personId)
+
+  for (const raw of raws) {
+    const text = (raw.text ?? '').trim()
+    if (text.length < 2) continue
+    const confidence = Math.min(1, Math.max(0, Number(raw.confidence ?? 0.8)))
+    const source = (raw.source ?? '').trim().slice(0, 60) || undefined
+    const visibility = normVisibility(raw.visibility)
+    // 档位：只认 major，其余一律 normal（宁缺勿滥）
+    const tier: 'major' | 'normal' = raw.tier === 'major' ? 'major' : 'normal'
+
+    const best = existing
+      .map((old) => ({ old, sim: similarity(old.text, text) }))
+      .sort((a, b) => b.sim - a.sim)[0]
+
+    // 用户确认过的事实是锁定的：像它的新说法一律不碰，既不刷新也不覆盖，
+    // 更不把它当成冲突去问用户。只有确实无关的新事实才继续往下走。
+    if (best && best.old.by === 'me' && best.sim >= 0.45) continue
+
+    if (best && best.sim > 0.9) {
+      // 这条又提到了：刷新确认日期，别让它慢慢过期
+      touchFact(personId, best.old.text, date)
+      continue
+    }
+    // 灰色地带：字符相似度分不出「换个说法」和「另一件事」，问模型。
+    // 之前这里直接当冲突让用户确认，结果同一件事换个说法就被反复问。
+    if (best && best.sim >= 0.45) {
+      const same = await sameFact(best.old.text, text, llm)
+      if (same) {
+        // 同一件事：刷新确认，顺便把更准确的说法留下
+        touchFact(personId, best.old.text, date)
+        if (text.length > best.old.text.length && best.old.text.length < text.length * 0.8) {
+          // 新说法明显更详细，补一条（旧的会被 touch，不会重复计数）
+          accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
+        }
+        continue
+      }
+      // 真是另一件事或互相矛盾：交给用户确认
+      conflicts.push({
+        text: `我记得「${best.old.text}」，这次听到「${text}」，想确认哪个对`,
+        date,
+        kind: 'pending',
+      })
+      continue
+    }
+    accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
+  }
+
+  return { accepted, conflicts }
+}
+
+/**
+ * 整理一批原文（对外入口）。
+ *
+ * 超过一批上限就自动拆成几批顺序整理，结果累加。
+ * 为什么在入口处拆、而不是让调用方拆：手动整理、定时整理、CLI 都走这里，
+ * 一个入口才不会再出现"某个入口忘了分批"。
+ *
+ * **任一批失败就整体返回 ok:false**，调用方据此决定要不要推进游标。
+ * 已经成功的那几批数据已经落盘了，重试时可能重复——宁可重复，不能丢。
+ */
+export async function distill(opts: DistillOptions): Promise<DistillResult> {
+  const batches = chunkTurns(opts.turns)
+  if (batches.length <= 1) return distillOnce(opts)
+
+  const total: DistillResult = { ok: true, episodes: 0, facts: 0, open: 0, insights: 0 }
+  for (const [i, batch] of batches.entries()) {
+    info(`整理分批：${opts.scope} 第 ${i + 1}/${batches.length} 批，${batch.length} 条`)
+    const r = await distillOnce({ ...opts, turns: batch })
+    total.episodes += r.episodes
+    total.facts += r.facts
+    total.open += r.open
+    total.insights += r.insights
+    if (r.life) total.life = (total.life ?? 0) + r.life
+    if (!r.ok) return { ...total, ok: false }
+  }
+  return total
 }
 
 export { loadOpen }
