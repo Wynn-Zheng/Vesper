@@ -478,7 +478,7 @@ node scripts/package-electron.ts
 ## 十、测试
 
 ```powershell
-npm run check-all     # 全量（77 项，实际跑出来会统计）
+npm run check-all     # 全量（78 项，实际跑出来会统计）
 npm test              # 单元测试
 npm run check         # 类型检查
 ```
