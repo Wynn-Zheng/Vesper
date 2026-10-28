@@ -33,6 +33,15 @@ notes = """
   改插件元数据就改这个文件，**不要新建 ability 相关文件**。
 - 插件系统的新文件请放在 src/plugins/ 下（manifest.ts / host.ts / installer.ts / registry.ts 之类），
   后端接口放 src/console/plugin-api.ts，前端浏览器脚本放 console/plugins.js，页面改 console/index.html。
+
+【自我页改造（本次任务）】
+- 自我页的渲染在 console/index.html 的 renderSelfV2()（原来 6 个 tab），数据来自 GET /api/self/v2。
+- 人格存储是 src/self/store.ts（SelfDoc：name/about/aboutExtra/aboutOwner/thinking/traits/abilities）。
+- 申请机制已完成：src/self/requests.ts + src/self/apply.ts + src/tools/request.ts，不要重写。
+- 人物档案在 persona/people/<id>/（meta.json / facts.md / profile.md / impression.md / open.md / relation.yaml）。
+  后端读写在 src/people/store.ts 和 src/memory/facts.ts；接口在 src/console/people-api.ts。
+- 关系锚点在 persona/people/<id>/relation.yaml 的 anchors，读取在 src/relation/store.ts。
+- 人格快照在 persona/self-history/*.md，漂移记录在 persona/self-history/drift.jsonl。
 """
 
 [[workers]]
@@ -96,7 +105,7 @@ act   = ["act"]
 
 [git]
 # 必须和当前分支一致，否则 run 会切走
-base_branch = "agenttree/2026-10-28-plugins"
+base_branch = "agenttree/2026-10-28-self-page"
 worktree_dir = ".agenttree/wt"
 auto_merge = true
 auto_commit = true
