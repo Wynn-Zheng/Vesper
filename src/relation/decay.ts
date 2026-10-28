@@ -24,6 +24,8 @@ const DAY = 86_400_000
 function graceDaysOf(rules: Rules, stageName: string): number {
   const base = (() => {
     switch (stageName) {
+      // 兼容旧配置里的阶段名（升级时 rules.yaml 不会自动改）
+      case '离不开':
       case '很亲近':
         return 30
       case '亲密':

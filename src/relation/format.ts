@@ -18,6 +18,17 @@ export interface RelationFormatOptions {
 }
 
 /**
+ * 旧版 rules.yaml 里的称呼占位符。
+ *
+ * 升级时用户的 rules.yaml 是**数据**，不会跟着代码走——里面还留着
+ * "昵称"/"专属"这种占位符。直接塞给模型它会字面照做，所以这里映射成说明。
+ */
+const LEGACY_SALUTATION: Record<string, string> = {
+  昵称: '叫名字里的一两个字',
+  专属: '用你们之间习惯的叫法',
+}
+
+/**
  * 称呼怎么叫。
  *
  * 优先用 rules.yaml 里配的 `关系.昵称`；没配就按阶段给"怎么叫"的说明。
@@ -27,7 +38,7 @@ export function salutationOf(rules: Rules, stage: StageRule, inGroup: boolean): 
   if (inGroup) return ''
   const custom = (rules.关系.昵称 ?? '').trim()
   if (custom) return `叫他「${custom}」`
-  return stage.称呼
+  return LEGACY_SALUTATION[stage.称呼] ?? stage.称呼
 }
 
 /** 把关系 + 心情渲染成给模型看的一小段。 */
@@ -93,8 +104,9 @@ export function buildRelationBlock(
     }
   }
 
-  // 按阶段名判断，不再写死 closeness < 10（阈值一改就会错位）
-  if (stage.名 === '陌生') {
+  // 按"是不是第一阶段"判断，不写死 closeness < 10 或阶段名
+  // （用户可以在 rules.yaml 里改阈值/改名，写死就会错位）
+  if (rules.关系.阶段[0]?.名 === stage.名) {
     lines.push('- 你们还不熟。不要装得很亲近，也不要一次性说太多自己的事。')
   }
 

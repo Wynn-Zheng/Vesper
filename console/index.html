@@ -1734,6 +1734,8 @@ async function loadRelation() {
     $('r-mood').textContent = s.mood ? `当前心情：${s.mood.emotion}（${s.mood.intensity.toFixed(1)}）` : '心情：平静'
 
     const stages = ['陌生','眼熟','朋友','亲近','亲密','很亲近']
+    // 旧 rules.yaml 里的阶段名可能还是「离不开」，别让它一格都高亮不了
+    if (r.stage && !stages.includes(r.stage)) stages[stages.length - 1] = r.stage
     const box = $('r-stages'); box.innerHTML = ''
     let passed = true
     for (const name of stages) {
