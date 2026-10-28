@@ -247,6 +247,8 @@ export function recall(opts: RecallOptions): Recalled {
   // 群聊里只注入公开的：私事在公共场合没有该出现的理由
   const isPrivateScope = scope.startsWith('private:')
   const scoredFacts = allFacts
+    // 被新说法取代的旧事实不再注入（文件里留着，能人工恢复）
+    .filter((f) => !f.supersededAt)
     // 「重要」的事衰减慢（139 天半衰期），「平常」按正常节奏（35 天）。
     // 老数据没有 tier → 当 normal，和以前行为一致。
     .map((f) => ({ f, eff: effectiveConfidence(f, now, f.tier === 'major' ? 0.005 : 0.023) }))

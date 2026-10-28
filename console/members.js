@@ -324,7 +324,7 @@
         box.appendChild(c)
       }
 
-      sec('事实', (d.事实 || []).map((f) => f.text))
+      sec('事实', (d.事实 || []).map((f) => (f.supersededAt ? f.text + '（已失效 ' + f.supersededAt + '）' : f.text)))
       sec('经历', (d.经历 || []).map((e) => (e.title || '') + (e.date ? '（' + e.date + '）' : '')))
       sec('待问', (d.待问 || []).map((o) => o.text))
     }

@@ -164,8 +164,10 @@ console.log('\n=== 4. 阈值 ===')
   const src = (await import('node:fs')).readFileSync('src/memory/distill.ts', 'utf8')
   check('还有 0.9 的高相似度判重', src.includes('0.9'))
   check('灰色地带门槛是 0.45', src.includes('0.45'))
-  check('有 sameFact 函数', src.includes('async function sameFact'))
-  check('sameFact 里 catch 返回 false（保守）', /catch\s*\{[^}]*return false/s.test(src))
+  check('有 factRelation 三分类函数', src.includes('async function factRelation'))
+  check('三种关系都处理了', src.includes("'contradict'") && src.includes("'different'") && src.includes("'same'"))
+  check('factRelation 里 catch 返回 different（保守：宁可多记一条）', /catch\s*\{[^}]*return 'different'/s.test(src))
+  check('矛盾时会把旧事实标失效', src.includes('supersedeFact('))
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`)

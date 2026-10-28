@@ -4,7 +4,7 @@
  * 对应 docs/交接文档.md §5.6 / §5.8 / §5.7。
  * 全部在临时目录里跑，不碰 data/ 和 persona/。
  */
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +25,11 @@ function check(name: string, ok: boolean, detail = ''): void {
 const root = mkdtempSync(join(tmpdir(), 'qqbot-mem-maint-'))
 
 const store = await import('../src/memory/store.ts')
+const { setPeopleRoot } = await import('../src/people/store.ts')
+const open = await import('../src/people/open.ts')
 store.setMemoryRoot(root)
+// open.md 走 peopleRoot，不设的话会写到真实的 persona/people 里
+setPeopleRoot(join(root, 'people'))
 
 process.on('exit', () => {
   try {
@@ -137,6 +141,27 @@ console.log('\n=== 4. raw 清理 ===')
     writeFileSync(join(rawDir, 'notes.txt'), 'x')
     store.pruneRaw(35)
     return readdirSync(rawDir).includes('notes.txt')
+  })())
+}
+
+/* ---------------- 5. open.md 去重 ---------------- */
+
+console.log('\n=== 5. open.md 去重 ===')
+{
+  const pid = 'qq-40001'
+  open.appendOpen(pid, [{ text: '想问问他「他家里的事」能不能提', date: '2026-10-01', kind: 'pending' }])
+  open.appendOpen(pid, [{ text: '想问问他「他家里的事」能不能提', date: '2026-10-02', kind: 'pending' }])
+  check('完全相同的待办只留一条', open.loadOpen(pid).length === 1, `实际 ${open.loadOpen(pid).length}`)
+
+  open.appendOpen(pid, [{ text: '想问问他「他家里的事」能不能提。', date: '2026-10-03', kind: 'pending' }])
+  check('几乎同一句（相似度>0.9）也不重复', open.loadOpen(pid).length === 1, `实际 ${open.loadOpen(pid).length}`)
+
+  open.appendOpen(pid, [{ text: '他答应下周把书还我', date: '2026-10-03', kind: 'todo' }])
+  check('不同的事能正常追加', open.loadOpen(pid).length === 2, `实际 ${open.loadOpen(pid).length}`)
+
+  check('文件头只出现一次（没重复写标题）', (() => {
+    const text = readFileSync(open.openFilePath(pid), 'utf8')
+    return (text.match(/^# 还没做完/gm) ?? []).length === 1
   })())
 }
 

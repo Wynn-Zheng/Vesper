@@ -1639,7 +1639,8 @@ async function loadMemory() {
   try {
     const [m, p] = await Promise.all([api('/api/memory'), api('/api/profile')])
     $('m-profile').textContent = p.text || '（还没有画像。事实攒够 3 条后，整理时会自动生成）'
-    $('m-facts-n').textContent = m.facts.length
+    // 被新说法取代的事实不再注入，也不该算进"它记得几条"
+    $('m-facts-n').textContent = m.facts.filter((x) => !x.supersededAt).length
     $('m-open-n').textContent = m.open.length
     $('m-ep-n').textContent = m.episodes.length
     $('m-in-n').textContent = m.insights.length
@@ -1650,6 +1651,8 @@ async function loadMemory() {
       const i = el('div', 'item')
       const vis = x.visibility === 'public' ? '公开' : x.visibility === 'private' ? '私密' : '待确认'
       i.appendChild(el('span', 'tag ' + (x.visibility === 'public' ? 'good' : x.visibility === 'unsure' ? 'warn' : ''), vis))
+      // 被新说法取代的旧事实：留着给人看/恢复，但标出来，别让人以为是并存的
+      if (x.supersededAt) i.appendChild(el('span', 'tag', '已失效 ' + x.supersededAt))
       const b = el('div')
       b.appendChild(el('div', 'txt', x.text))
       b.appendChild(el('div', 'sub', `${x.date} · 置信 ${x.confidence}${x.lastConfirmed && x.lastConfirmed !== x.date ? ' · 确认于 ' + x.lastConfirmed : ''}`))

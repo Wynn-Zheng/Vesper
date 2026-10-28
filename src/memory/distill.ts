@@ -4,7 +4,7 @@ import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { appendOpen, loadOpen } from '../people/open.ts'
 import { loadPerson, personOfAccount } from '../people/store.ts'
-import { appendFacts, isDeleted, loadFacts, touchFact, type Visibility } from './facts.ts'
+import { appendFacts, isDeleted, loadFacts, supersedeFact, touchFact, type Visibility } from './facts.ts'
 import { similarity } from './recall.ts'
 import { appendInsights, loadEpisodes, nextEpisodeId, saveEpisode } from './store.ts'
 import { appendLife, loadSelf, saveSelf } from '../self/store.ts'
@@ -220,33 +220,45 @@ function normVisibility(v: string | undefined): Visibility {
 /** 把一批原文压成 episode / facts / open / insights，并落盘。 */
 
 /**
- * 这两条说的是同一件事吗？
+ * 这两条说的是同一件事吗？还是互相矛盾？
  *
  * 为什么需要它：字符相似度分不出「同一个意思换个说法」。
  * 实测过——同一事实改写后 sim 只有 0.45，而「喜欢猫」vs「喜欢狗」有 0.50。
  * 所以灰色地带（0.45-0.9）交给模型判断，比死抠阈值靠谱。
  *
+ * 为什么要分三档而不是 yes/no：
+ * 原来 no 同时表示"两件不同的事"和"互相矛盾"，代码只能一律塞进 open 问用户。
+ * 结果是"他喜欢猫 / 他喜欢狗"这种无关的两件事也去打扰人；
+ * 而真正的矛盾（"他在北京"→"他搬去上海了"）反而只是并存，永远不失效。
+ *
  * 只在灰色地带调用：相似度很高直接判重、很低直接当新的，都不花钱。
  */
-async function sameFact(a: string, b: string, llm: LlmOptions): Promise<boolean> {
+async function factRelation(a: string, b: string, llm: LlmOptions): Promise<'same' | 'different' | 'contradict'> {
   try {
     const res = await chat(
       [
         {
           role: 'system',
           content:
-            '你在判断两条关于同一个人的记录是不是同一件事。只输出 yes 或 no。\n' +
-            'yes = 说的是同一个事实，只是换了说法，或者后者更准确。\n' +
-            'no = 是两件不同的事，或者互相矛盾（比如一个说喜欢猫、一个说喜欢狗）。',
+            '你在判断两条关于同一个人的记录是什么关系。只输出一个词：same / different / contradict。\n' +
+            'same = 说的是同一件事，只是换了说法，或者后者更准确。\n' +
+            'different = 是两件不同的事，可以同时成立（比如喜欢猫、喜欢狗）。\n' +
+            'contradict = 说的是同一个方面，但内容互相矛盾、不能同时成立（比如一个说在北京、一个说在上海；一个说喜欢猫、一个说不喜欢猫）。',
         },
         { role: 'user', content: `第一条：${a}\n第二条：${b}` },
       ],
       { ...llm, maxTokens: 4, temperature: 0 },
     )
-    return /yes|是|同一/i.test(res.text.trim())
+    const text = res.text.trim().toLowerCase()
+    // 先判 contradict：模型偶尔会写「不是 same，是 contradict」
+    if (/contradict|矛盾/.test(text)) return 'contradict'
+    // 兼容老模型的 yes/no：no 当"不同的事"，不误判成矛盾
+    if (/^(yes|是|同一)/.test(text)) return 'same'
+    if (/^(no|不是|不同)/.test(text)) return 'different'
+    return /same/.test(text) ? 'same' : 'different'
   } catch {
     // 判断不了就按"不同"处理：宁可多记一条，也别把新信息吞掉
-    return false
+    return 'different'
   }
 }
 
@@ -549,8 +561,8 @@ async function mergeFactsInto(
     // 灰色地带：字符相似度分不出「换个说法」和「另一件事」，问模型。
     // 之前这里直接当冲突让用户确认，结果同一件事换个说法就被反复问。
     if (best && best.sim >= 0.45) {
-      const same = await sameFact(best.old.text, text, llm)
-      if (same) {
+      const rel = await factRelation(best.old.text, text, llm)
+      if (rel === 'same') {
         // 同一件事：刷新确认，顺便把更准确的说法留下
         touchFact(personId, best.old.text, date)
         if (text.length > best.old.text.length && best.old.text.length < text.length * 0.8) {
@@ -559,12 +571,20 @@ async function mergeFactsInto(
         }
         continue
       }
-      // 真是另一件事或互相矛盾：交给用户确认
-      conflicts.push({
-        text: `我记得「${best.old.text}」，这次听到「${text}」，想确认哪个对`,
-        date,
-        kind: 'pending',
-      })
+      if (rel === 'contradict') {
+        // 矛盾：旧说法失效、新说法写入。
+        // 旧的不删（模型可能判错，人还能手改回来），只是不再注入 prompt。
+        supersedeFact(personId, best.old.text, date)
+        accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
+        conflicts.push({
+          text: `我记得「${best.old.text}」，这次听到「${text}」，先按新的记了`,
+          date,
+          kind: 'pending',
+        })
+        continue
+      }
+      // different：两件不同的事，可以同时成立——直接记，别去打扰用户
+      accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
       continue
     }
     accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })

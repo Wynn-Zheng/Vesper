@@ -104,7 +104,7 @@ async function handlePeopleApiInner(
         群数: inGroups.length,
         关系: Math.round(rel.closeness),
         阶段: stageOf(rules, rel.closeness).名,
-        事实: facts.filter((f) => !f.faint).length,
+        事实: facts.filter((f) => !f.faint && !f.supersededAt).length,
         最近: last,
       }
     })

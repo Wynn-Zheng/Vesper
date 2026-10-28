@@ -286,6 +286,34 @@ console.log('\n=== 7. 群聊 facts 归属 ===')
   )
 }
 
+/* ---------------- 8. 首次整理也能被兜底触发 ---------------- */
+
+console.log('\n=== 8. 首次整理的兜底 ===')
+{
+  // 阈值设得远高于条数，只剩"每天至少一次"这条兜底。
+  // 从没整理过的会话原来永远不触发（兜底要求 lastAt > 0），
+  // 现在用这批消息的第一条时间当基准。
+  modelBody = { episodes: [], facts: [], open: [], insights: [] }
+  const scope = 'private:30003' as Scope
+  const start = Date.now() - 2 * 86_400_000
+  for (let i = 0; i < 10; i++) {
+    appendRaw({
+      ts: start + i * 60_000,
+      scope,
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      text: `第 ${i} 条：今天面试完一直在想那道手写题，感觉挺可惜的。`,
+    })
+  }
+  const highThreshold = {
+    ...rules,
+    记忆: { ...rules.记忆, 反思: { ...rules.记忆.反思, 阈值: 1000, 每天至少: 1 } },
+  }
+  calls = 0
+  await tick({ llm, rules: highThreshold })
+  check('阈值远高于条数时，靠兜底也能整理第一次', readState().scopes[scope] !== undefined, String(readState().scopes[scope]))
+  check('确实调了模型', calls > 0, `调用 ${calls} 次`)
+}
+
 console.log(`\n通过 ${pass} / 失败 ${fail}`)
 srv.close()
 process.exit(fail > 0 ? 1 : 0)

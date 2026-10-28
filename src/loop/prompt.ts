@@ -246,7 +246,8 @@ export function buildSystem(parts: PromptParts): string {
   if (profile?.trim()) {
     lines.push('')
     lines.push('他是谁（你目前的印象，可能不准）：')
-    lines.push(profile.trim())
+    // 画像是散文，容易越写越长；和 facts 有重叠时以 facts 为准（见下面 memory 块）
+    lines.push(profile.trim().slice(0, 600))
   }
 
   if (memory?.trim()) {
@@ -254,6 +255,7 @@ export function buildSystem(parts: PromptParts): string {
     lines.push('你记得这些（想起来的部分，不是全部）：')
     lines.push(memory.trim())
     lines.push('')
+    lines.push('上面那段印象是概括；和这里的事实对不上时，以这里为准。')
     lines.push('这些记忆是你的，不是它的。用得自然就用，想不起来就不提。')
     lines.push('如果有"还没问完的事"，合适的时机可以顺口问一句，别像查清单。')
   }

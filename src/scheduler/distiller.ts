@@ -105,8 +105,14 @@ export async function tick(opts: DistillerOptions): Promise<void> {
   }
 
   for (const [scope, list] of groups) {
-    // 兜底判断看"上次真正跑过的时间"；没跑过就用游标（兼容老状态）
-    const lastRun = state.lastRun?.[scope] ?? cutoff(scope)
+    // 兜底判断看"上次真正跑过的时间"；没跑过就用游标（兼容老状态）。
+    //
+    // 从没整理过时（两者都没有）用**这批消息的第一条时间**当基准：
+    // 兜底条件要求 lastAt > 0，直接传 0 就永远不触发 —— 新会话必须攒满
+    // `记忆.反思.阈值`（默认 150）条才会第一次整理，而 recentRaw 只读 7 天，
+    // 低频聊天（一天二三十条）可能永远等不到那一天，等于一条记忆都不产生。
+    const firstTs = list[0]?.ts ?? 0
+    const lastRun = state.lastRun?.[scope] ?? (cutoff(scope) || firstTs)
     if (!shouldDistill(list, lastRun, Date.now(), rules.记忆.反思)) continue
 
     const personId = scope.startsWith('private:')

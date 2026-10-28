@@ -43,6 +43,16 @@ export interface PersonFact {
    */
   tier?: FactTier
   /**
+   * 这条被新说法取代的日期。
+   *
+   * 为什么保留而不删：模型可能判错、人也可能改主意。留着能恢复，删了就没。
+   * 失效的事实**不再注入 prompt**，但文件里还在（人可读、可手改回来）。
+   *
+   * 判据看 distill 的 sameFact：只有模型明确说"互相矛盾"才标这个，
+   * 单纯"两件不同的事"不会（那只是两条并存）。
+   */
+  supersededAt?: string
+  /**
    * 只在召回时用：这条是很久没提、置信度掉到 0.2 以下的，
    * 靠话题相关性才被捞回来的。
    *
@@ -89,6 +99,11 @@ function parseFactLine(line: string): PersonFact | null {
   const lastConfirmed = m[4]?.trim()
   const source = m[6]?.trim()
 
+  // 「已失效 2026-10-28」：被新说法取代的旧事实。格式坏了就当没失效（保守：继续用它）。
+  const supRaw = extras.find((x) => x.startsWith('已失效'))
+  const supDate = supRaw ? supRaw.replace(/^已失效\s*/, '').trim() : ''
+  const supersededAt = /^\d{4}-\d{2}-\d{2}$/.test(supDate) ? supDate : undefined
+
   return {
     text: m[1]!,
     date,
@@ -97,6 +112,7 @@ function parseFactLine(line: string): PersonFact | null {
     visibility,
     by,
     ...(source ? { source } : {}),
+    ...(supersededAt ? { supersededAt } : {}),
   }
 }
 
@@ -179,7 +195,8 @@ function formatFact(x: PersonFact): string {
   const confirmed = x.lastConfirmed && x.lastConfirmed !== x.date ? `，确认 ${x.lastConfirmed}` : ''
   // 只有用户确认过的才写记号；默认 it 不写，老行的格式保持不变。
   const byMe = x.by === 'me' ? '，你确认' : ''
-  return `- ${safe(x.text)}（${x.date}，置信 ${x.confidence}${confirmed}，${LABEL[x.visibility]}${byMe}）${x.source ? `｜${safe(x.source)}` : ''}`
+  const superseded = x.supersededAt ? `，已失效 ${x.supersededAt}` : ''
+  return `- ${safe(x.text)}（${x.date}，置信 ${x.confidence}${confirmed}，${LABEL[x.visibility]}${byMe}${superseded}）${x.source ? `｜${safe(x.source)}` : ''}`
 }
 
 export function appendFacts(personId: string, facts: PersonFact[]): void {
@@ -216,7 +233,8 @@ export function appendFacts(personId: string, facts: PersonFact[]): void {
       const i = merged.findIndex((x) => x.text === item.text)
       if (i >= 0) {
         if (merged[i]!.by === 'me') continue
-        merged[i] = { ...merged[i]!, ...item }
+        // 重新听到一条曾失效的事实 = 它又成立了，清掉失效标记
+        merged[i] = { ...merged[i]!, ...item, supersededAt: item.supersededAt }
       } else merged.push(item)
     }
 
@@ -239,6 +257,17 @@ export function touchFact(personId: string, text: string, date: string): boolean
   // 用户确认过的事实，连确认日期也不让模型改
   if (best.f.by === 'me') return false
   return rewrite(personId, (f) => (f.text === best.f.text ? { ...f, lastConfirmed: date } : f))
+}
+
+/**
+ * 把一条旧事实标记为「已被新说法取代」。
+ *
+ * 只在模型明确判出「矛盾」（contradict）时调用。
+ * 标记后不再注入 prompt，但文件里还留着——模型判错、人改主意，都能手改回来。
+ * 依据：人不是把旧认知删掉，而是让它不再被取用（Bjork 的新失用理论）。
+ */
+export function supersedeFact(personId: string, text: string, date: string): boolean {
+  return rewrite(personId, (f) => (f.text === text ? { ...f, supersededAt: date } : f))
 }
 
 /**

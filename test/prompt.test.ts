@@ -45,6 +45,19 @@ test('关系和记忆分别注入', () => {
   assert.ok(s.includes('他四级没复习'))
 })
 
+test('画像和事实冲突时以事实为准（提示写进了 prompt）', () => {
+  const s = buildSystem({ rules: DEFAULTS, profile: '他这个人挺安静的', memory: '- 他其实很爱说话' })
+  assert.ok(s.includes('他这个人挺安静的'))
+  assert.ok(s.includes('以这里为准'), 'memory 块要说明它比画像更可信')
+})
+
+test('画像过长会被截断（它容易越写越长，白占预算）', () => {
+  const long = '他'.repeat(900)
+  const s = buildSystem({ rules: DEFAULTS, profile: long })
+  assert.ok(s.includes(long.slice(0, 600)))
+  assert.ok(!s.includes(long), '不应整段塞进去')
+})
+
 test('阶段按阈值正确匹配', () => {
   assert.equal(stageOf(DEFAULTS, 0).名, '陌生')
   assert.equal(stageOf(DEFAULTS, 10).名, '陌生')

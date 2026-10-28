@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { similarity } from '../core/text.ts'
 import { personDir } from './store.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { serialized } from '../store/serialize.ts'
@@ -68,9 +69,19 @@ export function appendOpen(personId: string, items: OpenItem[]): void {
   // 读-改-写排队，避免并发覆盖
   serialized(`open:${personId}`, () => {
     const f = openFile(personId)
-    const existing = existsSync(f) ? readFileSync(f, 'utf8') : '# 还没做完 / 想问他的事\n\n'
-    const lines = valid.map(formatItem).join('\n')
-    const head = existing.trimEnd()
+    const existingRaw = existsSync(f) ? readFileSync(f, 'utf8') : '# 还没做完 / 想问他的事\n\n'
+
+    // 去重：整理时可能反复生成同一件事（尤其"想问问他能不能说"这类 pending），
+    // 不去重的话 open.md 会一行行堆同样的句子，而 recall 只取最后 5 条。
+    // 相似度阈值定 0.9：只吞"几乎是同一句"的，不同的待办不会被误并。
+    const existing = loadOpen(personId).map((x) => x.text)
+    const fresh = valid.filter(
+      (i) => !existing.some((t) => t === i.text || similarity(t, i.text) > 0.9),
+    )
+    if (!fresh.length) return
+
+    const lines = fresh.map(formatItem).join('\n')
+    const head = existingRaw.trimEnd()
     writeAtomic(f, `${head ? `${head}\n` : ''}${lines}\n`)
   })
 }
