@@ -525,11 +525,15 @@ export class OnebotTransport implements Transport {
     }
 
     if (!shouldHandle(ev, this.opts)) {
-      // 被 @ 了却没处理：这是异常，必须留痕，否则查不到原因
+      // 被 @ 了却没处理：这是异常，必须留痕，否则查不到原因。
+      //
+      // 光说「被过滤」没有用 —— 用户只会看到「它不理我」，然后去翻配置瞎猜。
+      // 所以顺带把具体卡在哪一步也算出来。
       if (ev.message_type === 'group' && isAddressed(ev)) {
         warnAt('消息 @ 了我但被过滤', {
           群: ev.group_id,
           人: ev.user_id,
+          原因: rejectReason(ev, this.opts),
           内容: extractText(ev.message).slice(0, 30),
         })
       }
@@ -769,8 +773,62 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
 }
 
 /** 这个人是不是刚刚还在跟它说话 */
-export function isRecentTalker(opts: OnebotOptions, groupId: string, userId: string): boolean {
-  const at = opts.recentTalkers?.get(`${groupId}:${userId}`) ?? 0
+/**
+ * 这条消息为什么被丢掉。
+ *
+ * 诊断用，**判断顺序必须和 shouldHandle 完全一致** —— 否则日志会撒谎，
+ * 比没有日志更糟。
+ *
+ * 起因：用户群里 @ 了它没反应，日志只写「被过滤」，看不出是黑名单、
+ * 群没开、还是别的。只能去翻配置猜。
+ */
+export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
+  const text = extractText(ev.message)
+  if (!text) return '没有文字（只有图片/表情/语音）'
+  if (!text.replace(/\[[^\]]*\]/g, '').trim()) return '只有占位符，没有实际内容'
+
+  const isPrivate = ev.message_type === 'private'
+  const userId = String(ev.user_id ?? '')
+
+  if (isPrivate) {
+    if (opts.ownerQQ && userId !== opts.ownerQQ) {
+      return `私聊不是主人（发件人 ${userId}，主人 ${opts.ownerQQ}）`
+    }
+    return '未知原因'
+  }
+
+  if (!opts.allowGroup) return '群聊总开关没开（.env 里 ALLOW_GROUP 不是 true）'
+
+  const gid = String(ev.group_id ?? '')
+  const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
+  const called = names.some((n) => text.includes(n))
+  const mustAt = opts.getPolicy ? opts.getPolicy().requireAt : opts.requireAt !== false
+
+  if (opts.getPolicy) {
+    const p = opts.getPolicy()
+    const acc = checkAccess(p, gid, userId)
+    // 白名单/黑名单的 reason 直接来自 checkAccess，和自己判断保持一致
+    if (!acc.ok) return `${acc.reason ?? '权限拒绝'}（群 ${gid} / 人 ${userId}）`
+    if (mustAt && !isAddressed(ev) && !called && !isRecentTalker(opts, gid, userId)) {
+      return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
+    }
+    return '未知原因'
+  }
+
+  if (opts.groupAllow?.length && !opts.groupAllow.includes(gid)) {
+    return `群不在白名单（${gid}）`
+  }
+  if (opts.memberAllow?.length && !opts.memberAllow.includes(userId)) {
+    return `人不在白名单（${userId}）`
+  }
+  if (mustAt && !isAddressed(ev) && !called && !isRecentTalker(opts, gid, userId)) {
+    return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
+  }
+  return '未知原因'
+}
+
+
+export function isRecentTalker(opts: OnebotOptions, groupId: string, userId: string): boolean {  const at = opts.recentTalkers?.get(`${groupId}:${userId}`) ?? 0
   return Date.now() - at < (opts.followUpWindowMs ?? 120_000)
 }
 
