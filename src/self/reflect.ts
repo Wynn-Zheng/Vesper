@@ -119,7 +119,13 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     .join('\n')
 
   const material = [
-    `# 我现在对自己的认识\n${doc.about || '（还没想清楚）'}`,
+    doc.aboutOwner === 'me'
+      ? // 用户写的原文是锁的，模型只能补，不能改
+        `# 我是谁（这段是主人写的，你不能改它）\n${doc.about || '（还没写）'}\n\n` +
+        `# 你之前补充的（可以更新，但要保留说对了的部分）\n${doc.aboutExtra || '（还没有）'}\n\n` +
+        '注意：上面「我是谁」那一段是主人写死的，别复述、别改写、别把它当自己的话重说一遍。' +
+        '你只写自己最近新发现的、和那段不重复的东西，短一点没关系。'
+      : `# 我现在对自己的认识\n${doc.about || '（还没想清楚）'}`,
     // 上次写的思考要标清楚"已经写过了"。
     // 不标的话模型会顺着上次的话题继续想——实测会连着几天都在琢磨同一件事，
     // 然后那件事又进了自己的记录，越滚越窄。
@@ -159,9 +165,19 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     }
     // 用户写了「我是谁」就锁住 —— 否则他刚改完、下一次反思就被模型版本盖掉，
     // 看起来就像"刚才写的东西被清空了"。
-    if (doc.aboutOwner === 'it' && out.自述 && out.自述.trim() && out.自述.trim() !== doc.about) {
-      doc.about = out.自述.trim()
-      touched = true
+    // 自述：用户写了就只允许补充，没写就整体交给它
+    if (out.自述 && out.自述.trim()) {
+      const next = out.自述.trim()
+      if (doc.aboutOwner === 'it') {
+        if (next !== doc.about) {
+          doc.about = next
+          touched = true
+        }
+      } else if (next !== doc.aboutExtra) {
+        // 「我写」模式：原文锁死，只更新它补充的那一段
+        doc.aboutExtra = next.slice(0, 600)
+        touched = true
+      }
     }
     if (out.在想 && out.在想.trim()) {
       doc.thinking = out.在想.trim()

@@ -29,6 +29,14 @@ export interface SelfDoc {
    * 看起来就像"刚写的东西被清空了"。
    */
   aboutOwner: 'me' | 'it'
+  /**
+   * 它补充的自述片段。
+   *
+   * 只在 aboutOwner === 'me' 时有意义：用户写的那段（about）它不能碰，
+   * 但可以在下面追加"最近新发现的"。
+   * 切回 'it' 时这两段会合并，交回给它整体改写。
+   */
+  aboutExtra: string
   /** 正文：我是谁 */
   about: string
   /** 最近在想的事 */
@@ -39,7 +47,7 @@ export interface SelfDoc {
   abilities: string
 }
 
-const EMPTY: SelfDoc = { name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '', aboutOwner: 'it' }
+const EMPTY: SelfDoc = { name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '', aboutOwner: 'it', aboutExtra: '' }
 
 function splitFront(text: string): { meta: Record<string, string>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)
@@ -78,6 +86,7 @@ export function loadSelf(): SelfDoc {
     nameReason: meta['取名原因'] ?? '',
     about: section(body, '我是谁') || body.trim(),
     thinking: section(body, '我最近在想'),
+    aboutExtra: section(body, '它补充的'),
     abilities: section(body, '我能做什么'),
     traits: parseTraits(meta),
     // 默认 'it'：老文件没这个字段，保持原来的行为（它能改自述）
@@ -124,6 +133,7 @@ export function loadSelfVersion(id: string): SelfDoc | null {
     nameReason: meta['取名原因'] ?? '',
     about: section(body, '我是谁') || body.trim(),
     thinking: section(body, '我最近在想'),
+    aboutExtra: section(body, '它补充的'),
     abilities: section(body, '我能做什么'),
     traits: parseTraits(meta),
     aboutOwner: meta['所有权'] === '我写' ? 'me' : 'it',
@@ -166,6 +176,11 @@ export function saveSelf(doc: SelfDoc): void {
     '# 我是谁',
     '',
     doc.about.trim() || '（还没想清楚。）',
+
+    // 只有「我写」模式才有这一段：它只能在用户写的内容下面补充
+    ...(doc.aboutOwner === 'me' && (doc.aboutExtra ?? '').trim()
+      ? ['', '## 它补充的', '', (doc.aboutExtra ?? '').trim()]
+      : []),
     '',
     '## 我能做什么',
     '',

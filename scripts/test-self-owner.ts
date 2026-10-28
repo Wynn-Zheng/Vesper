@@ -78,6 +78,40 @@ console.log('\n=== 4. 交回给它 ===')
   check('文件里写的是「它写」', raw.includes('所有权: 它写'), raw.split('\n').slice(0, 5).join(' | '))
 }
 
+console.log('\n=== 4.5 「我写」模式下它只能补充 ===')
+{
+  // 用户写了原文并锁住
+  saveSelf({ ...base, about: '主人写的原文，不能动。', aboutOwner: 'me', aboutExtra: '' })
+  // 模拟它反思时输出的"自述"——只应该进 aboutExtra
+  const d = loadSelf()
+  d.aboutExtra = '它补充：最近发现自己不太会拒绝人。'
+  saveSelf(d)
+
+  const after = loadSelf()
+  check('原文没被改', after.about === '主人写的原文，不能动。', after.about)
+  check('补充的内容进了 aboutExtra', after.aboutExtra.includes('不太会拒绝'), after.aboutExtra)
+
+  const raw = readFileSync(selfFile, 'utf8')
+  check('文件里有「## 它补充的」这一节', raw.includes('## 它补充的'), raw.slice(0, 200))
+  check('原文和补充都在文件里', raw.includes('主人写的原文') && raw.includes('不太会拒绝'))
+}
+
+console.log('\n=== 4.6 切回「它写」时两段合并 ===')
+{
+  const d = loadSelf()
+  // 模拟 PUT /api/self/owner 的合并逻辑
+  const merged = [d.about.trim(), (d.aboutExtra ?? '').trim()].filter(Boolean).join('\n\n')
+  saveSelf({ ...d, about: merged, aboutExtra: '', aboutOwner: 'it' })
+
+  const after = loadSelf()
+  check('两段都还在 about 里', after.about.includes('主人写的原文') && after.about.includes('不太会拒绝'), after.about)
+  check('aboutExtra 清空', after.aboutExtra === '', after.aboutExtra)
+  check('所有权是 it', after.aboutOwner === 'it')
+
+  const raw = readFileSync(selfFile, 'utf8')
+  check('文件里不再有「它补充的」节', !raw.includes('## 它补充的'))
+}
+
 console.log('\n=== 5. 老文件没这个字段时默认 it ===')
 {
   const old = `---

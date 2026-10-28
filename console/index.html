@@ -2294,6 +2294,23 @@ c.appendChild(b1)
     ownerBtn.onclick = () => switchSelfOwner(isMine ? 'it' : 'me')
     ownerRow.appendChild(ownerBtn)
     c.appendChild(ownerRow)
+    
+    // 「我写」模式下，它只能在用户那段下面补充，不能改原文。
+    // 单独显示成一块，让用户一眼看出哪些是自己写的、哪些是它加的。
+    if (d.aboutOwner === 'me' && d.aboutExtra) {
+      const extraBox = el('div')
+      extraBox.style.cssText = 'margin-top:14px;padding:10px 12px;border-radius:8px;background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.25)'
+      extraBox.appendChild(el('div', 'op-t', '它补充的')).style.cssText = 'color:#3fb950;margin-bottom:6px'
+      extraBox.appendChild(el('div', 'txt', d.aboutExtra)).style.cssText = 'font-size:12.5px;line-height:1.7;white-space:pre-wrap'
+      const note = el('div', 'hint', '这段它会随反思更新；上面那段是你的，它不会动。')
+      note.style.cssText = 'font-size:11px;margin-top:6px;color:#8b949e'
+      extraBox.appendChild(note)
+      c.appendChild(extraBox)
+    } else if (d.aboutOwner === 'me') {
+      const note = el('div', 'hint', '它还没补充过什么。等它想明白会自己加在这儿。')
+      note.style.cssText = 'font-size:11px;margin-top:10px;color:#8b949e'
+      c.appendChild(note)
+    }
     c.appendChild(b1)
 
     c.appendChild(el('div', 'op-t', '我给自己定的规矩')).style.marginTop = '16px'

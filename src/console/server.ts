@@ -979,6 +979,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           name: self.name || '',
           selfText: self.about || '',
           aboutOwner: self.aboutOwner,
+          aboutExtra: self.aboutExtra || '',
           traits,
           life,
           intent: loadIntent(),
@@ -1016,7 +1017,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         const { loadSelf, saveSelf } = await import('../self/store.ts')
         const cur = loadSelf()
         // 用户手动改自述 = 接管所有权。不然 12 小时后的自我反思会把他的版本盖掉。
-    saveSelf({ ...cur, about: text, aboutOwner: 'me' })
+    // 用户手动改 = 接管所有权，写进 about（it 模式时那段就是它自己的）
+    saveSelf({ ...cur, about: text, aboutOwner: 'me', aboutExtra: cur.aboutExtra })
         json(res, 200, { ok: true })
         return
       }
@@ -1027,7 +1029,13 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       const owner = body.owner === 'me' ? 'me' : 'it'
       const { loadSelf, saveSelf } = await import('../self/store.ts')
       try {
-        saveSelf({ ...loadSelf(), aboutOwner: owner })
+        const cur = loadSelf()
+        // 切回「它写」时把两段合并：不然它下次一改写，用户那段和它补充的都会没
+        const merged =
+          owner === 'it' && cur.aboutOwner === 'me' && (cur.aboutExtra ?? '').trim()
+            ? [cur.about.trim(), (cur.aboutExtra ?? '').trim()].filter(Boolean).join('\n\n')
+            : cur.about
+        saveSelf({ ...cur, about: merged, aboutExtra: owner === 'it' ? '' : cur.aboutExtra, aboutOwner: owner })
         json(res, 200, { ok: true, aboutOwner: owner })
       } catch (e) {
         json(res, 500, { error: e instanceof Error ? e.message : String(e) })
