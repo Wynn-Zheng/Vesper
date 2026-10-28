@@ -8,6 +8,7 @@ import type { Target } from '../core/types.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { chat } from '../llm/deepseek.ts'
 import { appendRaw, loadEpisodes, memoryRoot, recentRaw } from '../memory/store.ts'
+import { loadFacts } from '../memory/facts.ts'
 import { loadOpen } from '../people/open.ts'
 import { personOfAccount, accountIdsOf } from '../people/store.ts'
 import { loadMood, decayedMood } from '../persona/mood.ts'
@@ -18,11 +19,37 @@ import { writeAtomic } from '../store/fs.ts'
 import { effectiveWill } from '../self/will.ts'
 import { say } from '../channel/send.ts'
 
+/**
+ * 主动消息。
+ *
+ * 设计依据（两条，来自真实社交网络的实证）：
+ *
+ * 1. **人是"由头驱动"的，不是"频率驱动"的。**
+ *    关系再好也不会每天准时打卡；关系一般也会因为"看到个东西想到你"而开口。
+ *    所以这里先算一个**由头分**（urge 0-10）——有没有具体的事想说；
+ *    关系只决定"多容易开口"（门槛和间隔），不决定"能不能开口"。
+ *
+ * 2. **弱关系也会主动，只是更少、更谨慎。**
+ *    Roberts & Dunbar (2015, Human Nature 26:426-450) 跟踪 18 个月的社交网络：
+ *    朋友联系间隔的中位数从在校时的 1 天掉到毕业一年后的 27 天，而且
+ *    "从外层进入内层"很少见（6.7%）、"从内层掉到外层"很常见（48.6%）。
+ *    → 阶段频率应该以"天/周"为单位，不是"每天几次"；关系一旦冷掉很难再热，
+ *      所以陌生阶段也不能完全闭嘴（原来 dailyMax=0 会造成永久死锁）。
+ */
+
 interface ProactiveState {
   date: string
   count: number
   lastAt: number
   lastText: string
+  /**
+   * 连续几次主动后对方都没回。
+   *
+   * 为什么需要：没有这个刹车，关系好的阶段会"每天两三次"地单方面说话。
+   * 真实的关系维护是互惠的（Gouldner 1960 的互惠规范）；对方一直不回，
+   * 正常人会先收一收、等对方开口。
+   */
+  noReply?: number
 }
 
 function stateFile(): string {
@@ -36,7 +63,7 @@ export function todayKey(d = new Date()): string {
 
 function loadState(): ProactiveState {
   const f = stateFile()
-  const empty: ProactiveState = { date: todayKey(), count: 0, lastAt: 0, lastText: '' }
+  const empty: ProactiveState = { date: todayKey(), count: 0, lastAt: 0, lastText: '', noReply: 0 }
   if (!existsSync(f)) return empty
   try {
     const raw = JSON.parse(readFileSync(f, 'utf8')) as Partial<ProactiveState>
@@ -45,9 +72,10 @@ function loadState(): ProactiveState {
       count: Number(raw.count ?? 0),
       lastAt: Number(raw.lastAt ?? 0),
       lastText: String(raw.lastText ?? ''),
+      noReply: Number(raw.noReply ?? 0),
     }
-    // 跨天重置
-    if (state.date !== todayKey()) return { ...empty, lastAt: state.lastAt, lastText: state.lastText }
+    // 跨天重置「今天发了几次」，但保留"上次主动时间"和"连续没回"
+    if (state.date !== todayKey()) return { ...empty, lastAt: state.lastAt, lastText: state.lastText, noReply: state.noReply }
     return state
   } catch {
     return empty
@@ -72,24 +100,134 @@ export function inQuietHours(rules: Rules, now = new Date()): boolean {
   return start <= end ? cur >= start && cur < end : cur >= start || cur < end
 }
 
-/** 各阶段允许的最小间隔（小时）与每日上限 */
-export function proactiveBudget(stageName: string): { minGapHours: number; dailyMax: number } {
-  switch (stageName) {
-    case '陌生':
-      // 用 0 而不是 Infinity：Infinity 过 JSON 会变成 null，控制台会显示 "null 小时"
-      return { minGapHours: 0, dailyMax: 0 }
-    case '眼熟':
-      return { minGapHours: 48, dailyMax: 1 }
-    case '朋友':
-      return { minGapHours: 24, dailyMax: 2 }
-    case '亲近':
-      return { minGapHours: 12, dailyMax: 3 }
-    case '亲密':
-      return { minGapHours: 6, dailyMax: 4 }
-    default:
-      return { minGapHours: 4, dailyMax: 5 }
+/* ---------------- 阶段预算 ---------------- */
+
+export interface StageBudget {
+  /** 两次主动之间至少隔多久（小时） */
+  minGapHours: number
+  /** 每天最多主动几次 */
+  dailyMax: number
+  /** 由头分门槛：低于它不开口 */
+  minUrge: number
+}
+
+/**
+ * 内置兜底表。rules.yaml 里如果没写结构化字段就用它。
+ *
+ * 数值刻意比"直觉"稀疏：
+ *   朋友 5 天一次、亲近 3 天、亲密 1.5 天——
+ *   现实里朋友一个月联系一次都算正常，已经比真实社交密了。
+ */
+const FALLBACK_STAGE_BUDGET: Record<string, StageBudget> = {
+  陌生: { minGapHours: 720, dailyMax: 1, minUrge: 7 },
+  眼熟: { minGapHours: 336, dailyMax: 1, minUrge: 5 },
+  朋友: { minGapHours: 120, dailyMax: 2, minUrge: 3 },
+  亲近: { minGapHours: 72, dailyMax: 3, minUrge: 2 },
+  亲密: { minGapHours: 36, dailyMax: 3, minUrge: 1 },
+  离不开: { minGapHours: 24, dailyMax: 4, minUrge: 0 },
+}
+
+const LAST_RESORT: StageBudget = FALLBACK_STAGE_BUDGET['离不开']!
+
+function pickNum(v: unknown, fallback: number): number {
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
+/**
+ * 这个阶段允许多主动。以 rules.yaml 的结构化字段为准，
+ * `行为.主动消息.每日上限` 配成数字时作为**全局硬上限**（0 = 完全关闭）。
+ */
+export function proactiveBudgetOf(rules: Rules, stageName: string): StageBudget {
+  const stage = rules.关系.阶段.find((s) => s.名 === stageName)
+  const base = FALLBACK_STAGE_BUDGET[stageName] ?? LAST_RESORT
+  let dailyMax = pickNum(stage?.每日上限, base.dailyMax)
+
+  const globalMax = rules.行为.主动消息.每日上限
+  if (typeof globalMax === 'number' && Number.isFinite(globalMax) && globalMax >= 0) {
+    dailyMax = Math.floor(globalMax)
+  }
+
+  return {
+    minGapHours: pickNum(stage?.主动间隔小时, base.minGapHours),
+    dailyMax,
+    minUrge: pickNum(stage?.最小由头, base.minUrge),
   }
 }
+
+/** 只看阶段的兜底预算（测试 / 控制台没有 rules 时用） */
+export function proactiveBudget(stageName: string): StageBudget {
+  return FALLBACK_STAGE_BUDGET[stageName] ?? LAST_RESORT
+}
+
+/* ---------------- 由头 ---------------- */
+
+export interface UrgeInput {
+  rules: Rules
+  stageName: string
+  now: Date
+  lastTalkAt: number
+  /** 没做完 / 没问完的事有几条 */
+  openTodos: number
+  /** 最近一条新经历距今多少小时；没有就是 null */
+  freshEpisodeHours: number | null
+  /** 它自己那边有没有新的事 */
+  hasLife: boolean
+  /** 当前心情强度 0-1 */
+  moodIntensity: number
+  /** 有没有"重要但很久没提"的事实 */
+  staleMajorFact: boolean
+}
+
+/**
+ * 这次"想说话"的理由够不够（0-10）。
+ *
+ * 每一项都是**具体的事**，不是"该联系了"这种感觉——
+ * 后者是人给自己找的理由，模型拿到只会说"好久没聊了"。
+ */
+export function computeUrge(i: UrgeInput): { score: number; reasons: string[] } {
+  const budget = proactiveBudgetOf(i.rules, i.stageName)
+  const reasons: string[] = []
+  let score = 0
+
+  // 有件具体没完的事：最强的由头
+  if (i.openTodos > 0) {
+    score += 3
+    reasons.push('还有没做完的事')
+  }
+
+  // 这几天刚一起经历过事：趁热说
+  if (i.freshEpisodeHours !== null && i.freshEpisodeHours <= 72) {
+    score += 2
+    reasons.push('这几天一起经历了点事')
+  }
+
+  // 隔了很久：关系维护的由头（只对聊过的人成立）
+  const gapH = (i.now.getTime() - i.lastTalkAt) / 3_600_000
+  if (i.lastTalkAt > 0 && gapH >= budget.minGapHours * 1.5) {
+    score += 2
+    reasons.push('有一阵子没聊了')
+  }
+
+  if (i.hasLife) {
+    score += 1
+    reasons.push('我这边有件小事想说')
+  }
+
+  if (i.moodIntensity >= 0.6) {
+    score += 1
+    reasons.push('心情起伏比较大')
+  }
+
+  if (i.staleMajorFact) {
+    score += 1
+    reasons.push('记得他提过一件重要的事')
+  }
+
+  return { score: Math.min(10, score), reasons }
+}
+
+/* ---------------- 相似度 ---------------- */
 
 /** 二元组相似度，用来防止反复说同一句 */
 export function tooSimilar(a: string, b: string, threshold = 0.6): boolean {
@@ -115,6 +253,8 @@ export function tooSimilar(a: string, b: string, threshold = 0.6): boolean {
   return inter / (A.size + B.size - inter) > threshold
 }
 
+/* ---------------- 门控 ---------------- */
+
 export interface GateInput {
   rules: Rules
   now: Date
@@ -123,6 +263,10 @@ export interface GateInput {
   lastProactiveAt: number
   todayCount: number
   openCount: number
+  /** 这次"想说话"的由头分 0-10 */
+  urge: number
+  /** 连续几次主动后对方没回 */
+  noReply: number
 }
 
 export interface GateResult {
@@ -132,26 +276,35 @@ export interface GateResult {
 
 /** 该不该主动说话。纯函数，便于测试。 */
 export function shouldProactive(i: GateInput): GateResult {
-  const budget = proactiveBudget(i.stageName)
-  if (budget.dailyMax === 0) return { ok: false, reason: `阶段「${i.stageName}」不主动` }
+  const budget = proactiveBudgetOf(i.rules, i.stageName)
+  if (budget.dailyMax === 0) return { ok: false, reason: '主动消息已关闭' }
   if (inQuietHours(i.rules, i.now)) return { ok: false, reason: '静默时段' }
   if (i.todayCount >= budget.dailyMax) return { ok: false, reason: '今日额度用完' }
 
-  const gapH = (i.now.getTime() - Math.max(i.lastTalkAt, i.lastProactiveAt)) / 3_600_000
-  if (gapH < budget.minGapHours) return { ok: false, reason: `间隔不够（${gapH.toFixed(1)}h < ${budget.minGapHours}h）` }
+  // 连续没回：3 次就彻底停，等对方先开口；2 次时抬高门槛、拉长间隔
+  if (i.noReply >= 3) return { ok: false, reason: `连续 ${i.noReply} 次没回，等对方先开口` }
+  const urgeNeeded = budget.minUrge + (i.noReply >= 2 ? 2 : 0)
+  if (i.urge < urgeNeeded) return { ok: false, reason: `由头不够（${i.urge} < ${urgeNeeded}）` }
 
-  // 没有未完成的事、也没有新经历，就先不打扰
-  if (i.openCount === 0 && i.lastTalkAt === 0) return { ok: false, reason: '没有可说的由头' }
+  const gapH = (i.now.getTime() - Math.max(i.lastTalkAt, i.lastProactiveAt)) / 3_600_000
+  const needH = budget.minGapHours * (i.noReply >= 2 ? 1.5 : 1)
+  if (gapH < needH) return { ok: false, reason: `间隔不够（${gapH.toFixed(1)}h < ${needH}h）` }
+
+  // 从没聊过、也没有任何由头：不打扰
+  if (i.openCount === 0 && i.lastTalkAt === 0 && i.urge === 0) return { ok: false, reason: '没有可说的由头' }
 
   return { ok: true, reason: 'ok' }
 }
+
+/* ---------------- 生成与发送 ---------------- */
 
 const SYSTEM = `你要主动找他说一句话。只输出你要说的那句话，不要引号，不要解释，不要"在吗"这种开场白。
 
 规则：
 - 一句到两句话，总共不超过 30 个字。
+- **说具体的事**：从"这次想说话的原因"里挑一件，提那个细节。
+  不要只说"好久没聊了""在干嘛"——那是没话找话。
 - 像随口想到才说的，不是任务。
-- 可以从"你记得的事"或"没做完的事"里找一个点。
 - 如果你觉得现在没什么好说的，就只输出：不说`
 
 export interface ProactiveOptions {
@@ -174,8 +327,14 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     t.senderId ? accounts.includes(t.senderId) : accounts.some((a) => t.scope === `private:${a}`),
   )
   const lastTalkAt = raw.reduce((max, t) => Math.max(max, t.ts), 0)
-  const open = loadOpen(personId).filter((o) => o.kind === 'todo')
+  const lastUserAt = raw.filter((t) => t.role === 'user').reduce((max, t) => Math.max(max, t.ts), 0)
 
+  // 上次主动之后他说过话吗？说过就说明互惠成立，连续没回清零
+  const replied = lastUserAt > state.lastAt
+  const noReply = replied ? 0 : (state.noReply ?? 0)
+  if (replied && (state.noReply ?? 0) > 0) saveState({ ...state, noReply: 0 })
+
+  const open = loadOpen(personId).filter((o) => o.kind === 'todo')
 
   // 先问它自己想不想。意愿过期（超过 30 小时没盘）就按老规则走。
   const will = effectiveWill()
@@ -184,25 +343,56 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     return
   }
 
+  const now = new Date()
+  const eps = loadEpisodes().filter((e) => accounts.some((a) => e.scope === `private:${a}`))
+  const newestEpisode = eps.reduce((best, e) => {
+    const t = Date.parse(`${e.date}T00:00:00`)
+    return Number.isNaN(t) ? best : Math.max(best, t)
+  }, 0)
+  const freshEpisodeHours = newestEpisode ? (now.getTime() - newestEpisode) / 3_600_000 : null
+  const life = recentLife(3)
+  const mood = decayedMood(loadMood())
+  const personFacts = loadFacts(personId).filter((f) => !f.supersededAt)
+  const staleMajorFact = personFacts.some((f) => {
+    if (f.tier !== 'major') return false
+    const ref = Date.parse(`${f.lastConfirmed ?? f.date}T00:00:00`)
+    return !Number.isNaN(ref) && (now.getTime() - ref) / 86_400_000 >= 14
+  })
+
+  const urge = computeUrge({
+    rules,
+    stageName: stage.名,
+    now,
+    lastTalkAt,
+    openTodos: open.length,
+    freshEpisodeHours,
+    hasLife: life.length > 0,
+    moodIntensity: mood?.intensity ?? 0,
+    staleMajorFact,
+  })
+
   const gate = shouldProactive({
     rules,
-    now: new Date(),
+    now,
     stageName: stage.名,
     lastTalkAt,
     lastProactiveAt: state.lastAt,
     todayCount: state.count,
     openCount: open.length,
+    urge: urge.score,
+    noReply,
   })
 
-  if (!gate.ok) return
+  if (!gate.ok) {
+    if (urge.score > 0) info(`主动消息：${gate.reason}`, { 由头: urge.reasons.join('、') })
+    return
+  }
 
   const hoursSinceTalk = lastTalkAt ? ((Date.now() - lastTalkAt) / 3_600_000).toFixed(1) : '很久'
   const self = loadSelf()
-  const life = recentLife(3)
 
   // 很久没被想起来、但当时挺重要的事
-  const oldButImportant = loadEpisodes()
-    .filter((e) => accounts.some((a) => e.scope === `private:${a}`))
+  const oldButImportant = eps
     .filter((e) => e.importance >= 7)
     .filter((e) => {
       const ref = e.lastRecalled && e.lastRecalled > 0 ? e.lastRecalled : Date.parse(`${e.date}T00:00:00`) || 0
@@ -211,11 +401,11 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     .sort((a, b) => b.importance - a.importance)
     .slice(0, 3)
 
-  const mood = decayedMood(loadMood())
   const phase = buildPhaseBlock(rules)
 
   const context = [
     `你们的关系：${stage.名}（${Math.round(relation.closeness)}/100），你叫他「${stage.称呼}」`,
+    `这次想说话的原因：${urge.reasons.length ? urge.reasons.join('；') : '就是想找他'}`,
     mood ? `你现在的心情：${mood.emotion}（强度 ${mood.intensity.toFixed(1)}）` : '',
     phase ? `当下的状态：${phase}` : '',
     self.name ? `你叫「${self.name}」` : '你还没有名字',
@@ -223,6 +413,12 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     life.length ? `你自己最近在想的事：\n${life.map((l) => `- ${l}`).join('\n')}` : '',
     oldButImportant.length
       ? `很久没提、但你一直记着的事：\n${oldButImportant.map((e) => `- ${e.date}｜${e.title}`).join('\n')}`
+      : '',
+    personFacts.length
+      ? `你记得关于他的事：\n${personFacts
+          .slice(-3)
+          .map((f) => `- ${f.text}`)
+          .join('\n')}`
       : '',
     open.length ? `没做完的事：\n${open.map((o) => `- ${o.text}`).join('\n')}` : '没有特别记着的事',
     raw.length ? `最近聊到：${raw.slice(-3).map((t) => t.text).join(' / ')}` : '',
@@ -241,20 +437,20 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const text = res.text.trim()
   if (!text || /^不说/.test(text)) {
     info('主动消息：选择不说')
-    saveState({ ...state, lastAt: Date.now() })
+    saveState({ ...state, lastAt: Date.now(), noReply })
     return
   }
 
   if (state.lastText && tooSimilar(state.lastText, text, Number(rules.行为.主动消息.去重相似度) || 0.6)) {
     info('主动消息：和上次太像，跳过', { text })
-    saveState({ ...state, lastAt: Date.now() })
+    saveState({ ...state, lastAt: Date.now(), noReply })
     return
   }
 
   // 和正常回复走同一条发送路径：分句、条间延迟，手感才一致
   await say(opts.transport, opts.target, text, rules)
-  saveState({ date: todayKey(), count: state.count + 1, lastAt: Date.now(), lastText: text })
-  info('主动消息已发送', { text })
+  saveState({ date: todayKey(), count: state.count + 1, lastAt: Date.now(), lastText: text, noReply: noReply + 1 })
+  info('主动消息已发送', { text, 由头: urge.reasons.join('、'), 连续没回: noReply + 1 })
 
   // 记进 raw，让它算作一次对话
   appendRaw({ ts: Date.now(), scope: `private:${opts.target.id}` as const, role: 'assistant', text })
@@ -270,22 +466,41 @@ export function startProactive(opts: ProactiveOptions): () => void {
     void attempt(opts).catch((err) => warnAt('主动消息失败', { err: String(err) }))
   }
 
+  // 启动后 2 分钟先检查一次（错开其它定时器），不用等满 30 分钟
+  const first = setTimeout(run, 120_000)
+  first.unref?.()
   const timer = setInterval(run, interval)
+  timer.unref?.()
+
   return () => {
     stopped = true
+    clearTimeout(first)
     clearInterval(timer)
   }
 }
 
-/** 给控制台看：今天主动了几次、额度剩多少 */
-export function proactiveStatus(stageName: string): {
+/** 给控制台看：今天主动了几次、额度剩多少、为什么没开口 */
+export function proactiveStatus(
+  rules: Rules,
+  stageName: string,
+): {
   todayCount: number
   dailyMax: number
   lastAt: number
   lastText: string
   minGapHours: number
+  minUrge: number
+  noReply: number
 } {
   const s = loadState()
-  const b = proactiveBudget(stageName)
-  return { todayCount: s.count, dailyMax: b.dailyMax, lastAt: s.lastAt, lastText: s.lastText, minGapHours: b.minGapHours }
+  const b = proactiveBudgetOf(rules, stageName)
+  return {
+    todayCount: s.count,
+    dailyMax: b.dailyMax,
+    lastAt: s.lastAt,
+    lastText: s.lastText,
+    minGapHours: b.minGapHours,
+    minUrge: b.minUrge,
+    noReply: s.noReply ?? 0,
+  }
 }

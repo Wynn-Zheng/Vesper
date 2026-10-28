@@ -136,7 +136,7 @@ function status(opts: ConsoleOptions, personId: string): unknown {
     relationBlock: buildRelationBlock(rules, relation, loadMood()),
     cost: costOfToday(),
     scheduler: (() => {
-      const p = proactiveStatus(stageOf(rules, relation.closeness).名)
+      const p = proactiveStatus(rules, stageOf(rules, relation.closeness).名)
       let distillAt = 0
       try {
         const s = JSON.parse(readFileSync(join(memoryRoot(), '.state.json'), 'utf8')) as { scopes?: Record<string, number> }

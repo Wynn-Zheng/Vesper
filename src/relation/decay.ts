@@ -1,4 +1,5 @@
 import type { Rules } from '../core/config.ts'
+import { stageOf } from '../core/config.ts'
 import { info } from '../core/log.ts'
 import type { RawTurn } from '../memory/types.ts'
 import { recentRaw } from '../memory/store.ts'
@@ -6,6 +7,29 @@ import { accountIdsOf, listPeople } from '../people/store.ts'
 import { applyAnchor, loadRelation, saveRelation, todayStr } from './store.ts'
 
 const DAY = 86_400_000
+
+/**
+ * 多久不说话才开始淡（天）。
+ *
+ * 依据 Roberts & Dunbar (2015, Human Nature)：关系越靠内层越抗衰减，
+ * 朋友联系间隔中位数能到 27 天，而外层关系掉得又快又难回来。
+ * 所以按阶段给"容忍期"：亲近的人半年不联系还是亲近，泛泛之交一周就淡。
+ * 原来一律 7 天起扣，对强关系太苛刻。
+ */
+function graceDaysOf(stageName: string): number {
+  switch (stageName) {
+    case '离不开':
+      return 30
+    case '亲密':
+      return 21
+    case '亲近':
+      return 14
+    case '朋友':
+      return 10
+    default:
+      return 7
+  }
+}
 
 export interface DecayResult {
   changed: boolean
@@ -20,7 +44,13 @@ function accountIds(personId: string): string[] {
 
 /**
  * 久不联系的关系会淡。
- * 超过 7 天没说话，每多一天扣一点，单次最多扣 3。
+ *
+ * 规则：
+ * - 每个阶段有自己的容忍期（见 graceDaysOf），超过才开始扣
+ * - 每多 3 天多扣 1 点，单次最多 3 点
+ * - 60 分以上的强关系，扣减减半（抗衰减）
+ * - **下限 3**：不会归零。归零会让主动消息永远够不到（死锁），
+ *   而且"半年没说话就变陌生人"也不符合人对关系的记忆
  */
 export function decayRelation(rules: Rules, personId: string, now = Date.now(), rawIn?: RawTurn[]): DecayResult {
   const state = loadRelation(personId)
@@ -46,9 +76,14 @@ export function decayRelation(rules: Rules, personId: string, now = Date.now(), 
   if (!lastTalkAt) return { changed: false, days: 0, delta: 0 }
 
   const days = (now - lastTalkAt) / DAY
-  if (days < 7) return { changed: false, days, delta: 0 }
+  const stage = stageOf(rules, state.closeness)
+  const grace = graceDaysOf(stage.名)
+  if (days < grace) return { changed: false, days, delta: 0 }
 
-  const amount = Math.min(3, Math.floor(days - 6))
+  const baseAmount = Math.floor((days - grace) / 3) + 1
+  // 强关系抗衰减：60 分以上每次只掉一半
+  const scaled = state.closeness >= 60 ? Math.max(1, Math.ceil(baseAmount / 2)) : baseAmount
+  const amount = Math.min(3, scaled, Math.max(0, Math.ceil(state.closeness - 3)))
   if (amount <= 0) return { changed: false, days, delta: 0 }
 
   const r = applyAnchor(

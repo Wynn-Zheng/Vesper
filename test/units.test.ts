@@ -24,7 +24,7 @@ import { appendOpen, loadOpen } from '../src/people/open.ts'
 import { peopleInGroup, renderGroupContext, clearMemberCache } from '../src/people/group.ts'
 import { loadProfile, saveProfile } from '../src/persona/profile.ts'
 import { decayRelation } from '../src/relation/decay.ts'
-import { applyAnchor, saveRelation, setRelationRoot } from '../src/relation/store.ts'
+import { applyAnchor, loadRelation, saveRelation, setRelationRoot } from '../src/relation/store.ts'
 import { EMPTY_RELATION } from '../src/relation/types.ts'
 
 initLog('', false)
@@ -233,12 +233,8 @@ test('关系降温：只在群里说话的人也会被判定为"还联系着"', 
 test('关系降温：群聊和私聊都没有才降', () => {
   const pid = personIdOf('qq', '20053')
   ensurePerson('qq', '20053')
-  const s = applyAnchor(
-    structuredClone(EMPTY_RELATION),
-    { event: '初始', dimension: '信任', direction: 'up', amount: 5, reason: '认识' },
-    DEFAULTS,
-  )
-  saveRelation(pid, s.state)
+  // 关系降温有下限（3），所以这里直接从 30 分开始
+  saveRelation(pid, { ...structuredClone(EMPTY_RELATION), closeness: 30 })
 
   // 30 天前在群里说过一句
   appendRaw({ ts: Date.now() - 30 * 86_400_000, scope: 'group:777', role: 'user', text: 'old', senderId: '20053' })
@@ -249,12 +245,7 @@ test('关系降温：群聊和私聊都没有才降', () => {
 test('关系降温：别人的消息不会拖住这个人的关系', () => {
   const pid = personIdOf('qq', '20054')
   ensurePerson('qq', '20054')
-  const s = applyAnchor(
-    structuredClone(EMPTY_RELATION),
-    { event: '初始', dimension: '信任', direction: 'up', amount: 5, reason: '认识' },
-    DEFAULTS,
-  )
-  saveRelation(pid, s.state)
+  saveRelation(pid, { ...structuredClone(EMPTY_RELATION), closeness: 30 })
 
   // 别人刚刚在群里说话，但 20054 自己 20 天没出现了
   const gid = '888'
@@ -264,17 +255,49 @@ test('关系降温：别人的消息不会拖住这个人的关系', () => {
   assert.ok(r.delta < 0, `别人说话不该拖住他，实际 delta=${r.delta}`)
 })
 
-test('关系降温：超过 7 天会降，幅度有上限', () => {
+test('关系降温：超过容忍期会降，幅度有上限', () => {
   const pid = personIdOf('qq', '20051')
   ensurePerson('qq', '20051')
-  const s = applyAnchor(structuredClone(EMPTY_RELATION), { event: '初始', dimension: '信任', direction: 'up', amount: 10, reason: '认识' }, DEFAULTS)
-  saveRelation(pid, s.state)
+  saveRelation(pid, { ...structuredClone(EMPTY_RELATION), closeness: 30 })
 
   // 造一条 30 天前的消息
   appendRaw({ ts: Date.now() - 30 * 86_400_000, scope: 'private:20051', role: 'user', text: 'hi' })
   const r = decayRelation(DEFAULTS, pid)
   assert.ok(r.delta < 0, '应下降')
   assert.ok(Math.abs(r.delta) <= 3, `单次最多降 3，实际 ${r.delta}`)
+})
+
+test('关系降温：有下限，不会一路掉到 0（掉了就没法主动了）', () => {
+  const pid = personIdOf('qq', '20057')
+  ensurePerson('qq', '20057')
+  saveRelation(pid, { ...structuredClone(EMPTY_RELATION), closeness: 3 })
+
+  appendRaw({ ts: Date.now() - 60 * 86_400_000, scope: 'private:20057', role: 'user', text: 'hi' })
+  const r = decayRelation(DEFAULTS, pid)
+  assert.equal(r.delta, 0, '已经在下限，不再扣')
+  assert.ok(loadRelation(pid).closeness >= 3)
+})
+
+test('关系降温：越亲近越抗淡（容忍期更长）', () => {
+  // 朋友（30 分，容忍 10 天）和陌生人（5 分，容忍 7 天）同样 9 天没联系：
+  // 朋友还没开始掉，陌生人已经掉了
+  const old = Date.now() - 9 * 86_400_000
+
+  const friendPid = personIdOf('qq', '20058')
+  ensurePerson('qq', '20058')
+  saveRelation(friendPid, { ...structuredClone(EMPTY_RELATION), closeness: 30 })
+  appendRaw({ ts: old, scope: 'private:20058', role: 'user', text: 'hi' })
+
+  const strangerPid = personIdOf('qq', '20059')
+  ensurePerson('qq', '20059')
+  saveRelation(strangerPid, { ...structuredClone(EMPTY_RELATION), closeness: 5 })
+  appendRaw({ ts: old, scope: 'private:20059', role: 'user', text: 'hi' })
+
+  // 注意：raw 是同一个文件，两次 append 都在；decayRelation 不看 scope 归属之外的
+  const friend = decayRelation(DEFAULTS, friendPid)
+  const stranger = decayRelation(DEFAULTS, strangerPid)
+  assert.equal(friend.delta, 0, `朋友阶段应该还没开始掉，实际 ${friend.delta}`)
+  assert.ok(stranger.delta < 0, `陌生阶段应该已经掉了，实际 ${stranger.delta}`)
 })
 
 test('关系降温：老数据没记 senderId 时按私聊 scope 兜底', () => {

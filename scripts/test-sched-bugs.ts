@@ -66,21 +66,28 @@ console.log('=== 1. inQuietHours 跨夜时段 ===')
 /* ---------- 2. shouldProactive 门控 ---------- */
 console.log('\n=== 2. shouldProactive 门控 ===')
 {
+  const day = 86_400_000
   const base = {
     rules: DEFAULTS,
     now: NOW,
     stageName: '朋友',
-    lastTalkAt: NOW.getTime() - 30 * 3_600_000,
+    lastTalkAt: NOW.getTime() - 8 * day, // 朋友阶段默认 5 天间隔
     lastProactiveAt: 0,
     todayCount: 0,
     openCount: 1,
+    urge: 5,
+    noReply: 0,
   }
 
   check('全都满足时可以主动', shouldProactive(base).ok === true, shouldProactive(base).reason)
-  check('陌生阶段（dailyMax=0）不主动', shouldProactive({ ...base, stageName: '陌生' }).ok === false)
+
+  // 陌生阶段不再是"永远闭嘴"：只是门槛高、间隔长
+  const stranger = shouldProactive({ ...base, stageName: '陌生', urge: 5 })
+  check('陌生阶段由头不够不主动', stranger.ok === false, stranger.reason)
+  check('陌生阶段原因是由头', stranger.reason.includes('由头'), stranger.reason)
   check(
-    '陌生阶段即使刚聊过也不主动',
-    shouldProactive({ ...base, stageName: '陌生', lastTalkAt: NOW.getTime() - 60_000 }).ok === false,
+    '陌生阶段由头够、隔得久就能主动',
+    shouldProactive({ ...base, stageName: '陌生', urge: 8, lastTalkAt: NOW.getTime() - 40 * day }).ok === true,
   )
 
   const quota = shouldProactive({ ...base, todayCount: proactiveBudget('朋友').dailyMax })
@@ -98,10 +105,10 @@ console.log('\n=== 2. shouldProactive 门控 ===')
   const recentProactive = shouldProactive({ ...base, lastProactiveAt: NOW.getTime() - 3_600_000 })
   check('距上次主动太近也不主动', recentProactive.ok === false, recentProactive.reason)
 
-  // 朋友阶段最小间隔 24 小时：正好 24 小时应该放行（判断用的是 <）
+  // 朋友阶段最小间隔 120 小时：正好卡线应该放行（判断用的是 <）
   check(
     '间隔正好等于下限时可以主动',
-    shouldProactive({ ...base, lastTalkAt: NOW.getTime() - 24 * 3_600_000 }).ok === true,
+    shouldProactive({ ...base, lastTalkAt: NOW.getTime() - 120 * 3_600_000 }).ok === true,
   )
 
   const quietNow = at(2, 0)
@@ -113,17 +120,32 @@ console.log('\n=== 2. shouldProactive 门控 ===')
   check('静默时段不主动', quiet.ok === false, quiet.reason)
   check('静默原因准确', quiet.reason.includes('静默'), quiet.reason)
 
-  // 没有未完成的事、也没聊过，算"没有由头"——这是门控里额外的一条
+  // 没有未完成的事、也没聊过、由头为 0：不打扰
   const noReason = shouldProactive({
     ...base,
     lastTalkAt: 0,
     lastProactiveAt: 0,
     openCount: 0,
+    urge: 0,
   })
   check('没有由头也不主动', noReason.ok === false, noReason.reason)
   check(
-    '有未完成的事就算有由头',
-    shouldProactive({ ...base, lastTalkAt: 0, lastProactiveAt: 0, openCount: 1 }).ok === true,
+    '有未完成的事（由头够）就能主动',
+    shouldProactive({ ...base, lastTalkAt: 0, lastProactiveAt: 0, openCount: 1, urge: 3 }).ok === true,
+  )
+
+  // 由头门槛：朋友阶段是 3
+  check('朋友阶段由头 2 不开口', shouldProactive({ ...base, urge: 2 }).ok === false)
+  check('朋友阶段由头 3 可以开口', shouldProactive({ ...base, urge: 3 }).ok === true)
+
+  // 互惠刹车
+  const noReply3 = shouldProactive({ ...base, noReply: 3 })
+  check('连续 3 次没回就停', noReply3.ok === false, noReply3.reason)
+  check('停的原因说清楚了', noReply3.reason.includes('没回'), noReply3.reason)
+  check('连续 2 次没回：门槛抬到 5', shouldProactive({ ...base, noReply: 2, urge: 4 }).ok === false)
+  check(
+    '连续 2 次没回：间隔也拉长 1.5 倍',
+    shouldProactive({ ...base, noReply: 2, urge: 6, lastTalkAt: NOW.getTime() - 6 * day }).ok === false,
   )
 }
 
@@ -148,8 +170,8 @@ console.log('\n=== 3. tooSimilar 相似度 ===')
 /* ---------- 4. proactiveBudget 阶段额度 ---------- */
 console.log('\n=== 4. proactiveBudget 兜底 ===')
 {
-  check('陌生阶段 dailyMax=0', proactiveBudget('陌生').dailyMax === 0)
-  for (const stage of ['眼熟', '朋友', '亲近', '亲密', '离不开']) {
+  check('陌生阶段不再禁言（dailyMax=1）', proactiveBudget('陌生').dailyMax === 1)
+  for (const stage of ['陌生', '眼熟', '朋友', '亲近', '亲密', '离不开']) {
     const b = proactiveBudget(stage)
     check(
       `已知阶段「${stage}」额度有效`,
@@ -160,7 +182,7 @@ console.log('\n=== 4. proactiveBudget 兜底 ===')
 
   const unknown = proactiveBudget('还没定义的阶段')
   check('未知阶段有两个有限数值', Number.isFinite(unknown.minGapHours) && Number.isFinite(unknown.dailyMax), JSON.stringify(unknown))
-  check('未知阶段兜底为默认额度', unknown.minGapHours === 4 && unknown.dailyMax === 5, JSON.stringify(unknown))
+  check('未知阶段兜底为最宽松的额度', unknown.minGapHours === 24 && unknown.dailyMax === 4, JSON.stringify(unknown))
   check('未知阶段额度不会被 JSON 变成 null', JSON.stringify(unknown).includes('null') === false, JSON.stringify(unknown))
 }
 
