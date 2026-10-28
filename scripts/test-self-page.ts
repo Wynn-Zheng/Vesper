@@ -40,9 +40,12 @@ check('renderSelfV2 不再引用 SELF_TAB', (() => {
 })(), )
 
 console.log('\n=== 3. 保留的功能函数 ===')
-for (const fn of ['saveSelfText', 'switchSelfOwner', 'renderRequestBlock', 'decideRequest', 'selfSection', 'selfBlockTitle']) {
+// v3 改版：renderRequestBlock / selfSection / selfBlockTitle 三个旧辅助已合并进
+// renderSelfV2（请求渲染内联、段头/卡片改用 selfSec/selfCard）。
+for (const fn of ['saveSelfText', 'switchSelfOwner', 'decideRequest', 'selfSec', 'selfCard', 'selfChip', 'selfEmpty']) {
   check(`有 ${fn}`, html.includes(fn))
 }
+check('有 renderSelfV2', html.includes('function renderSelfV2()'))
 
 console.log('\n=== 4. 观察区调的新接口 ===')
 check('调 /api/self/versions', html.includes('/api/self/versions'))
