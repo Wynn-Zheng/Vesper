@@ -2,6 +2,8 @@ import { rand, say, sleep } from './channel/send.ts'
 import type { Rules } from './core/config.ts'
 import { talkValueOf } from './core/config.ts'
 import { scoreReply } from './loop/score.ts'
+import { decideQuote, QUOTE_THRESHOLD } from './loop/quote.ts'
+import { decayedMood, loadMood } from './persona/mood.ts'
 import { info, warnAt } from './core/log.ts'
 import { allow } from './core/ratelimit.ts'
 import type { Transport } from './core/transport.ts'
@@ -71,17 +73,39 @@ function enterBackoff(scope: string, rules: Rules): void {
 
 /**
  * 这一轮要不要引用对方那句。
- * 被点名或有问号时几乎一定引，其余按 说话.引用频率 的概率来。
+ *
+ * 判定逻辑在 loop/quote.ts（依据会话分析研究，见那里的注释）。
+ * 这里只负责把现场的数据凑齐交给它。
  */
-function shouldQuote(rules: Rules, kind: 'group' | 'private', addressed: boolean, hasQuestion: boolean): boolean {
+function shouldQuote(
+  rules: Rules,
+  kind: 'group' | 'private',
+  batch: { textsCount: number; sendersCount: number; spanMs: number },
+  m: Incoming,
+  quoteIt: { addressed: boolean; targetLen: number; reply: string; moodIntensity: number; sinceLastQuoteMs: number },
+): { quote: boolean; score: number; reasons: string[] } {
   const f = rules.说话.引用频率
-  if (f === 'never') return false
-  // 被点名 / 问句：引用更像接话
-  if (addressed || hasQuestion) return true
-  // 私聊本来就只有两个人，引用意义不大
-  if (kind === 'private') return Math.random() < 0.15
-  const p = f === 'often' ? 0.6 : 0.3
-  return Math.random() < p
+  if (f === 'never') return { quote: false, score: 0, reasons: ['配置为 never'] }
+
+  const d = decideQuote({
+    kind,
+    textsCount: batch.textsCount,
+    sendersCount: batch.sendersCount,
+    spanMs: batch.spanMs,
+    targetLen: quoteIt.targetLen,
+    reply: quoteIt.reply,
+    addressed: quoteIt.addressed,
+    moodIntensity: quoteIt.moodIntensity,
+    sinceLastQuoteMs: quoteIt.sinceLastQuoteMs,
+  })
+
+  // often 相当于把门槛降一格（用户主动要求多引一点），never 上面已经拦掉
+  if (f === 'often' && !d.quote && d.score >= QUOTE_THRESHOLD - 1) {
+    return { quote: true, score: d.score, reasons: [...d.reasons, '（often 降一级）'] }
+  }
+
+  void m
+  return d
 }
 
 
@@ -136,6 +160,8 @@ const FALLBACK_LINES = ['我这会儿有点卡，等下再说', '等一下，我
 
 interface Buffer {
   texts: string[]
+    /** 每条消息的发送者，用来判断这轮是不是多人穿插 */
+    senders: string[]
   last: Incoming
   passive: boolean
   /** 这批里有没有被 @（有就优先处理） */
@@ -158,6 +184,18 @@ export function boot(transport: Transport, opts: BootOptions): void {
   const lastTalk = new Map<string, number>()
   /** 每个会话最近它自己回过几次（5 分钟窗口），用来压制刷屏 */
   const replyTimes = new Map<string, number[]>()
+  /** 每个会话上次引用回复的时间，用来做冷却（刚引过就别再引） */
+  const lastQuoteAt = new Map<string, number>()
+
+  /** 当前情绪强度 0~1。引用判定用它判断「这句话是不是把情绪挑起来了」。 */
+  const currentMoodIntensity = (): number => {
+    try {
+      const m = decayedMood(loadMood())
+      return m ? m.intensity : 0
+    } catch {
+      return 0
+    }
+  }
 
   const lastTalkAt = (t: { kind: string; id: string }): number => lastTalk.get(`${t.kind}:${t.id}`) ?? 0
   const recentReplyCount = (scope: string): number => {
@@ -207,7 +245,20 @@ export function boot(transport: Transport, opts: BootOptions): void {
     return true
   }
 
-  async function handle(m: Incoming, text: string, passive: boolean, rules: Rules): Promise<void> {
+  /** 这一轮的批次信息：攒了几条、几个人、跨了多久。引用判定要用。 */
+  interface BatchInfo {
+    textsCount: number
+    sendersCount: number
+    spanMs: number
+  }
+
+  async function handle(
+    m: Incoming,
+    text: string,
+    passive: boolean,
+    rules: Rules,
+    batch: BatchInfo,
+  ): Promise<void> {
     // 不要退到 m.from.name：群聊时那是**群名**，会把人叫成群名。
     // 退到 QQ 昵称，再退到 QQ 号。
     const who = m.senderName ?? m.senderNick ?? m.senderId ?? m.from.id
@@ -311,13 +362,26 @@ export function boot(transport: Transport, opts: BootOptions): void {
         return
       }
 
-      // 回某一句的时候引用它，更像接话而不是自言自语。
-      // 频率由 rules.说话.引用频率 控制（never / occasionally / often），
-      // 被点名和问句会额外抬高概率——那种场合不引用反而奇怪。
-      const wasAddressed = !(m.passive ?? false)
-      const quoteIt = shouldQuote(rules, m.from.kind, wasAddressed, /[?？]|吗|呢/.test(text))
-      const target = quoteIt && m.id ? { ...m.from, replyTo: m.id } : m.from
+      // 要不要引用对方那句。
+      //
+      // 判定依据会话分析研究（见 loop/quote.ts 顶部注释）：引用是为了解决
+      // 「多人 / 异步」造成的指代困难，不是礼貌性装饰。被 @ 和私聊指代已经
+      // 很清楚，所以给负分 —— 以前那版把这两种设成 100%，方向是反的。
+      const scopeNow = scopeOf(m.from)
+      const lastQuote = lastQuoteAt.get(scopeNow) ?? Number.NEGATIVE_INFINITY
+      const qd = shouldQuote(rules, m.from.kind, batch, m, {
+        addressed: !(m.passive ?? false),
+        targetLen: text.length,
+        reply,
+        moodIntensity: currentMoodIntensity(),
+        sinceLastQuoteMs: Date.now() - lastQuote,
+      })
+      if (rules.说话.引用调试) {
+        info(`引用判定 ${qd.score} 分（${qd.reasons.join('，')}）→ ${qd.quote ? '引用' : '不引'}`)
+      }
+      const target = qd.quote && m.id ? { ...m.from, replyTo: m.id } : m.from
       const ids = await say(transport, target, reply, rules)
+      if (qd.quote && m.id) lastQuoteAt.set(scopeNow, Date.now())
       backoff.delete(scopeOf(m.from))
       if (ids.length) {
         const scope = scopeOf(m.from)
@@ -398,7 +462,11 @@ export function boot(transport: Transport, opts: BootOptions): void {
     if (!buf) return
     buffers.delete(key)
     clearTimeout(buf.timer)
-    await handle(buf.last, buf.texts.join('\n'), buf.passive, opts.getRules())
+    await handle(buf.last, buf.texts.join('\n'), buf.passive, opts.getRules(), {
+      textsCount: buf.texts.length,
+      sendersCount: new Set(buf.senders).size,
+      spanMs: buf.lastAt - buf.firstAt,
+    })
   }
 
   // 名单为空时让渲染那层能踢一脚刷新
@@ -503,6 +571,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
     const existing = buffers.get(key)
     if (existing) {
       existing.texts.push(m.text)
+      existing.senders.push(m.senderId ?? m.from.id)
       existing.last = m
       existing.lastAt = now
       existing.passive = existing.passive && (m.passive ?? false)
@@ -514,6 +583,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
     const buf: Buffer = {
       texts: [m.text],
+      senders: [m.senderId ?? m.from.id],
       last: m,
       passive: m.passive ?? false,
       addressed,

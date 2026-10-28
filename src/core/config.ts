@@ -70,6 +70,8 @@ export interface Rules {
     不用Markdown: boolean
     /** 引用对方消息的频率：never 从不 / occasionally 偶尔（默认）/ often 经常 */
     引用频率: 'never' | 'occasionally' | 'often'
+    /** 打开后日志里打印每次引用判定的得分明细 */
+    引用调试: boolean
   }
   记忆: {
     值得记: string[]
@@ -263,6 +265,7 @@ export const DEFAULTS: Rules = {
     回复前延迟: [1000, 4000],
     不用Markdown: true,
     引用频率: 'occasionally',
+    引用调试: false,
   },
   记忆: {
     值得记: ['对方说的关于自己的事', '情绪强烈的事', '约定与承诺'],
