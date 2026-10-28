@@ -14,6 +14,7 @@ import { personOfAccount, accountIdsOf } from '../people/store.ts'
 import { loadMood, decayedMood } from '../persona/mood.ts'
 import { buildPhaseBlock } from '../self/format.ts'
 import { loadRelation } from '../relation/store.ts'
+import { salutationOf } from '../relation/format.ts'
 import { loadSelf, recentLife } from '../self/store.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { effectiveWill } from '../self/will.ts'
@@ -124,10 +125,12 @@ const FALLBACK_STAGE_BUDGET: Record<string, StageBudget> = {
   朋友: { minGapHours: 120, dailyMax: 2, minUrge: 3 },
   亲近: { minGapHours: 72, dailyMax: 3, minUrge: 2 },
   亲密: { minGapHours: 36, dailyMax: 3, minUrge: 1 },
-  离不开: { minGapHours: 24, dailyMax: 4, minUrge: 0 },
+  很亲近: { minGapHours: 30, dailyMax: 3, minUrge: 1 },
+  // 兼容老配置里还叫「离不开」的情况
+  离不开: { minGapHours: 30, dailyMax: 3, minUrge: 1 },
 }
 
-const LAST_RESORT: StageBudget = FALLBACK_STAGE_BUDGET['离不开']!
+const LAST_RESORT: StageBudget = FALLBACK_STAGE_BUDGET['很亲近']!
 
 function pickNum(v: unknown, fallback: number): number {
   const n = Number(v)
@@ -404,7 +407,9 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const phase = buildPhaseBlock(rules)
 
   const context = [
-    `你们的关系：${stage.名}（${Math.round(relation.closeness)}/100），你叫他「${stage.称呼}」`,
+    // 不报关系值：模型看到数字会去"刷分"，也容易直接说出来
+    `你们的关系：${stage.名}`,
+    `称呼上：${salutationOf(rules, stage, false)}`,
     `这次想说话的原因：${urge.reasons.length ? urge.reasons.join('；') : '就是想找他'}`,
     mood ? `你现在的心情：${mood.emotion}（强度 ${mood.intensity.toFixed(1)}）` : '',
     phase ? `当下的状态：${phase}` : '',

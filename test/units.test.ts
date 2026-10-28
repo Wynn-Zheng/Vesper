@@ -278,26 +278,25 @@ test('关系降温：有下限，不会一路掉到 0（掉了就没法主动了
   assert.ok(loadRelation(pid).closeness >= 3)
 })
 
-test('关系降温：越亲近越抗淡（容忍期更长）', () => {
-  // 朋友（30 分，容忍 10 天）和陌生人（5 分，容忍 7 天）同样 9 天没联系：
-  // 朋友还没开始掉，陌生人已经掉了
-  const old = Date.now() - 9 * 86_400_000
+test('关系降温：容忍期跟着主动节奏走（按它的节奏联系就不会掉）', () => {
+  // 陌生：主动 30 天一次 → 容忍 30×1.3 ≈ 39 天
+  // 朋友：主动 5 天一次，但基础容忍 10 天 → 取 10 天
+  const old = Date.now() - 35 * 86_400_000
 
-  const friendPid = personIdOf('qq', '20058')
+  const strangerPid = personIdOf('qq', '20058')
   ensurePerson('qq', '20058')
-  saveRelation(friendPid, { ...structuredClone(EMPTY_RELATION), closeness: 30 })
+  saveRelation(strangerPid, { ...structuredClone(EMPTY_RELATION), closeness: 5 })
   appendRaw({ ts: old, scope: 'private:20058', role: 'user', text: 'hi' })
 
-  const strangerPid = personIdOf('qq', '20059')
+  const friendPid = personIdOf('qq', '20059')
   ensurePerson('qq', '20059')
-  saveRelation(strangerPid, { ...structuredClone(EMPTY_RELATION), closeness: 5 })
+  saveRelation(friendPid, { ...structuredClone(EMPTY_RELATION), closeness: 30 })
   appendRaw({ ts: old, scope: 'private:20059', role: 'user', text: 'hi' })
 
-  // 注意：raw 是同一个文件，两次 append 都在；decayRelation 不看 scope 归属之外的
-  const friend = decayRelation(DEFAULTS, friendPid)
   const stranger = decayRelation(DEFAULTS, strangerPid)
-  assert.equal(friend.delta, 0, `朋友阶段应该还没开始掉，实际 ${friend.delta}`)
-  assert.ok(stranger.delta < 0, `陌生阶段应该已经掉了，实际 ${stranger.delta}`)
+  const friend = decayRelation(DEFAULTS, friendPid)
+  assert.equal(stranger.delta, 0, `陌生阶段容忍约 39 天，35 天还没到（实际 ${stranger.delta}）`)
+  assert.ok(friend.delta < 0, `朋友阶段容忍 10 天，35 天该掉了（实际 ${friend.delta}）`)
 })
 
 test('关系降温：老数据没记 senderId 时按私聊 scope 兜底', () => {

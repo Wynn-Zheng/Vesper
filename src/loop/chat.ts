@@ -17,6 +17,7 @@ import { renderGrowth } from '../self/growth.ts'
 import { todoForPrompt } from '../memory/intent.ts'
 import { markMentioned, unmentionedIssues } from '../self/observe.ts'
 import { personOfMessage, scopeOf } from '../memory/scope.ts'
+import { loadPerson } from '../people/store.ts'
 import { decayedMood, loadMood } from '../persona/mood.ts'
 import { loadProfile } from '../persona/profile.ts'
 import { renderGroupContext } from '../people/group.ts'
@@ -212,7 +213,14 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     // 群里 m.from.name 是群名，不能当人名用
     personName: m.senderName ?? m.senderNick ?? m.from.id,
     profile: loadProfile(personId),
-    relation: [buildRelationBlock(opts.rules, loadRelation(personId), loadMood()), groupBlock]
+    relation: [
+      // 群里不渲染私聊口吻的称呼；顺带把"认识几天"告诉它
+      buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
+        inGroup: scope.startsWith('group:'),
+        since: loadPerson(personId)?.firstSeen,
+      }),
+      groupBlock,
+    ]
       .filter((s) => s.trim())
       .join('\n\n'),
     // 核心记忆：只能人改的那部分，优先级最高

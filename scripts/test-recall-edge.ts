@@ -170,7 +170,7 @@ console.log('\n=== 6. 关系值 ===')
   check('Infinity → 陌生', stageOf(rules, Infinity).名 === '陌生', stageOf(rules, Infinity).名)
   check('-1 → 陌生', stageOf(rules, -1).名 === '陌生', stageOf(rules, -1).名)
   check('50 → 亲近', stageOf(rules, 50).名 === '亲近', stageOf(rules, 50).名)
-  check('100 → 离不开', stageOf(rules, 100).名 === '离不开', stageOf(rules, 100).名)
+  check('100 → 很亲近', stageOf(rules, 100).名 === '很亲近', stageOf(rules, 100).名)
 }
 
 /* ============ 7. 空档案的人 ============ */

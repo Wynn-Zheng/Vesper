@@ -1733,7 +1733,7 @@ async function loadRelation() {
     // mood 在顶层（它是全局的，不属于这段关系）
     $('r-mood').textContent = s.mood ? `当前心情：${s.mood.emotion}（${s.mood.intensity.toFixed(1)}）` : '心情：平静'
 
-    const stages = ['陌生','眼熟','朋友','亲近','亲密','离不开']
+    const stages = ['陌生','眼熟','朋友','亲近','亲密','很亲近']
     const box = $('r-stages'); box.innerHTML = ''
     let passed = true
     for (const name of stages) {

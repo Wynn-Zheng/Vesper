@@ -171,7 +171,7 @@ console.log('\n=== 3. tooSimilar 相似度 ===')
 console.log('\n=== 4. proactiveBudget 兜底 ===')
 {
   check('陌生阶段不再禁言（dailyMax=1）', proactiveBudget('陌生').dailyMax === 1)
-  for (const stage of ['陌生', '眼熟', '朋友', '亲近', '亲密', '离不开']) {
+  for (const stage of ['陌生', '眼熟', '朋友', '亲近', '亲密', '很亲近']) {
     const b = proactiveBudget(stage)
     check(
       `已知阶段「${stage}」额度有效`,
@@ -182,7 +182,7 @@ console.log('\n=== 4. proactiveBudget 兜底 ===')
 
   const unknown = proactiveBudget('还没定义的阶段')
   check('未知阶段有两个有限数值', Number.isFinite(unknown.minGapHours) && Number.isFinite(unknown.dailyMax), JSON.stringify(unknown))
-  check('未知阶段兜底为最宽松的额度', unknown.minGapHours === 24 && unknown.dailyMax === 4, JSON.stringify(unknown))
+  check('未知阶段兜底为最宽松的额度', unknown.minGapHours === 30 && unknown.dailyMax === 3, JSON.stringify(unknown))
   check('未知阶段额度不会被 JSON 变成 null', JSON.stringify(unknown).includes('null') === false, JSON.stringify(unknown))
 }
 

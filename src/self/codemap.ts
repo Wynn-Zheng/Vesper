@@ -163,7 +163,7 @@ export function renderCodeMap(mods: ModuleInfo[]): string {
   lines.push('## 这套东西是怎么攒起来的')
   lines.push('')
   lines.push('- 记忆分层：事实（facts）/ 情节（episodes）/ 原始（raw）/ 共享（shared）')
-  lines.push('- 关系 6 档：陌生 → 眼熟 → 朋友 → 亲近 → 亲密 → 离不开')
+  lines.push('- 关系 6 档：陌生 → 眼熟 → 朋友 → 亲近 → 亲密 → 很亲近')
   lines.push('- 情绪有衰减：心情会随时间淡下去，不会一直挂着')
   lines.push('- 表达学习：聊得好的话记下来，写之前要过一遍自审')
   lines.push('')

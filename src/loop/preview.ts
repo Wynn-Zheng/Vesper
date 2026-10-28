@@ -62,7 +62,9 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
     self: buildSelfBlock(opts.rules, new Date(), personId, loadPerson(personId)?.name ?? opts.accountId),
     personName: loadPerson(personId)?.name ?? opts.accountId,
     profile: loadProfile(personId),
-    relation: buildRelationBlock(opts.rules, loadRelation(personId), loadMood()),
+    relation: buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
+      since: loadPerson(personId)?.firstSeen,
+    }),
     memory: renderRecalled(recalled),
     userChars: text.length,
     phase: buildPhaseBlock(opts.rules),

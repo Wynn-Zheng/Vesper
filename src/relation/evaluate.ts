@@ -36,7 +36,12 @@ const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只�
 规则：
 - 只有真的发生的事才算：分享私事、守约、说真话、记得小事、被冷落、被敷衍、久不联系。
 - 寒暄、日常闲聊、单纯开玩笑不算。
-- 幅度只能是 1 或 2。理由必须具体，不能写"聊得很好"。
+- 幅度 1-3：
+  · 1 = 普通的一次（记得他提过的小事、说了一句真心话）
+  · 2 = 明显的一件事（分享了私事、守了约、被冷落）
+  · 3 = 很少见的大事（长期承诺、严重伤害、把别人不知道的事告诉你）
+  · 拿不准就给 1。给 3 要非常克制，一周都该出现不了一次。
+- 理由必须具体，不能写"聊得很好"。
 - 这一轮没有变化，anchor 就返回 null。
 - mood 是聊完之后的心情；没变化就返回 null。
 - 原因要能看出「是谁的哪句话让我变成这样」，不超过 20 字。比如"他说不来了"、"他记得我怕黑"。
@@ -91,8 +96,8 @@ export function normalizeAnchor(a: EvalOutput['anchor']): NormalizedAnchor | nul
   if (a.幅度 !== undefined && a.幅度 !== null) {
     const n = Math.abs(Number(a.幅度))
     if (!Number.isFinite(n) || n === 0) return null
-    // 四舍五入后夹到 1~2，保证写进去的永远是整数，不会出现 1.7 这种幅度
-    amount = Math.min(2, Math.max(1, Math.round(n)))
+    // 四舍五入后夹到 1~3：3 只留给"长期承诺/严重伤害"，不能再高
+    amount = Math.min(3, Math.max(1, Math.round(n)))
   }
 
   return { event, dimension, direction, amount, reason }

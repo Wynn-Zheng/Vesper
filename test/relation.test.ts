@@ -39,9 +39,10 @@ test('没有锚点理由时变化无效', () => {
   assert.equal(r.delta, 0)
 })
 
-test('单次变化被限制在 ±2', () => {
+test('单次变化被限制在 ±3', () => {
+  // 3 是"长期承诺 / 严重伤害"级别的上限；模型给 10 也只能加 3
   const r = applyAnchor(structuredClone(EMPTY_RELATION), anchor({ amount: 10 }), DEFAULTS)
-  assert.equal(r.delta, 2)
+  assert.equal(r.delta, 3)
 })
 
 test('总关系值不会超过上限', () => {

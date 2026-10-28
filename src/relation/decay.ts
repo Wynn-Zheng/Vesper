@@ -15,20 +15,32 @@ const DAY = 86_400_000
  * 朋友联系间隔中位数能到 27 天，而外层关系掉得又快又难回来。
  * 所以按阶段给"容忍期"：亲近的人半年不联系还是亲近，泛泛之交一周就淡。
  * 原来一律 7 天起扣，对强关系太苛刻。
+ *
+ * ⚠️ 还有一个一致性约束：**容忍期必须大于主动消息的间隔**，
+ * 否则"按它的节奏联系"也会一路掉——主动频率定的是"多久该说一次"，
+ * 衰减定的是"多久不说话算失联"，后者比前者短就是自相矛盾。
+ * 所以取 {阶段基础值, 主动间隔 × 1.3} 的较大者。
  */
-function graceDaysOf(stageName: string): number {
-  switch (stageName) {
-    case '离不开':
-      return 30
-    case '亲密':
-      return 21
-    case '亲近':
-      return 14
-    case '朋友':
-      return 10
-    default:
-      return 7
-  }
+function graceDaysOf(rules: Rules, stageName: string): number {
+  const base = (() => {
+    switch (stageName) {
+      case '很亲近':
+        return 30
+      case '亲密':
+        return 21
+      case '亲近':
+        return 14
+      case '朋友':
+        return 10
+      default:
+        return 7
+    }
+  })()
+
+  const stage = rules.关系.阶段.find((s) => s.名 === stageName)
+  const gapHours = Number(stage?.主动间隔小时)
+  if (!Number.isFinite(gapHours) || gapHours <= 0) return base
+  return Math.max(base, Math.round((gapHours / 24) * 1.3))
 }
 
 export interface DecayResult {
@@ -77,7 +89,7 @@ export function decayRelation(rules: Rules, personId: string, now = Date.now(), 
 
   const days = (now - lastTalkAt) / DAY
   const stage = stageOf(rules, state.closeness)
-  const grace = graceDaysOf(stage.名)
+  const grace = graceDaysOf(rules, stage.名)
   if (days < grace) return { changed: false, days, delta: 0 }
 
   const baseAmount = Math.floor((days - grace) / 3) + 1

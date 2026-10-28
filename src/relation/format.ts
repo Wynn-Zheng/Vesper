@@ -1,27 +1,62 @@
-import type { Rules } from '../core/config.ts'
+import type { Rules, StageRule } from '../core/config.ts'
 import { stageOf } from '../core/config.ts'
 import { decayedMood, type Mood } from '../persona/mood.ts'
 import type { RelationState } from './types.ts'
 
+const DAY = 86_400_000
+
+export interface RelationFormatOptions {
+  /**
+   * 群聊里不渲染称呼。
+   *
+   * 原因：称呼是私聊口吻（"哎"、"名字里的一两个字"），
+   * 群里对着一群人用这个会串味。关系值和阶段本身照样给。
+   */
+  inGroup?: boolean
+  /** 认识多久了（毫秒时间戳）；有就加一句 */
+  since?: number
+}
+
+/**
+ * 称呼怎么叫。
+ *
+ * 优先用 rules.yaml 里配的 `关系.昵称`；没配就按阶段给"怎么叫"的说明。
+ * **不能**把"昵称""专属"这种占位符直接塞给模型——它会字面照做，真的叫你"昵称"。
+ */
+export function salutationOf(rules: Rules, stage: StageRule, inGroup: boolean): string {
+  if (inGroup) return ''
+  const custom = (rules.关系.昵称 ?? '').trim()
+  if (custom) return `叫他「${custom}」`
+  return stage.称呼
+}
+
 /** 把关系 + 心情渲染成给模型看的一小段。 */
-export function buildRelationBlock(rules: Rules, s: RelationState, mood: Mood | null = null, now = Date.now()): string {
+export function buildRelationBlock(
+  rules: Rules,
+  s: RelationState,
+  mood: Mood | null = null,
+  now = Date.now(),
+  opts: RelationFormatOptions = {},
+): string {
   const stage = stageOf(rules, s.closeness)
   const m = decayedMood(mood, now)
   const lines: string[] = []
 
   lines.push('关于你们的关系：')
-  lines.push(`- 现在是「${stage.名}」，你叫他「${stage.称呼}」`)
+  lines.push(`- 现在是「${stage.名}」`)
 
-  const max = rules.关系.总值[1]
-  const idx = rules.关系.阶段.findIndex((x) => s.closeness <= x.至)
-  const next = idx >= 0 && idx + 1 < rules.关系.阶段.length ? rules.关系.阶段[idx + 1]! : null
-  const nextAt = next ? (rules.关系.阶段[idx]?.至 ?? null) : null
+  const salutation = salutationOf(rules, stage, opts.inGroup === true)
+  if (salutation) lines.push(`- 称呼上：${salutation}`)
 
-  lines.push(
-    next && nextAt != null
-      ? `- 关系值 ${Math.round(s.closeness)}/${max}，离「${next.名}」还差 ${Math.max(0, Math.ceil(nextAt - s.closeness))}`
-      : `- 关系值 ${Math.round(s.closeness)}/${max}`,
-  )
+  // ⚠️ 这里**故意不写关系值和"离下一档还差几分"**。
+  // 实测：模型看到"17/100，离朋友还差 9"会去刷分（说好听的话讨升级），
+  // 偶尔还会直接说出来（"我们还差 9 分就到朋友了"）。阶段名本身够用了，
+  // 想看具体数值去控制台。
+
+  if (opts.since && Number.isFinite(opts.since) && opts.since > 0) {
+    const days = Math.max(0, Math.round((now - opts.since) / DAY))
+    if (days >= 1) lines.push(`- 你们认识 ${days} 天了`)
+  }
 
   if (m) {
     lines.push(`- 你现在的心情：${m.emotion}（强度 ${m.intensity.toFixed(1)}）`)
@@ -58,7 +93,8 @@ export function buildRelationBlock(rules: Rules, s: RelationState, mood: Mood | 
     }
   }
 
-  if (s.closeness < 10) {
+  // 按阶段名判断，不再写死 closeness < 10（阈值一改就会错位）
+  if (stage.名 === '陌生') {
     lines.push('- 你们还不熟。不要装得很亲近，也不要一次性说太多自己的事。')
   }
 

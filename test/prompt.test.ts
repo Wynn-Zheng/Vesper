@@ -63,7 +63,7 @@ test('阶段按阈值正确匹配', () => {
   assert.equal(stageOf(DEFAULTS, 10).名, '陌生')
   assert.equal(stageOf(DEFAULTS, 11).名, '眼熟')
   assert.equal(stageOf(DEFAULTS, 26).名, '朋友')
-  assert.equal(stageOf(DEFAULTS, 100).名, '离不开')
+  assert.equal(stageOf(DEFAULTS, 100).名, '很亲近')
 })
 
 test('活跃度：按时段取不同的发言频率', () => {
