@@ -2277,7 +2277,23 @@ function renderSelfV2() {
     c.appendChild(ta)
     const b1 = el('button', 'mini-btn', '保存自述')
     b1.style.marginTop = '8px'
-    b1.onclick = () => saveSelfText(ta.value)
+c.appendChild(b1)
+
+    // 所有权：谁写的决定它能不能覆盖。
+    // 之前没这个概念，用户改完 12 小时就被自我反思盖掉了。
+    const ownerRow = el('div')
+    ownerRow.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:8px;font-size:11.5px;line-height:1.7'
+    const isMine = d.aboutOwner === 'me'
+    const ownerTag = el('span')
+    ownerTag.innerHTML = isMine
+      ? '<span style="color:#d29922">🔒 这是你写的，它只读</span>'
+      : '<span style="color:#3fb950">✍️ 这是它自己写的，它会随反思更新</span>'
+    ownerRow.appendChild(ownerTag)
+    const ownerBtn = el('button', 'mini-btn', isMine ? '交回给它' : '我来写')
+    ownerBtn.style.cssText += ';font-size:11px;padding:1px 8px'
+    ownerBtn.onclick = () => switchSelfOwner(isMine ? 'it' : 'me')
+    ownerRow.appendChild(ownerBtn)
+    c.appendChild(ownerRow)
     c.appendChild(b1)
 
     c.appendChild(el('div', 'op-t', '我给自己定的规矩')).style.marginTop = '16px'
@@ -2460,6 +2476,26 @@ function renderSelfV2() {
     body.appendChild(c)
   }
 }
+
+/**
+ * 切换「我是谁」归谁写。
+ *  'me' = 锁住，它只读（自我反思不会再覆盖）
+ *  'it' = 它能写（每次反思可能改写）
+ */
+async function switchSelfOwner(owner) {
+  const msg = owner === 'me'
+    ? '从现在起这段它只读，不会自己改。\n\n你写什么，它就照着当自己。确定？'
+    : '这段交回给它。\n\n下次它反思时可能会改写，你现在的版本会被覆盖。确定？'
+  if (!confirm(msg)) return
+  try {
+    await sendJson('/api/self/owner', { owner }, 'PUT')
+    toast(owner === 'me' ? '已锁住，它不会再改' : '已交回给它，下次反思会更新')
+    loadSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
 
 async function saveSelfText(text) {
   try {

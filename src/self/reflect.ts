@@ -157,7 +157,9 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
       touched = true
       info(`它给自己取了名字：${doc.name}`, { 原因: doc.nameReason })
     }
-    if (out.自述 && out.自述.trim() && out.自述.trim() !== doc.about) {
+    // 用户写了「我是谁」就锁住 —— 否则他刚改完、下一次反思就被模型版本盖掉，
+    // 看起来就像"刚才写的东西被清空了"。
+    if (doc.aboutOwner === 'it' && out.自述 && out.自述.trim() && out.自述.trim() !== doc.about) {
       doc.about = out.自述.trim()
       touched = true
     }

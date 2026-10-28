@@ -361,7 +361,8 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
       touched = true
       info(`它给自己取了名字：${doc.name}`)
     }
-    if (s?.自述 && s.自述.trim() && s.自述.trim() !== doc.about) {
+    // 同 reflect：用户锁住的自述不动
+      if (doc.aboutOwner === 'it' && s?.自述 && s.自述.trim() && s.自述.trim() !== doc.about) {
       doc.about = s.自述.trim()
       touched = true
     }

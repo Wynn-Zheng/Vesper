@@ -30,7 +30,7 @@ test('没有名字时，prompt 里说"还没有名字"', () => {
 })
 
 test('保存名字后能读回，并出现在 prompt 里', () => {
-  saveSelf({ name: '小满', nameReason: '觉得满一点好', about: '我在学着认识人。', thinking: '想弄明白人为什么怕沉默', traits: {}, abilities: '' })
+  saveSelf({ name: '小满', nameReason: '觉得满一点好', about: '我在学着认识人。', thinking: '想弄明白人为什么怕沉默', traits: {}, abilities: '', aboutOwner: 'it' })
   const doc = loadSelf()
   assert.equal(doc.name, '小满')
   assert.equal(doc.about, '我在学着认识人。')
@@ -43,7 +43,7 @@ test('保存名字后能读回，并出现在 prompt 里', () => {
 
 test('名字为空时回落到 rules.yaml 的名字', () => {
   const rules = { ...DEFAULTS, 人格: { ...DEFAULTS.人格, 名字: '阿三' } }
-  saveSelf({ name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '' })
+  saveSelf({ name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '', aboutOwner: 'it' })
   const block = buildSelfBlock(rules, at(10))
   assert.ok(block.includes('阿三'))
 })

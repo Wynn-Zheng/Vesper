@@ -19,6 +19,16 @@ export function setSelfFiles(self: string, life: string): void {
 export interface SelfDoc {
   name: string
   nameReason: string
+  /**
+   * about 归谁。
+   *
+   * 'me' = 用户写的，它只读 —— reflect/distill 不许覆盖；
+   * 'it' = 它自己写，反思和整理记忆时会更新。
+   *
+   * 加这个是因为：用户改了「我是谁」，12 小时后自我反思又把模型写的版本盖回去，
+   * 看起来就像"刚写的东西被清空了"。
+   */
+  aboutOwner: 'me' | 'it'
   /** 正文：我是谁 */
   about: string
   /** 最近在想的事 */
@@ -29,7 +39,7 @@ export interface SelfDoc {
   abilities: string
 }
 
-const EMPTY: SelfDoc = { name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '' }
+const EMPTY: SelfDoc = { name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '', aboutOwner: 'it' }
 
 function splitFront(text: string): { meta: Record<string, string>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)
@@ -70,6 +80,8 @@ export function loadSelf(): SelfDoc {
     thinking: section(body, '我最近在想'),
     abilities: section(body, '我能做什么'),
     traits: parseTraits(meta),
+    // 默认 'it'：老文件没这个字段，保持原来的行为（它能改自述）
+    aboutOwner: meta['所有权'] === '我写' ? 'me' : 'it',
   }
 }
 
@@ -114,6 +126,7 @@ export function loadSelfVersion(id: string): SelfDoc | null {
     thinking: section(body, '我最近在想'),
     abilities: section(body, '我能做什么'),
     traits: parseTraits(meta),
+    aboutOwner: meta['所有权'] === '我写' ? 'me' : 'it',
   }
 }
 
@@ -145,6 +158,7 @@ export function saveSelf(doc: SelfDoc): void {
   const lines = [
     '---',
     `名字: ${doc.name}`,
+    `所有权: ${doc.aboutOwner === 'me' ? '我写' : '它写'}`,
     doc.nameReason ? `取名原因: ${doc.nameReason}` : '取名原因: ',
     ...traitLines,
     '---',

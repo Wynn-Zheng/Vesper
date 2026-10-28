@@ -978,6 +978,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         json(res, 200, {
           name: self.name || '',
           selfText: self.about || '',
+          aboutOwner: self.aboutOwner,
           traits,
           life,
           intent: loadIntent(),
@@ -1014,10 +1015,25 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         }
         const { loadSelf, saveSelf } = await import('../self/store.ts')
         const cur = loadSelf()
-        saveSelf({ ...cur, about: text })
+        // 用户手动改自述 = 接管所有权。不然 12 小时后的自我反思会把他的版本盖掉。
+    saveSelf({ ...cur, about: text, aboutOwner: 'me' })
         json(res, 200, { ok: true })
         return
       }
+
+    // 切换「我是谁」归谁写。'me' = 用户锁住，reflect/distill 不许覆盖。
+    if (req.method === 'PUT' && path === '/api/self/owner') {
+      const body = JSON.parse((await readBody(req)) || '{}') as { owner?: string }
+      const owner = body.owner === 'me' ? 'me' : 'it'
+      const { loadSelf, saveSelf } = await import('../self/store.ts')
+      try {
+        saveSelf({ ...loadSelf(), aboutOwner: owner })
+        json(res, 200, { ok: true, aboutOwner: owner })
+      } catch (e) {
+        json(res, 500, { error: e instanceof Error ? e.message : String(e) })
+      }
+      return
+    }
 
       if (req.method === 'GET' && path === '/api/intent') {
         const { loadIntent } = await import('../memory/intent.ts')
