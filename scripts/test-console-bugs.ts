@@ -58,7 +58,7 @@ console.log('=== 1. 搜索的边界 ===')
 
 console.log('\n=== 2. 导出 ===')
 {
-  const { exportAll } = await import('../src/console/search.ts')
+  const { exportAll } = await import('../src/console/backup.ts')
   const data = exportAll(7) as Record<string, unknown>
   check('导出有 exportedAt', typeof data.exportedAt === 'string')
   check('导出有 people 数组', Array.isArray(data.people))

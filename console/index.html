@@ -1172,6 +1172,11 @@
           <div class="op-t">导出备份</div>
           <div class="op-d">所有人 + 记忆 + 最近对话，一个 JSON</div>
         </div>
+        <div class="op" onclick="doImport()">
+          <div class="op-ico">⤒</div>
+          <div class="op-t">从备份恢复</div>
+          <div class="op-d">选导出的 JSON：只补缺、不覆盖，导入前自动快照</div>
+        </div>
         <div class="op" onclick="act('draftQzone')">
           <div class="op-ico">✎</div>
           <div class="op-t">让它想一条说说</div>
@@ -4344,6 +4349,53 @@ function doExport() {
   a.click()
   a.remove()
   toast('开始下载备份')
+}
+
+// ---------- 从备份恢复 ----------
+function doImport() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.json,application/json'
+  input.onchange = async () => {
+    const file = input.files && input.files[0]
+    if (!file) return
+    if (file.size > 64 * 1024 * 1024) { toast('文件太大（超过 64MB）'); return }
+
+    let text, data
+    try {
+      text = await file.text()
+      data = JSON.parse(text)
+    } catch { toast('不是合法的 JSON'); return }
+
+    const nPeople = Array.isArray(data.people) ? data.people.length : 0
+    const nEps = Array.isArray(data.episodes) ? data.episodes.length : 0
+    const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : '未知'
+    if (!confirm(
+      '备份时间：' + when + '\n' +
+      '包含 ' + nPeople + ' 个人、' + nEps + ' 段经历。\n\n' +
+      '导入只会补缺，不覆盖现有数据（关系/画像只在空的时才写）。\n' +
+      '导入前会自动拍一张人格快照，出事能回滚。\n\n继续？'
+    )) return
+
+    try {
+      const r = await api('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: text,
+      })
+      alert(
+        '导入完成：\n' +
+        '人 ' + r.people + '、事实 ' + r.facts + '、待办 ' + r.open + '\n' +
+        '经历 ' + r.episodes + '、洞察 ' + r.insights + '、原文 ' + r.raw + '、会话 ' + r.sessions + '\n' +
+        '人格文件 ' + ((r.files || []).join('、') || '无') + '\n' +
+        '跳过 ' + r.skipped + (r.snapshot ? '\n导入前快照：' + r.snapshot : '')
+      )
+      location.reload()
+    } catch (e) {
+      alert('导入失败：' + e.message)
+    }
+  }
+  input.click()
 }
 
 

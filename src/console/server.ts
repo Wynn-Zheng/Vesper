@@ -12,7 +12,8 @@ import { loadFacts, deleteFact, editFact, setVisibility } from '../memory/facts.
 import { loadOpen, removeOpen, editOpen } from '../people/open.ts'
 import { isValidPersonId, listPeople, loadPerson, personOfAccount, primaryAccount, accountIdsOf } from '../people/store.ts'
 import { accessFile, loadAccess, saveAccess, type AccessPolicy } from '../core/access.ts'
-import { search, exportAll } from './search.ts'
+import { search } from './search.ts'
+import { exportAll, importBackup, parseBackup } from './backup.ts'
 import { proactiveStatus } from '../scheduler/proactive.ts'
 import { loadWatched } from '../outward/watch.ts'
 import { findIssues } from '../self/observe.ts'
@@ -769,6 +770,33 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         res.end(JSON.stringify(data, null, 2))
         return
       }
+      // ---- 从备份恢复 ----
+      if (req.method === 'POST' && path === '/api/import') {
+        const body = await readBody(req)
+        // 备份可能几十 MB，但也不该无限；超过 64MB 基本不是正常备份
+        if (body.length > 64 * 1024 * 1024) {
+          json(res, 413, { error: '备份文件太大（超过 64MB）' })
+          return true
+        }
+        const data = parseBackup(body)
+        const stats = importBackup(data, {
+          overwrite: url.searchParams.get('overwrite') === '1',
+          includeConfig: url.searchParams.get('config') === '1',
+          dryRun: url.searchParams.get('dry') === '1',
+        })
+        info('从备份恢复', {
+          人: stats.people,
+          事实: stats.facts,
+          经历: stats.episodes,
+          洞察: stats.insights,
+          会话: stats.sessions,
+          跳过: stats.skipped,
+          快照: stats.snapshot ?? '没拍成',
+        })
+        json(res, 200, stats)
+        return true
+      }
+
       if (req.method === 'GET' && path === '/api/versions') {
         json(res, 200, { snapshots: listSnapshots() })
         return

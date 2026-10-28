@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
 import { loadFacts } from '../memory/facts.ts'
 import { loadEpisodes, readRaw } from '../memory/store.ts'
 import { loadOpen } from '../people/open.ts'
@@ -135,56 +134,4 @@ export function recentDates(days = 7): string[] {
   return out
 }
 
-/** 导出：所有人 + 记忆 + 最近原始对话，一个 JSON */
-export function exportAll(days = 30): unknown {
-  const people = listPeople().map((p) => ({
-    meta: p,
-    facts: loadFacts(p.id),
-    open: loadOpen(p.id),
-    relation: (() => {
-      try {
-        return JSON.parse(readFileSync(join('persona', 'people', p.id, 'relation.yaml'), 'utf8'))
-      } catch {
-        return null
-      }
-    })(),
-    profile: (() => {
-      try {
-        return readFileSync(join('persona', 'people', p.id, 'profile.md'), 'utf8')
-      } catch {
-        return null
-      }
-    })(),
-  }))
 
-  const raw: unknown[] = []
-  for (let i = 0; i < Math.min(90, days); i++) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    raw.push(...readRaw(ymd(d)))
-  }
-
-  return {
-    exportedAt: new Date().toISOString(),
-    people,
-    episodes: loadEpisodes(),
-    raw,
-    files: {
-      self: readIf('persona/self.md'),
-      life: readIf('persona/life.md'),
-      rules: readIf('persona/rules.yaml'),
-      access: readIf('persona/access.yaml'),
-      jargon: readIf('persona/jargon.yaml'),
-      plays: readIf('persona/learned/plays.md'),
-    },
-    versions: existsSync('data/versions') ? readdirSync('data/versions').filter((n) => !n.startsWith('.')) : [],
-  }
-}
-
-function readIf(p: string): string | null {
-  try {
-    return readFileSync(p, 'utf8')
-  } catch {
-    return null
-  }
-}

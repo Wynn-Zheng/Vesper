@@ -117,6 +117,7 @@ const STEPS: Step[] = [
   { name: '记忆去重', cmd: 'node scripts/test-dedup.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '记忆维护', cmd: 'node scripts/test-memory-maintenance.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '旧数据兼容', cmd: 'node scripts/test-compat.ts', expect: /通过 \d+ \/ 失败 0/ },
+  { name: '备份恢复', cmd: 'node scripts/test-backup.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '代码工具', cmd: 'node scripts/test-tools.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '代码地图', cmd: 'node scripts/test-codemap.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群成员名单', cmd: 'node --env-file-if-exists=.env scripts/test-group.ts', expect: /通过 \d+ \/ 失败 0/ },

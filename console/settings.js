@@ -122,6 +122,14 @@
       exp.onclick = () => window.open('/api/export?token=' + encodeURIComponent(window.__token || ''), '_blank')
       btnRow.appendChild(exp)
 
+      const imp = el('button', 'mini-btn', '从备份恢复')
+      imp.title = '导入只会补缺，不覆盖现有数据；导入前会自动拍快照'
+      imp.onclick = () => {
+        if (typeof window.doImport === 'function') window.doImport()
+        else alert('请回到主页面操作（数据页也有一个入口）')
+      }
+      btnRow.appendChild(imp)
+
       c3.appendChild(btnRow)
       box.appendChild(c3)
     } catch (e) {

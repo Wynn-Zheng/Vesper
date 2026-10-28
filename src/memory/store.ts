@@ -36,6 +36,18 @@ export function appendRaw(turn: RawTurn): void {
   appendJsonl(rawFile(), turn)
 }
 
+/**
+ * 按记录自己的时间戳写对应日期的文件。
+ *
+ * `appendRaw` 固定写"今天"——恢复正常说话时这是对的，
+ * 但**导入备份**时会把前几天的对话全塞进今天，日期就错了。
+ */
+export function appendRawAt(turn: RawTurn): void {
+  const d = new Date(turn.ts)
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  appendJsonl(rawFile(key), turn)
+}
+
 export function readRaw(date: string): RawTurn[] {
   return readJsonl<RawTurn>(rawFile(date))
 }
