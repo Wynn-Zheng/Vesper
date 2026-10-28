@@ -882,6 +882,117 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 直接复用 abilities.ts —— 那是给 prompt 用的同一份数据，
       // 分开维护会漂（prompt 说"能看屏幕"，控制台说"不能"）。
       // 它准备做的事：读 / 加 / 完成 / 删
+      // ---- 自我页的就地编辑：名字 / 规矩 / 称呼 / 说话方式 ----
+      //
+      // 为什么放这儿而不是设置页：设置页是「软件全局」（模型、端口、NapCat、权限、备份），
+      // 而这几项都是「它自己」的设定。用户要的是在自我页一眼看到、随手改，
+      // 而不是被踢去设置页找。
+      if (req.method === 'PUT' && path === '/api/self/name') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { name?: string }
+        const name = String(body.name ?? '').trim().slice(0, 32)
+        const { loadSelf, saveSelf } = await import('../self/store.ts')
+        const self = loadSelf()
+        // 名字清空时连同取名原因一起清，否则会剩一段解释没有名字
+        saveSelf({ ...self, name, nameReason: name ? self.nameReason : '' })
+        json(res, 200, { ok: true, name })
+        return
+      }
+
+      if (req.method === 'PUT' && path === '/api/self/traits') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { traits?: Record<string, string> }
+        const traits: Record<string, string> = {}
+        for (const [k, v] of Object.entries(body.traits ?? {})) {
+          const kk = String(k ?? '').trim().slice(0, 40)
+          const vv = String(v ?? '').trim().slice(0, 300)
+          if (kk && vv) traits[kk] = vv
+        }
+        const { loadSelf, saveSelf } = await import('../self/store.ts')
+        saveSelf({ ...loadSelf(), traits })
+        json(res, 200, { ok: true, traits })
+        return
+      }
+
+      // 它怎么称呼你：写 rules.yaml 的 关系.昵称（空 = 按阶段自动决定）
+      if (req.method === 'PUT' && path === '/api/self/callyou') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { 昵称?: string }
+        const v = String(body.昵称 ?? '').trim().slice(0, 20)
+        const { readFileSync, writeFileSync } = await import('node:fs')
+        const { setConfigPath } = await import('./config-write.ts')
+        try {
+          const raw = readFileSync('persona/rules.yaml', 'utf8')
+          const r = setConfigPath(raw, '关系.昵称', v)
+          if (!r.ok) {
+            json(res, 400, { error: r.error ?? '改不了' })
+            return
+          }
+          writeFileSync('persona/rules.yaml', r.text, 'utf8')
+          json(res, 200, { ok: true, 昵称: v })
+        } catch (e) {
+          json(res, 500, { error: String(e) })
+        }
+        return
+      }
+
+      // 说话方式：写 rules.yaml 的 行为.回复（延迟用秒收，存毫秒）
+      if (req.method === 'PUT' && path === '/api/talk-style') {
+        const body = JSON.parse((await readBody(req)) || '{}') as Record<string, unknown>
+        const { readFileSync, writeFileSync } = await import('node:fs')
+        const { setConfigPath } = await import('./config-write.ts')
+        try {
+          let raw = readFileSync('persona/rules.yaml', 'utf8')
+          const applied: Record<string, unknown> = {}
+
+          const num = (key: string, min: number, max: number): void => {
+            const n = Number(body[key])
+            if (!Number.isFinite(n)) return
+            const v = Math.min(max, Math.max(min, Math.round(n)))
+            const r = setConfigPath(raw, '说话.' + key, v)
+            if (!r.ok) return
+            raw = r.text
+            applied[key] = v
+          }
+          const pick = (key: string, allowed: string[]): void => {
+            const v = String(body[key] ?? '')
+            if (!allowed.includes(v)) return
+            const r = setConfigPath(raw, '说话.' + key, v)
+            if (!r.ok) return
+            raw = r.text
+            applied[key] = v
+          }
+          const delay = (key: string): void => {
+            const arr = body[key]
+            if (!Array.isArray(arr) || arr.length !== 2) return
+            const toMs = (x: unknown): number => {
+              const n = Number(x)
+              return Number.isFinite(n) ? Math.min(60_000, Math.max(0, Math.round(n * 1000))) : 0
+            }
+            const a = toMs(arr[0])
+            const b = toMs(arr[1])
+            const v: [number, number] = a <= b ? [a, b] : [b, a]
+            const r = setConfigPath(raw, '说话.' + key, v)
+            if (!r.ok) return
+            raw = r.text
+            applied[key] = v
+          }
+
+          num('每轮最多条数', 1, 10)
+          num('每条最多字数', 1, 500)
+          pick('引用频率', ['never', 'occasionally', 'often'])
+          delay('条间延迟')
+          delay('回复前延迟')
+
+          if (!Object.keys(applied).length) {
+            json(res, 400, { error: '没有有效的值' })
+            return
+          }
+          writeFileSync('persona/rules.yaml', raw, 'utf8')
+          json(res, 200, { ok: true, applied })
+        } catch (e) {
+          json(res, 500, { error: String(e) })
+        }
+        return
+      }
+
       // 自我页（7 个子栏）的聚合数据。
       // 一次拿全，避免每个子栏发一个请求（切 tab 会闪）。
       if (req.method === 'GET' && path === '/api/self/v2') {
@@ -927,17 +1038,20 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
         // 核心记忆
         let core: Record<string, string[]> = {}
+        // 页面要能删单条，得带扁平下标（dropCore 用的是 loadCore 的数组下标）
+        const coreList: Array<{ index: number; kind: string; text: string }> = []
         try {
           const raw = readFileSync('persona/core.md', 'utf8')
           const parsed = parseCore(raw)
           const out: Record<string, string[]> = {}
-          for (const item of parsed) {
+          parsed.forEach((item, i) => {
             const k = (item as unknown as { kind?: string }).kind ?? '身份'
             const v = (item as unknown as { text?: string }).text ?? ''
-            if (!v) continue
+            if (!v) return
             out[k] = out[k] ?? []
             out[k].push(v)
-          }
+            coreList.push({ index: i, kind: k, text: v })
+          })
           core = out
         } catch {
           /* 没核心文件 */
@@ -1005,6 +1119,21 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
         json(res, 200, {
           name: self.name || '',
+          // 自我页就地编辑要显示"现在是什么"，不然输入框全是空的
+          称呼: (() => {
+            try {
+              return String(loadRules().rules.关系?.昵称 ?? '')
+            } catch {
+              return ''
+            }
+          })(),
+          说话方式: (() => {
+            try {
+              return loadRules().rules.说话 ?? null
+            } catch {
+              return null
+            }
+          })(),
           selfText: self.about || '',
           aboutOwner: self.aboutOwner,
           aboutExtra: self.aboutExtra || '',
@@ -1014,6 +1143,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           mood,
           moodHistory: [],
           core,
+          coreList,
           issues,
           codemap,
           plays,

@@ -47,6 +47,25 @@ for (const fn of ['saveSelfText', 'switchSelfOwner', 'decideRequest', 'selfSec',
 }
 check('有 renderSelfV2', html.includes('function renderSelfV2()'))
 
+console.log('\n=== 3b. 状态区块（心事/情绪/经历）===')
+check('有「状态」段', html.includes("selfSec('状态'"))
+check('有「我准备做的事」', html.includes('我准备做的事'))
+check('有「我自己的生活」', html.includes('我自己的生活'))
+check('有「它记得的事」（经历/洞察）', html.includes('它记得的事'))
+check('待办有输入框', html.includes("self-todo-input"))
+check('待办走 intentAction', html.includes("intentAction('complete'"))
+
+console.log('\n=== 3c. 就地编辑 ===')
+for (const s of ['self-name-input', 'self-callyou-input', 'talk-max', 'talk-chars', 'talk-quote', 'self-core-input', 'self-traits-box']) {
+  check(`有 ${s}`, html.includes(s))
+}
+for (const api of ['/api/self/name', '/api/self/traits', '/api/self/callyou', '/api/talk-style']) {
+  check(`调 ${api}`, html.includes(api))
+}
+for (const fn of ['saveSelfName', 'saveSelfCallYou', 'saveSelfTraits', 'saveTalkStyle', 'selfCoreAdd', 'selfCoreDrop']) {
+  check(`有 ${fn}`, html.includes(`function ${fn}(`))
+}
+
 console.log('\n=== 4. 观察区调的新接口 ===')
 check('调 /api/self/versions', html.includes('/api/self/versions'))
 check('调 /api/self/versions/diff', html.includes('/api/self/versions/diff'))
