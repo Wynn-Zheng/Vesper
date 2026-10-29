@@ -203,7 +203,7 @@ async function loadNapcatSettings() {
     'padding:6px 10px;font-size:12.5px;color:inherit;font-family:ui-monospace,Consolas,monospace'
   row.appendChild(input)
 
-  const save = el('button', 'mini-btn', '保存')
+  const save = el('button', 'mini-btn', '保存路径')
   save.onclick = async () => {
     const v = input.value.trim()
     save.disabled = true
@@ -220,7 +220,7 @@ async function loadNapcatSettings() {
       toast('✗ ' + e.message)
     }
     save.disabled = false
-    save.textContent = '保存'
+    save.textContent = '保存路径'
   }
   row.appendChild(save)
 
@@ -297,7 +297,7 @@ async function loadModel() {
         }
         keyRow.appendChild(eye)
 
-        const saveKey = el('button', 'mini-btn', '保存')
+        const saveKey = el('button', 'mini-btn', '保存 Key')
         saveKey.onclick = async () => {
           const v = keyInput.value.trim()
           if (!v) return toast('先填一个 key')
@@ -315,7 +315,7 @@ async function loadModel() {
             toast('✗ ' + e.message)
           }
           saveKey.disabled = false
-          saveKey.textContent = '保存'
+          saveKey.textContent = '保存 Key'
         }
         keyRow.appendChild(saveKey)
         c1.appendChild(keyRow)
@@ -425,7 +425,7 @@ async function loadModel() {
           '只有主模型是纯文本时才需要它：先用它把图看成一句话，再混进对话。',
         )
 
-        const saveModel = el('button', 'mini-btn', '保存模型设置')
+        const saveModel = el('button', 'btn pri', '保存模型设置')
         saveModel.style.marginTop = '10px'
         saveModel.onclick = async () => {
           saveModel.disabled = true
