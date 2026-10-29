@@ -13,8 +13,14 @@
  * 不列全部——列全部会变成流水账，反而看不出变化。
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { cardScopedPath } from '../persona/card.ts'
 
-const DRIFT = 'persona/self-history/drift.jsonl'
+const DRIFT_LEGACY = 'persona/self-history/drift.jsonl'
+/** 按角色卡：每张卡有自己的成长记录 */
+function driftPath(): string {
+  return cardScopedPath(join('self-history', 'drift.jsonl'), DRIFT_LEGACY)
+}
 
 interface Drift {
   at: number
@@ -24,10 +30,10 @@ interface Drift {
 }
 
 function loadDrift(): Drift[] {
-  if (!existsSync(DRIFT)) return []
+  if (!existsSync(driftPath())) return []
   const out: Drift[] = []
   try {
-    for (const line of readFileSync(DRIFT, 'utf8').split('\n')) {
+    for (const line of readFileSync(driftPath(), 'utf8').split('\n')) {
       if (!line.trim()) continue
       try {
         const j = JSON.parse(line) as Partial<Drift>

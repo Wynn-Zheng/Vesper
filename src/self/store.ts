@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { sharedBigrams, similarity } from '../core/text.ts'
+import { cardScopedPath } from '../persona/card.ts'
 import { appendJsonl } from '../store/fs.ts'
 import { writeAtomic } from '../store/fs.ts'
 
@@ -103,7 +104,8 @@ export function loadSelf(): SelfDoc {
 
 /** 历史目录：每次改动前留一份，人格变了能回看 */
 function historyDir(): string {
-  return join(dirname(selfPath), 'self-history')
+  // 按角色卡隔离：换卡就是换人，历史不该混在一起
+  return cardScopedPath('self-history', 'persona/self-history')
 }
 
 function stamp(): string {
@@ -201,7 +203,10 @@ export function saveSelf(doc: SelfDoc): void {
   writeAtomic(selfPath, lines.join('\n'))
 }
 
-const DRIFT_LOG = 'persona/self-history/drift.jsonl'
+const DRIFT_LOG_LEGACY = 'persona/self-history/drift.jsonl'
+function driftLogFile(): string {
+  return cardScopedPath(join('self-history', 'drift.jsonl'), DRIFT_LOG_LEGACY)
+}
 
 /**
  * 和上一版比，自述变了多少。
@@ -220,7 +225,7 @@ export function detectDrift(): { changed: boolean; from: string; to: string; sim
 
 /** 记一条漂移事件，控制台能看到"它什么时候变了个样" */
 export function logDrift(to: string, from: string, sim: number): void {
-  appendJsonl(DRIFT_LOG, { at: Date.now(), from: from.slice(0, 200), to: to.slice(0, 200), sim })
+  appendJsonl(driftLogFile(), { at: Date.now(), from: from.slice(0, 200), to: to.slice(0, 200), sim })
 }
 
 /**
@@ -280,9 +285,9 @@ export function lineDiff(
 
 
 export function loadDrifts(limit = 20): Array<{ at: number; from: string; to: string; sim: number }> {
-  if (!existsSync(DRIFT_LOG)) return []
+  if (!existsSync(driftLogFile())) return []
   const out: Array<{ at: number; from: string; to: string; sim: number }> = []
-  for (const line of readFileSync(DRIFT_LOG, 'utf8').split('\n')) {
+  for (const line of readFileSync(driftLogFile(), 'utf8').split('\n')) {
     if (!line.trim()) continue
     try {
       out.push(JSON.parse(line) as { at: number; from: string; to: string; sim: number })
