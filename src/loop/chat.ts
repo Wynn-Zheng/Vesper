@@ -214,7 +214,11 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     self: buildSelfBlock(opts.rules, new Date(), personId, m.from.name),
     codeMap: loadCodeMapBrief(),
     // 群里 m.from.name 是群名，不能当人名用
+    // 群里 m.from.name 是群名，不能当人名用
     personName: m.senderName ?? m.senderNick ?? m.from.id,
+    // 角色（主人/朋友…）用档案里的，别让 prompt 按显示名去猜 ——
+    // 群里显示名是群名片，重名/改名会把「关系：主人」挂错人。
+    personRole: loadPerson(personId)?.role,
     profile: loadProfile(personId),
     relation: [
       // 群里不渲染私聊口吻的称呼；顺带把"认识几天"告诉它
@@ -282,6 +286,10 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   //   1. 模型自己不要工具了
   //   2. 同一个调用重复 3 次（防死循环）
   //   3. 轮数上限（最后一轮不再执行工具——结果送不回模型，只会白花钱）
+  // 先记用户这条：模型超时/401 抛出去时，generateReply 会直接退出，
+  // 之前这轮用户消息就完全不进历史 —— 下一轮它不知道自己刚才说过什么。
+  const keepTurnsForPush = Math.max(60, opts.rules.上下文压缩.摘要阈值 + 20)
+  pushTurn(key, { role: 'user', content: userContent, at: m.at }, keepTurnsForPush)
   let res = await chat(messages, llmOpts)
   const repeatCount = new Map<string, number>()
   const MAX_ROUNDS = 4
