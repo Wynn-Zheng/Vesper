@@ -175,7 +175,7 @@
   textarea.editor{width:100%;min-height:calc(100vh - 250px);background:#0a0e13;border:1px solid var(--line);border-radius:8px;padding:14px 16px;color:#c9d1d9;font:12.5px/1.7 ui-monospace,Consolas,monospace;resize:vertical}
   button.btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:6px 12px;border-radius:var(--r-sm);cursor:pointer;font-size:var(--fs-sm);font-family:inherit}
   button.btn:hover{background:#2d333b}
-  button.btn.pri{background:var(--green);border-color:#2ea043;color:#fff}
+  button.btn.pri{background:var(--blue);border-color:transparent;color:#fff}
   .row{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
   .hint{font-size:var(--fs-sm);color:var(--dim2);line-height:1.55}
   /* ---- 组内 tab ---- */
@@ -370,20 +370,18 @@
 #v-self{padding-bottom:36px}
 
 /* 顶部身份卡 */
-.self-hero{display:flex;align-items:flex-start;gap:20px;padding:18px 20px;border:1px solid var(--line);border-radius:12px;
-  background:var(--panel);min-width:0}
+.self-hero{display:flex;align-items:flex-start;gap:20px;padding:18px 20px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--panel);min-width:0}
 .self-hero-main{flex:1;min-width:0}
-.self-hero h1{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:0 0 3px}
+.self-hero h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
 .self-hero-why{font-size:11.5px;color:var(--dim2);margin-bottom:9px}
 .self-hero-desc{margin:0;font-size:12.5px;line-height:1.65;color:var(--dim)}
 .self-hero-side{display:flex;gap:8px;flex-shrink:0;padding-top:2px}
 .self-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
-.self-chip{font-size:10.5px;line-height:1.6;padding:1px 9px;border-radius:999px;border:1px solid var(--line);
-  color:var(--dim);background:var(--panel2);white-space:nowrap}
-.self-chip.blue{color:var(--blue);border-color:rgba(88,166,255,.35);background:rgba(88,166,255,.08)}
-.self-chip.green{color:var(--green);border-color:rgba(63,185,80,.35);background:rgba(63,185,80,.08)}
-.self-chip.yellow{color:var(--yellow);border-color:rgba(210,153,34,.35);background:rgba(210,153,34,.08)}
-.self-chip.purple{color:var(--purple);border-color:rgba(188,140,255,.35);background:rgba(188,140,255,.08)}
+.self-chip{font-size:11px;line-height:1.7;padding:1px 8px;border-radius:4px;border:1px solid var(--line);color:var(--dim);background:var(--panel2);white-space:nowrap}
+.self-chip.blue{color:var(--blue);border-color:rgba(94,106,210,.35)}
+.self-chip.green{color:var(--green);border-color:rgba(63,185,80,.32)}
+.self-chip.yellow{color:var(--yellow);border-color:rgba(210,153,34,.32)}
+.self-chip.purple{color:var(--purple);border-color:rgba(138,134,196,.32)}
 
 /* 段头 */
 .self-sec{margin-top:20px}
@@ -401,8 +399,7 @@
 .self-grid.cols2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .self-grid.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (max-width: 1100px){.self-grid.cols2,.self-grid.cols3{grid-template-columns:1fr}}
-.self-card{display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 16px;height:100%;
-  background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.self-card{display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 16px;height:100%;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md)}
 .self-card.wide{grid-column:span 2}
 @media (max-width: 1100px){.self-card.wide{grid-column:span 1}}
 .self-card h3{display:flex;align-items:baseline;gap:8px;margin:0;font-size:11.5px;font-weight:600;
@@ -442,8 +439,7 @@
 .self-play-scene{font-size:11px;color:var(--dim2);margin-bottom:2px}
 
 /* 版本对比 */
-.self-select{flex:1;min-width:110px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;
-  padding:5px 8px;color:var(--text);font-size:12px;font-family:inherit}
+.self-select{background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:6px 9px;color:var(--text);font-size:12.5px;font-family:inherit;outline:none;transition:border-color .16s var(--ease)}
 .self-diff{margin-top:4px;max-height:340px;overflow:auto;font-family:ui-monospace,Consolas,monospace;
   font-size:12px;line-height:1.7;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .self-diff .ln{white-space:pre-wrap;padding:1px 6px;border-radius:3px}
@@ -454,10 +450,10 @@
 .self-form{display:flex;flex-direction:column;gap:8px}
 .self-form.cols2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px}
 .self-field{display:flex;align-items:center;gap:8px}
-.self-field > label{font-size:11.5px;color:var(--dim);min-width:72px;flex-shrink:0}
-.self-input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12.5px;font-family:inherit}
-.self-input:focus{outline:none;border-color:var(--blue)88;box-shadow:0 0 0 3px var(--blue)22}
-.self-input.num{width:68px;flex:none;text-align:right}
+.self-field > label{font-size:12px;color:var(--dim);min-width:80px;flex-shrink:0}
+.self-input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:6px 9px;color:var(--text);font-size:12.5px;font-family:inherit;transition:border-color .16s var(--ease)}
+.self-input:focus{outline:none;border-color:var(--blue)}
+.self-input.num{width:72px;min-width:72px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
 .self-unit{font-size:11px;color:var(--dim2)}
 .self-todo{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
 .self-todo:last-child{border-bottom:0;padding-bottom:0}
@@ -3895,7 +3891,7 @@ function renderSelfTalkPage(body, d) {
     c.appendChild(form)
 
     const acts = el('div', 'self-acts')
-    const save = el('button', 'mini-btn', '保存说话方式')
+    const save = el('button', 'btn pri', '保存说话方式')
     save.onclick = () => saveTalkStyle()
     acts.appendChild(save)
     c.appendChild(acts)
