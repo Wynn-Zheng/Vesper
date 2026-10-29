@@ -83,6 +83,11 @@
 .self-day-row{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:var(--fs-md);line-height:1.65;color:var(--text)}
 .self-day-row:last-child{border-bottom:none;padding-bottom:0}
 
+/* 成员抽屉：分组标题与卡片间距 */
+.md-sec-title{font-size:var(--fs-sm);font-weight:600;color:var(--dim);letter-spacing:.04em;margin-bottom:8px}
+#member-drawer .card + .card{margin-top:12px}
+#member-drawer .item:last-child{border-bottom:none;padding-bottom:0}
+
 /* ===== 仪表盘 ===== */
 .dash-hero{display:grid;grid-template-columns:minmax(260px,1.35fr) 1fr;gap:12px;margin-bottom:14px}
 @media (max-width:840px){.dash-hero{grid-template-columns:1fr}}
@@ -130,7 +135,7 @@
 .log .line .m{color:var(--fg);flex-shrink:0}
 .log .line .ex{color:var(--dim);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;padding-left:4px;border-left:1px solid var(--line);margin-left:2px;line-height:1.5}
 .log .line .wh{color:var(--dim2);flex-shrink:0;margin-left:auto;font-size:10.5px;opacity:.55;padding-left:10px}
-  .item{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #21262d}
+  .item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:var(--fs-md);line-height:1.65;color:var(--text)}
   .item:last-child{border-bottom:0}
   .item .tag{font-size:10.5px;padding:1px 7px;border-radius:5px;height:fit-content;background:#1f6feb22;color:var(--blue);flex-shrink:0;margin-top:2px}
   .item .tag.warn{background:#d2992222;color:var(--yellow)}
@@ -924,7 +929,7 @@
       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900"></div>
 
     <div id="member-drawer"
-      style="display:none;position:fixed;top:0;right:0;width:80vw;height:100vh;background:var(--panel);border-left:1px solid var(--line);z-index:901;transform:translateX(100%);transition:transform .18s ease-out;display:none;flex-direction:column">
+      style="display:none;position:fixed;top:0;right:0;width:min(80vw,760px);height:100vh;background:var(--panel);border-left:1px solid var(--line);z-index:901;transform:translateX(100%);transition:transform .18s ease-out;flex-direction:column">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex:none">
         <div style="flex:1;min-width:0">
           <div id="md-name" style="font-size:16px;font-weight:600"></div>
@@ -934,7 +939,7 @@
         <button class="mini-btn" onclick="closeDrawer()">关闭</button>
       </div>
       <div class="group-tabs" id="md-tabs" style="padding:10px 18px 0;flex:none"></div>
-      <div id="md-body" style="flex:1;overflow:auto;padding:14px 18px"></div>
+      <div id="md-body" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 18px"></div>
     </div>
 
     <section class="view" id="v-settings">

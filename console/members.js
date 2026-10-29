@@ -184,7 +184,8 @@
     const d = document.getElementById('member-drawer')
     const mask = document.getElementById('member-mask')
     if (!d) return
-    d.style.display = 'block'
+    // 必须用 flex：抽屉内部靠 flex:1 + overflow:auto 滚动，设成 block 就撑出屏幕了
+  d.style.display = 'flex'
     if (mask) mask.style.display = 'block'
     // 让它滑进来
     requestAnimationFrame(() => {
@@ -304,8 +305,8 @@
         c.className = 'card'
         c.style.marginBottom = '10px'
         const h = document.createElement('div')
-        h.className = 'op-t'
-        h.textContent = title
+        h.className = 'md-sec-title'
+        h.textContent = title + (items.length ? '  ' + items.length : '')
         c.appendChild(h)
         if (!items.length) {
           const e = document.createElement('div')
