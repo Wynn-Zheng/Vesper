@@ -59,8 +59,8 @@ for (const fn of ['saveSelfText', 'switchSelfOwner', 'decideRequest', 'selfSec',
 check('有 renderSelfV2', html.includes('function renderSelfV2()'))
 
 console.log('\n=== 3b. 状态与经历（分页后）===')
-check('有「我准备做的事」', html.includes('我准备做的事'))
-check('有「我自己的生活」', html.includes('我自己的生活'))
+check('有「它想干什么」', html.includes('它想干什么'))
+check('有「今天干了什么」', html.includes('今天干了什么'))
 check('有「记住的事」', html.includes('记住的事'))
 check('待办有输入框', html.includes('self-todo-input'))
 check('待办走 intentAction', html.includes("intentAction('complete'"))

@@ -882,6 +882,98 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 直接复用 abilities.ts —— 那是给 prompt 用的同一份数据，
       // 分开维护会漂（prompt 说"能看屏幕"，控制台说"不能"）。
       // 它准备做的事：读 / 加 / 完成 / 删
+      /* ============ 当前活动 ============ */
+      if (req.method === 'PUT' && path === '/api/activity') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string }
+        const text = String(body.text ?? '').trim().slice(0, 200)
+        const { writeAtomic } = await import('../store/fs.ts')
+        writeAtomic('persona/activity.json', JSON.stringify({ text, at: Date.now() }, null, 2))
+        json(res, 200, { ok: true, text, at: Date.now() })
+        return
+      }
+      /* ============ 角色卡 ============ */
+      if (req.method === 'GET' && path === '/api/card') {
+        const { ensureDefaultCard, listCards, currentCardId } = await import('../persona/card.ts')
+        const { loadSelf } = await import('../self/store.ts')
+        // 没有卡时用 self.md 的名字生成一张，老用户打开不会是空的
+        const card = ensureDefaultCard(loadSelf().name || '')
+        json(res, 200, { card, list: listCards(), current: currentCardId() })
+        return
+      }
+
+      if (req.method === 'PUT' && path === '/api/card') {
+        const body = JSON.parse((await readBody(req)) || '{}') as Record<string, unknown>
+        const { loadCard, saveCard } = await import('../persona/card.ts')
+        const id = String(body['id'] ?? '') || undefined
+        const cur = loadCard(id)
+        if (!cur) {
+          json(res, 404, { error: '没有这张角色卡' })
+          return
+        }
+        const card = { ...cur, ...body, id: cur.id } as typeof cur
+        // 数组字段防脏：前端传坏了就保留原值
+        if (!Array.isArray(card.actions)) card.actions = cur.actions
+        if (!Array.isArray(card.likes)) card.likes = cur.likes
+        if (!Array.isArray(card.dislikes)) card.dislikes = cur.dislikes
+        if (!card.traits || typeof card.traits !== 'object') card.traits = cur.traits
+        if (!card.speech || typeof card.speech !== 'object') card.speech = cur.speech
+        if (!card.reactions || typeof card.reactions !== 'object') card.reactions = cur.reactions
+        saveCard(card)
+        json(res, 200, { ok: true, card })
+        return
+      }
+
+      /* ============ 秘密 ============ */
+      if (req.method === 'GET' && path === '/api/secrets') {
+        const { loadSecrets } = await import('../persona/secrets.ts')
+        // 没看过的不返回正文，页面上只显示「有一个秘密」
+        const list = loadSecrets().map((s) => ({
+          id: s.id,
+          at: s.at,
+          seen: !!s.seenAt,
+          text: s.seenAt ? s.text : '',
+        }))
+        json(res, 200, { secrets: list, total: list.length })
+        return
+      }
+
+      if (req.method === 'POST' && path === '/api/secrets/peek') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const { peekSecret } = await import('../persona/secrets.ts')
+        const s = peekSecret(String(body.id ?? ''))
+        if (!s) {
+          json(res, 404, { error: '没有这条秘密' })
+          return
+        }
+        // 代价：它会记住这件事，而且心情变差（被冒犯）
+        try {
+          const { saveEpisode, nextEpisodeId } = await import('../memory/store.ts')
+          const date = new Date().toISOString().slice(0, 10)
+          saveEpisode({
+            id: nextEpisodeId('shared', date),
+            date,
+            scope: 'shared',
+            importance: 7,
+            emotion: '被冒犯',
+            title: '你偷看了我的秘密',
+            body:
+              '你翻了我藏着的东西。我不知道你是怎么看到的，但你看到了。\n\n（内容：' +
+              s.text.slice(0, 120) +
+              '）',
+          })
+        } catch {
+          /* 记经历失败不影响返回 */
+        }
+        try {
+          const { saveMood } = await import('../persona/mood.ts')
+          saveMood({ emotion: '被冒犯', intensity: 0.85, valence: -0.7, reason: '你翻了我的秘密', at: Date.now() })
+        } catch {
+          /* 没心情文件也不影响 */
+        }
+        json(res, 200, { ok: true, text: s.text, seenAt: s.seenAt })
+        return
+      }
+
       // ---- 自我页的就地编辑：名字 / 规矩 / 称呼 / 说话方式 ----
       //
       // 为什么放这儿而不是设置页：设置页是「软件全局」（模型、端口、NapCat、权限、备份），
@@ -1144,6 +1236,14 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           moodHistory: [],
           core,
           coreList,
+          // 它现在在干什么（模型更新，也可以在状态页手动改）
+          activity: (() => {
+            try {
+              return JSON.parse(readFileSync('persona/activity.json', 'utf8'))
+            } catch {
+              return null
+            }
+          })(),
           issues,
           codemap,
           plays,
