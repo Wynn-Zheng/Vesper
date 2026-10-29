@@ -446,6 +446,7 @@
 .self-status-right{display:flex;flex-direction:column;gap:10px}
 .self-card-birth{text-align:right;flex-shrink:0}
 .self-card-switch{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.self-ops{display:flex;gap:8px;padding:10px 0}
 .self-birth{font-size:15px;font-weight:600;margin-top:2px}
 .self-activity{font-size:16px;line-height:1.6;padding:6px 0 10px}
 .self-mood-big{display:flex;align-items:center;gap:12px;padding:4px 0 6px}
@@ -2632,6 +2633,64 @@ async function switchSelfCard(id) {
   }
 }
 
+/** 粘贴导入：解析结果（预览用） */
+let SELF_PARSE = null
+/** 粘贴面板展开状态 */
+let SELF_PASTE_OPEN = false
+
+async function newSelfCard() {
+  const name = prompt('新角色卡叫什么名字？（之后也能改）', '新角色')
+  if (name === null) return
+  try {
+    await sendJson('/api/card/new', { name }, 'POST')
+    SELF_CARD = null
+    SELF_DATA = null
+    toast('建好了，已经切到新卡')
+    await loadSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function parseCardPaste() {
+  const ta = $('card-paste')
+  if (!ta || !ta.value.trim()) return
+  try {
+    const r = await sendJson('/api/card/parse', { text: ta.value }, 'POST')
+    SELF_PARSE = r
+    SELF_PASTE_OPEN = true
+    renderSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+function applyParsedCard() {
+  if (!SELF_PARSE || !SELF_CARD) return
+  const p = SELF_PARSE
+  saveSelfCard({
+    name: p.name || SELF_CARD.name,
+    appearance: p.appearance || SELF_CARD.appearance,
+    identity: p.identity || SELF_CARD.identity,
+    traits: {
+      core: p.traits.core || SELF_CARD.traits.core,
+      good: p.traits.good || SELF_CARD.traits.good,
+      bad: p.traits.bad || SELF_CARD.traits.bad,
+    },
+    speech: {
+      tone: p.speech.tone || SELF_CARD.speech.tone,
+      catchphrase: p.speech.catchphrase || SELF_CARD.speech.catchphrase,
+    },
+    actions: p.actions.length ? p.actions : SELF_CARD.actions,
+    likes: p.likes.length ? p.likes : SELF_CARD.likes,
+    dislikes: p.dislikes.length ? p.dislikes : SELF_CARD.dislikes,
+    reactions: { ...SELF_CARD.reactions, ...p.reactions },
+  })
+  SELF_PARSE = null
+  toast('已填入并保存，检查一下')
+  renderSelfV2()
+}
+
 async function loadSelfRelation() {
   try {
     const r = await api('/api/status')
@@ -2828,6 +2887,81 @@ function renderSelfCardPage(body, d) {
 
     hero.appendChild(side)
     body.appendChild(hero)
+  }
+
+  /* ---- 操作栏：新建 / 粘贴导入 ---- */
+  {
+    const bar = el('div', 'self-ops')
+    const mk = el('button', 'mini-btn', SELF_PASTE_OPEN ? '收起粘贴导入' : '粘贴导入')
+    mk.onclick = () => {
+      SELF_PASTE_OPEN = !SELF_PASTE_OPEN
+      if (!SELF_PASTE_OPEN) SELF_PARSE = null
+      renderSelfV2()
+    }
+    bar.appendChild(mk)
+    const nb = el('button', 'mini-btn', '新建角色卡')
+    nb.onclick = () => newSelfCard()
+    bar.appendChild(nb)
+    body.appendChild(bar)
+
+    if (SELF_PASTE_OPEN) {
+      const c = selfCard('粘贴导入', '把别处复制的角色卡贴进来，自动认字段')
+      const ta = el('textarea', 'self-ta')
+      ta.id = 'card-paste'
+      ta.rows = 6
+      ta.placeholder = '例如：\n名字：阿澈\n## 外貌\n白衬衫，头发有点乱\n## 性格\n核心特质：慢热、嘴硬'
+      c.appendChild(ta)
+      const acts = el('div', 'self-acts')
+      const pbtn = el('button', 'mini-btn', '识别并预览')
+      pbtn.onclick = () => parseCardPaste()
+      acts.appendChild(pbtn)
+      if (SELF_PARSE) {
+        const ab = el('button', 'mini-btn', '全部填入')
+        ab.style.color = 'var(--green)'
+        ab.onclick = () => applyParsedCard()
+        acts.appendChild(ab)
+      }
+      c.appendChild(acts)
+
+      if (SELF_PARSE) {
+        const p = SELF_PARSE
+        const preview = el('div', 'self-form')
+        const addRow = (label, val) => {
+          if (!val) return
+          const row = el('div', 'self-field')
+          row.appendChild(el('label', '', label))
+          const t = el('span', 'self-item')
+          t.textContent = val
+          row.appendChild(t)
+          preview.appendChild(row)
+        }
+        addRow('名字', p.name)
+        addRow('外貌', p.appearance)
+        addRow('基础身份', p.identity)
+        addRow('核心特质', p.traits.core)
+        addRow('优点', p.traits.good)
+        addRow('缺点', p.traits.bad)
+        addRow('语气', p.speech.tone)
+        addRow('口头禅', p.speech.catchphrase)
+        addRow('小动作', p.actions.join('、'))
+        addRow('喜欢', p.likes.join('、'))
+        addRow('讨厌', p.dislikes.join('、'))
+        addRow(
+          '反应',
+          Object.keys(p.reactions)
+            .map((k) => k + '：' + p.reactions[k])
+            .join('；'),
+        )
+        c.appendChild(preview)
+        if (p.rest && p.rest.trim()) {
+          const rest = el('div', 'self-extra')
+          rest.appendChild(el('div', 'self-extra-h', '没认出来的部分（手动放）'))
+          rest.appendChild(el('div', 'self-item muted', p.rest))
+          c.appendChild(rest)
+        }
+      }
+      body.appendChild(c)
+    }
   }
 
   const form = el('div', 'self-card-form')

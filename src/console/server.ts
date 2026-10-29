@@ -963,6 +963,27 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         json(res, r.ok ? 200 : 400, r)
         return
       }
+      if (req.method === 'POST' && path === '/api/card/parse') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string }
+        const text = String(body.text ?? '')
+        if (!text.trim()) {
+          json(res, 400, { error: '粘贴一段角色卡文本' })
+          return
+        }
+        const { parseCardText } = await import('../persona/card-parse.ts')
+        json(res, 200, parseCardText(text))
+        return
+      }
+
+      if (req.method === 'POST' && path === '/api/card/new') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { name?: string }
+        const { createCard } = await import('../persona/card.ts')
+        const card = createCard(String(body.name ?? '').trim() || '新角色')
+        const { switchCard } = await import('../persona/card.ts')
+        switchCard(card.id)
+        json(res, 200, { ok: true, card })
+        return
+      }
       /* ============ 秘密 ============ */
       if (req.method === 'GET' && path === '/api/secrets') {
         const { loadSecrets } = await import('../persona/secrets.ts')

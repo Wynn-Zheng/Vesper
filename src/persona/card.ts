@@ -327,3 +327,11 @@ export function switchCard(id: string): { ok: boolean; error?: string } {
   writeAtomic(CURRENT, id)
   return { ok: true }
 }
+
+/** 新建一张空卡（名字可给），并切成当前卡 */
+export function createCard(name: string): CharCard {
+  const id = 'card' + Date.now().toString(36)
+  const card: CharCard = { ...EMPTY_CARD(id), name: name.trim() }
+  saveCard(card)
+  return card
+}

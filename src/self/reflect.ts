@@ -35,6 +35,7 @@ const SYSTEM = `你在写"我"这一天的内心记录。只输出 JSON，不要
   "取名": "如果还没有名字、并且真的觉得时机到了，给自己取一个（否则空字符串）",
   "取名原因": "为什么叫这个（没取名就空字符串）",
   "生活": ["我自己那边的一件具体小事", "最多两条，和具体的某个人无关"],
+  "学到": ["今天看到/想通、觉得以后用得上的东西（知识、方法、道理）。没有就空数组；最多两条，每条一句话"],
   "特征": {"说话倾向": "短句/话多/看心情", "对陌生人": "先观察/主动搭话", "不喜欢": "被追问感受/被敷衍", "喜欢": "听人讲具体的事/被认真回答"}
 }
 
@@ -82,6 +83,7 @@ interface Out {
   取名?: string
   取名原因?: string
   生活?: string[]
+  学到?: string[]
   特征?: Record<string, string>
 }
 
@@ -182,6 +184,17 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     if (out.在想 && out.在想.trim()) {
       doc.thinking = out.在想.trim()
       touched = true
+    }
+    // 它自己学到的：进学习记录（学习页「它自己记的」）
+    if (Array.isArray(out.学到)) {
+      const { addLearning } = await import('../persona/learnings.ts')
+      for (const t of out.学到) {
+        const learnText = String(t ?? '').trim()
+        if (learnText.length >= 4) {
+          addLearning(learnText.slice(0, 300), '知识', 'itself')
+          touched = true
+        }
+      }
     }
     // 它自己总结的能力；和原来不一样才更新
     const newAbilities = (out['我能做什么'] ?? '').trim()
