@@ -288,7 +288,7 @@ async function main(): Promise<void> {
     git,
     app: { url: 'app.tar.gz', sha256: hash, size: gz.length },
   }
-  writeFileSync(join(UPD, 'latest.json'), JSON.stringify(latest, null, 2) + '\\n', 'utf8')
+  writeFileSync(join(UPD, 'latest.json'), JSON.stringify(latest, null, 2) + '\n', 'utf8')
   ok('dist-update/app.tar.gz（' + (gz.length / 1024 / 1024).toFixed(2) + ' MB）')
   ok('dist-update/latest.json（版本 ' + latest.version + (git ? ' / ' + git : '') + '）')
 
