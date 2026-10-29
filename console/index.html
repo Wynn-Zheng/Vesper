@@ -1578,6 +1578,8 @@ function showGroup(g, subIndex = 0) {
 
 function runLoaders(viewId) {
   if (viewId === 'v-dashboard') { loadDashboard(); loadStatus() }
+  // 备份页是静态卡片（导出/恢复按钮），没有要拉的初始数据，但 runLoaders 要覆盖到它
+  if (viewId === 'v-ops') { /* 无需加载 */ }
   if (viewId === 'v-settings') {
     // 一页里有六块，进来全加载一次。各自独立，一块挂了不影响别的。
     loadHealth()
