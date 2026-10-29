@@ -217,7 +217,44 @@ async function waitReady(timeoutMs = 25000, checkAbort = () => '') {
 /* ============================================================
  * 拉起后端
  * ============================================================ */
+/**
+ * 应用"已下载、等重启"的更新。
+ *
+ * 为什么放在这里：后端正跑在 resources/app 里，在它运行中覆盖自己的 js 会失败；
+ * 而 ensureBackend 是在后端启动**之前**调用的，此时文件没被占用。
+ *
+ * 做法：先把新包逐文件覆盖进 app（不删旧文件，避免正在加载的模块消失），
+ * 失败就整目录回滚。
+ */
+function applyPendingUpdate() {
+  const upd = path.join(DATA_ROOT, 'update')
+  const pending = path.join(upd, 'pending.json')
+  if (!existsSync(pending)) return
+  const newApp = path.join(upd, 'unpacked', 'app')
+  const appDir = __dirname
+  if (!existsSync(path.join(newApp, 'main.js'))) {
+    trace('[main] 更新包不完整，已丢弃')
+    try { rmSync(upd, { recursive: true, force: true }) } catch { /* ignore */ }
+    return
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backup = path.join(DATA_ROOT, 'app-backup-' + stamp)
+  try {
+    let info = {}
+    try { info = JSON.parse(readFileSync(pending, 'utf8')) } catch { /* ignore */ }
+    cpSync(appDir, backup, { recursive: true })
+    cpSync(newApp, appDir, { recursive: true, force: true })
+    rmSync(upd, { recursive: true, force: true })
+    trace('[main] 更新已应用：' + (info.version || '') + '（旧版备份在 ' + backup + '）')
+  } catch (e) {
+    trace('[main] 应用更新失败，回滚：' + (e && e.message))
+    try { cpSync(backup, appDir, { recursive: true, force: true }) } catch { /* ignore */ }
+  }
+}
+
 async function ensureBackend() {
+  // 0. 有待应用的更新？在后端启动前换掉它（这时 app 里的文件没被占用）
+  applyPendingUpdate()
   // 1. 已经在跑？直接连（可能是你手动 npm start 的）
   if (await probe()) {
     trace('[main] 检测到已有后端，直接复用')

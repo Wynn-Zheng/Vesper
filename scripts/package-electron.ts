@@ -115,6 +115,21 @@ async function main(): Promise<void> {
   cpSync(join(ROOT, 'console'), join(APP, 'console'), { recursive: true })
   ok('main.js / preload.js / build / console')
 
+// 版本信息：控制台「关于」显示构建时间，也用于更新比对
+  const pkgForVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version?: string }
+  let gitForVersion = ''
+  try {
+    gitForVersion = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
+  } catch {
+    /* 不是 git 仓库 */
+  }
+  writeFileSync(
+    join(APP, 'version.json'),
+    JSON.stringify({ version: pkgForVersion.version ?? '0.0.0', buildTime: new Date().toISOString(), git: gitForVersion }, null, 2) + '\n',
+    'utf8',
+  )
+  ok('version.json')
+
   if (existsSync(join(ELECTRON_DIR, 'icon.png'))) {
     cpSync(join(ELECTRON_DIR, 'icon.png'), join(APP, 'icon.png'))
     ok('icon.png（窗口 + 托盘）')
@@ -250,7 +265,33 @@ async function main(): Promise<void> {
   rmSync(exeSrc, { force: true })
   ok('QQBot.exe')
 
-  /* ---------- 7. 报告 ---------- */
+  /* ---------- 8. 更新包（给服务器用） ---------- */
+  step('生成更新包 app.tar.gz + latest.json')
+  const UPD = join(ROOT, 'dist-update')
+  rmSync(UPD, { recursive: true, force: true })
+  mkdirSync(UPD, { recursive: true })
+  // 只打 resources/app（3 MB 左右）；exe 和内置 NapCat 不动
+  execFileSync('tar', ['-czf', join(UPD, 'app.tar.gz'), '-C', join(OUT, 'resources'), 'app'], { stdio: 'inherit' })
+  const gz = readFileSync(join(UPD, 'app.tar.gz'))
+  const hash = createHash('sha256').update(gz).digest('hex')
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version?: string }
+  let git = ''
+  try {
+    git = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
+  } catch {
+    /* 不是 git 仓库就算了 */
+  }
+  const latest = {
+    version: pkg.version ?? '0.0.0',
+    buildTime: new Date().toISOString(),
+    git,
+    app: { url: 'app.tar.gz', sha256: hash, size: gz.length },
+  }
+  writeFileSync(join(UPD, 'latest.json'), JSON.stringify(latest, null, 2) + '\\n', 'utf8')
+  ok('dist-update/app.tar.gz（' + (gz.length / 1024 / 1024).toFixed(2) + ' MB）')
+  ok('dist-update/latest.json（版本 ' + latest.version + (git ? ' / ' + git : '') + '）')
+
+  /* ---------- 9. 报告 ---------- */
   console.log('\n✅ 打好了')
   console.log('  目录：' + OUT)
   console.log('  大小：' + dirSizeMB(OUT).toFixed(1) + ' MB')

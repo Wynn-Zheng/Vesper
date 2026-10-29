@@ -297,9 +297,43 @@ export async function handleSettingsApi(
       platform: process.platform,
       arch: process.arch,
       uptime: Math.round(process.uptime()),
-      // 更新占位：先只显示版本号，不做真更新
-      updateAvailable: null,
+      // 构建时间：打包时写进 resources/app/version.json；开发模式没有就留空
+      buildTime: (() => {
+        try {
+          const f = 'version.json'
+          return (JSON.parse(readFileSync(f, 'utf8')) as { buildTime?: string }).buildTime ?? ''
+        } catch {
+          return ''
+        }
+      })(),
     })
+    return true
+  }
+
+  /* ============ 更新：查版本 / 下载 ============ */
+  if (method === 'GET' && path === '/api/settings/check-update') {
+    const { checkUpdate } = await import('./update.ts')
+    const { readFileSync } = await import('node:fs')
+    let version = ''
+    try {
+      version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version?: string }).version ?? ''
+    } catch {
+      /* 读不到 */
+    }
+    const r = await checkUpdate(version)
+    json(res, 200, { ...r, current: version, url: process.env['UPDATE_URL'] ?? '' })
+    return true
+  }
+
+  if (method === 'POST' && path === '/api/settings/download-update') {
+    const chunks: Buffer[] = []
+    for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
+    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as { latest?: unknown }
+    const { downloadUpdate, pendingUpdate } = await import('./update.ts')
+    const latest = body.latest as { version: string; buildTime: string; app?: { url: string; sha256: string; size: number } }
+    if (!latest || !latest.version) { json(res, 400, { error: '缺版本信息' }); return true }
+    const r = await downloadUpdate(latest)
+    json(res, r.ok ? 200 : 400, { ...r, pending: pendingUpdate() })
     return true
   }
 

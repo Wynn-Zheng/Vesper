@@ -554,18 +554,86 @@ async function loadModel() {
       row('已运行', fmtDurText(d.uptime))
       box.appendChild(c)
 
+      // ---- 更新 ----
       const c2 = el('div', 'card')
       c2.style.marginTop = '12px'
       c2.appendChild(el('div', 'op-t', '更新'))
-      c2.appendChild(
-        el('div', 'hint', '自动更新还没做（这个项目没有发布渠道）。现在只显示版本号。'),
-      ).style.marginTop = '6px'
-      const b = el('button', 'mini-btn', '检查更新')
-      b.style.marginTop = '8px'
-      b.disabled = true
-      b.title = '还没做'
-      c2.appendChild(b)
+
+      const info = el('div', 'hint')
+      info.style.marginTop = '6px'
+      info.textContent = '当前 ' + (d.version || '?') + (d.buildTime ? '（' + String(d.buildTime).replace('T', ' ').slice(0, 16) + '）' : '')
+      c2.appendChild(info)
+
+      const line = el('div', 'hint')
+      line.style.marginTop = '6px'
+      c2.appendChild(line)
+
+      const btns = el('div', 'row')
+      btns.style.marginTop = '8px'
+      const checkBtn = el('button', 'mini-btn', '检查更新')
+      const applyBtn = el('button', 'btn pri', '立即更新')
+      applyBtn.style.display = 'none'
+      btns.appendChild(checkBtn)
+      btns.appendChild(applyBtn)
+      c2.appendChild(btns)
       box.appendChild(c2)
+
+      let latest = null
+
+      checkBtn.onclick = async () => {
+        checkBtn.disabled = true
+        line.textContent = '检查中…'
+        try {
+          const r = await api('/api/settings/check-update')
+          if (!r.ok) {
+            line.textContent = r.error || '检查失败'
+            return
+          }
+          latest = r.latest
+          if (!r.hasNew) {
+            line.textContent = '已是最新版本（' + r.latest.version + '）'
+            applyBtn.style.display = 'none'
+            return
+          }
+          line.textContent =
+            '发现新版本 ' + r.latest.version + (r.latest.git ? '（' + r.latest.git + '）' : '') + '，可以更新'
+          applyBtn.style.display = ''
+        } catch (e) {
+          line.textContent = '检查失败：' + e.message
+        } finally {
+          checkBtn.disabled = false
+        }
+      }
+
+      applyBtn.onclick = async () => {
+        if (!latest) return
+        applyBtn.disabled = true
+        const old = applyBtn.textContent
+        applyBtn.textContent = '下载中…'
+        line.textContent = '下载并校验更新包…'
+        try {
+          const r = await sendJson('/api/settings/download-update', { latest }, 'POST')
+          if (!r.ok) {
+            line.textContent = r.error || '更新失败'
+            return
+          }
+          line.textContent = '已下载完成，重启后生效'
+          applyBtn.textContent = '重启生效'
+          applyBtn.onclick = async () => {
+            try {
+              const rr = await sendJson('/api/settings/restart', {}, 'POST')
+              alert(rr.detail || '请手动重启')
+            } catch (e) {
+              alert('重启失败：' + e.message)
+            }
+          }
+        } catch (e) {
+          line.textContent = '更新失败：' + e.message
+        } finally {
+          applyBtn.disabled = false
+          if (applyBtn.textContent === '下载中…') applyBtn.textContent = old
+        }
+      }
 
       // 重启
       const c3 = el('div', 'card')
