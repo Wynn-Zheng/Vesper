@@ -79,6 +79,8 @@
     --green:#3FB950; --red:#F85149; --blue:#5E6AD2; --purple:#8A86C4;
     --yellow:#D29922; --pink:#B57A94;
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px;
+    /* 模块间距（不是内边距）：同层卡片 16 / 分组之间 24 / 页面大分区 32 */
+    --gap-card:16px; --gap-group:24px; --gap-section:32px;
     --r-sm:8px; --r-md:14px; --r-lg:18px;
     --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:14px; --fs-xl:20px; --fs-2xl:28px;
     --shadow:none;
@@ -136,7 +138,7 @@
 #member-drawer .item:last-child{border-bottom:none;padding-bottom:0}
 
 /* ===== 仪表盘 ===== */
-.dash-hero{display:grid;grid-template-columns:minmax(260px,1.35fr) 1fr;gap:12px;margin-bottom:14px}
+.dash-hero{display:grid;grid-template-columns:minmax(260px,1.35fr) 1fr;gap:12px;margin-bottom:var(--gap-card)}
 @media (max-width:840px){.dash-hero{grid-template-columns:1fr}}
 
 .dash-main>*{position:relative;z-index:1}
@@ -152,9 +154,9 @@
 .dash-mini .k{font-size:11px;color:var(--dim);letter-spacing:.04em}
 .dash-mini .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;line-height:1.2}
 .dash-mini .s{font-size:10.5px;color:var(--dim2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dash-chart-card{margin-bottom:14px}
+.dash-chart-card{margin-bottom:var(--gap-card)}
 .dash-chart-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
-.dash-health{margin-bottom:14px}
+.dash-health{margin-bottom:var(--gap-card)}
 .dash-health summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;font-size:14px}
 .dash-health summary::-webkit-details-marker{display:none}
 .dash-health summary::after{content:'';margin-left:auto;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--dim2);transition:transform .15s}
@@ -209,12 +211,14 @@
   .row{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
   .hint{font-size:11.5px;color:var(--dim2);line-height:1.7}
   /* ---- 组内 tab ---- */
-  .group-tabs{display:flex;gap:2px;margin-bottom:14px}
+  .group-tabs{display:flex;gap:2px;margin-bottom:var(--gap-card)}
 /* 设置页的分块标题：一行，左标题+说明，右按钮 */
-.set-head{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
+.set-head{display:flex;align-items:baseline;gap:8px;margin:0 0 var(--s3)}
 .set-head b{font-size:13px;font-weight:700;letter-spacing:.02em}
 .view > .set-head:not(:first-child){margin-top:24px}
 .set-head + .card,.set-head + .panel{margin-top:0}
+  /* 设置页分组之间：24（令牌 --gap-group）；首个分组不要上边距 */
+  #v-settings > .set-head:not(:first-child){margin-top:var(--gap-group)}
   .gtab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim2);font-size:13px;padding:7px 16px;cursor:pointer;font-family:inherit;transition:color .15s}
   .gtab:hover{color:var(--text)}
   .gtab.on{color:var(--blue);border-bottom-color:var(--blue)}
@@ -283,7 +287,7 @@
   .try-input-row{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
   .try-input{flex:1;background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--text);font-size:13px;padding:8px 11px;outline:none;font-family:inherit;transition:border-color .16s var(--ease)}
   .try-input:focus{border-color:var(--blue)}
-  .try-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+  .try-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:var(--gap-card)}
   .ts{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);padding:9px 11px}
   .ts span{display:block;font-size:10.5px;color:var(--dim2);margin-bottom:3px}
   .ts b{font-size:14px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
@@ -347,7 +351,7 @@
   .tl-text{font-size:12.5px;color:var(--text);line-height:1.6}
   .tl-meta{font-size:11px;color:var(--dim2);margin-top:3px}
   /* ---- 总览 hero ---- */
-  .hero{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:stretch;margin-bottom:14px}
+  .hero{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:stretch;margin-bottom:var(--gap-card)}
   @media(max-width:900px){.hero{grid-template-columns:1fr}}
   .hero-left{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 22px;display:flex;flex-direction:column;justify-content:center;min-width:250px}
   .hero-label{font-size:11px;color:var(--dim2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
@@ -647,7 +651,7 @@
         </div>
       </div>
 
-      <div class="grid2" style="margin-top:12px">
+      <div class="grid2" style="margin-top:var(--gap-card)">
         <div class="panel">
           <h3>定时任务 <span class="r">它自己什么时候会动</span></h3>
           <div class="body"><div id="sched-info" class="sched"></div></div>
@@ -678,7 +682,7 @@
         </div>
       </div>
 
-      <div class="grid2" style="margin-top:12px">
+      <div class="grid2" style="margin-top:var(--gap-card)">
         <div class="panel">
           <h3>它现在在想什么</h3>
           <div class="body">
@@ -692,16 +696,16 @@
         </div>
       </div>
 
-      <div class="panel" style="margin-top:12px">
+      <div class="panel" style="margin-top:var(--gap-card)">
         <h3>它发现的问题 <span class="r">扫日志扫出来的 · 有位置就能直接去改</span></h3>
         <div class="body"><div id="st-issues"></div></div>
       </div>
 
-      <div class="panel" style="margin-top:12px">
+      <div class="panel" style="margin-top:var(--gap-card)">
         <h3>它最近在看什么 <span class="r" id="st-watch-conf"></span></h3>
         <div class="body"><div id="st-watched"></div></div>
       </div>
-      <div class="grid2" style="margin-top:12px">
+      <div class="grid2" style="margin-top:var(--gap-card)">
         <div class="panel">
           <h3>它给自己定的规矩 <span class="r">会进 prompt 当约束</span></h3>
           <div class="body"><div id="st-traits"></div></div>
@@ -713,7 +717,7 @@
       </div>
 
 
-      <div class="grid2" style="margin-top:12px">
+      <div class="grid2" style="margin-top:var(--gap-card)">
         <div class="panel">
           <h3>它记着要问你的事 <span class="r" id="st-open-n"></span></h3>
           <div class="body"><div id="st-open"></div></div>
@@ -724,7 +728,7 @@
         </div>
       </div>
     
-      <div class="panel" style="margin-top:14px"><h3>成本 <span class="r">按 token 估，实际以账单为准</span></h3>
+      <div class="panel" style="margin-top:var(--gap-card)"><h3>成本 <span class="r">按 token 估，实际以账单为准</span></h3>
         <div class="body"><div class="kv" id="cost-total"></div></div>
       </div>
     </section>
@@ -759,7 +763,7 @@
     </section>
 
     <section class="view" id="v-desktop">
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <b style="font-size:15px">电脑操作</b>
           <span id="dk-state" class="tag">—</span>
@@ -769,7 +773,7 @@
         <div class="hint" id="dk-hint" style="margin-top:6px"></div>
       </div>
 
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="op-t" style="margin-bottom:8px">待你点头的操作</div>
         <div class="hint" style="margin-bottom:8px">
           点击、打字、按键这类会改变电脑状态的操作，先排在这里。点「允许」才真执行。
@@ -787,7 +791,7 @@
       <!-- 首次启动的引导条：没有 API Key 时才显示，由 renderFirstRunGuide 控制 -->
       <div
         id="dash-guide"
-        style="display:none;margin-bottom:14px;padding:16px 18px;background:var(--panel2);border:1px solid rgba(88,166,255,.28);border-radius:10px"
+        style="display:none;margin-bottom:var(--gap-card);padding:16px 18px;background:var(--panel2);border:1px solid rgba(88,166,255,.28);border-radius:10px"
       ></div>
       <!-- 主指标 + 三个陪衬。刻意做成不同大小 —— 八个一样大的卡片会让
            眼睛不知道先看哪，视觉上就是"没设计"。 -->
@@ -926,7 +930,7 @@
     </section>
 
     <section class="view" id="v-members">
-      <div class="card" style="margin-bottom:12px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="mt-q" placeholder="搜名字 / QQ 号" oninput="memberSearch(this.value)"
             class="mt-input">
@@ -1059,7 +1063,7 @@
           </div>
         </div>
       </div>
-      <div class="panel" style="margin-top:12px">
+    <div class="panel" style="margin-top:var(--s3)">
         <div class="body">
           <label class="switch-row">
             <input type="checkbox" id="acc-require-at">
@@ -1096,7 +1100,7 @@
 
     </section>
     <section class="view" id="v-tools-test">
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <b style="font-size:15px">工具连通性</b>
           <span class="hint">每个工具单独跑一次，看能不能用</span>
@@ -1110,7 +1114,7 @@
     </section>
 
     <section class="view" id="v-recall-test">
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:10px;align-items:center">
           <b style="font-size:15px">记忆检索</b>
           <span class="hint">输入一句话，只看会回忆起什么（不生成回复）</span>
@@ -1120,7 +1124,7 @@
     </section>
 
     <section class="view" id="v-desktop-log">
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:10px;align-items:center">
           <b style="font-size:15px">电脑操作日志</b>
           <span class="hint">它点了什么、什么时候、成没成</span>
@@ -1131,7 +1135,7 @@
     </section>
 
     <section class="view" id="v-people">
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="pp-q" placeholder="搜名字 / QQ 号" style="flex:1;min-width:180px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">
           <button class="mini-btn" onclick="loadPeople()">刷新</button>
@@ -1149,7 +1153,7 @@
     </section>
 
     <section class="view" id="v-person">
-      <div class="card" style="margin-bottom:14px">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:10px;align-items:flex-start">
           <span id="pd-av" style="width:44px;height:44px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff"></span>
           <div style="flex:1;min-width:0">
@@ -1201,7 +1205,7 @@
           <div class="rel-mood" id="r-mood"></div>
         </div>
       </div>
-      <div class="panel" style="margin-top:12px">
+      <div class="panel" style="margin-top:var(--gap-card)">
         <h3>锚点 <span class="r">每次变化都有理由</span></h3>
         <div class="body" style="max-height:460px;overflow:auto">
           <div class="timeline" id="r-anchors"></div>
@@ -1239,7 +1243,7 @@
           <div id="qzone-list"></div>
         </div>
       </div>
-      <div class="panel" style="margin-top:14px">
+      <div class="panel" style="margin-top:var(--gap-card)">
         <h3>发过的 <span class="r">能删</span></h3>
         <div class="body"><div id="qzone-published"></div></div>
       </div>
@@ -1264,7 +1268,7 @@
           </div>
         </div>
       </div>
-      <div class="panel" style="margin-top:14px">
+      <div class="panel" style="margin-top:var(--gap-card)">
         <h3>它提的申请 <span class="r" id="core-req-head"></span></h3>
         <div class="body"><div id="core-req-list"></div></div>
       </div>
@@ -1399,7 +1403,7 @@
           <div class="op-d">重拉群名单，@ 显示成昵称而不是 QQ 号</div>
         </div>
       </div>
-      <div class="panel" style="margin-top:12px">
+      <div class="panel" style="margin-top:var(--gap-card)">
         <h3>危险操作 <span class="r">回滚请去「历史」页</span></h3>
         <div class="body">
           <div class="op-d">回滚人格、清空记忆这类操作会二次确认，目前放在各自页面里。</div>
@@ -1513,7 +1517,7 @@ function askText(title, defaultValue) {
     card.appendChild(inp)
 
     const row = document.createElement('div')
-    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:14px'
+    row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:var(--gap-card)'
 
     const cancel = document.createElement('button')
     cancel.className = 'mini-btn'
@@ -4523,7 +4527,7 @@ async function loadAbility() {
       box.appendChild(head)
 
       const grid = el('div')
-      grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:22px'
+      grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--s3);margin-bottom:var(--gap-group)'
 
       for (const c of list) grid.appendChild(abilityCard(c))
       box.appendChild(grid)
@@ -4983,7 +4987,7 @@ async function loadGroups() {
             })
             .join('')
           const stale = g.过期 ? '<span class="hint" style="color:var(--yellow)">（名单旧了）</span>' : ''
-          return `<details style="margin-bottom:14px" ${g.认识几个 > 0 ? 'open' : ''}>
+          return `<details style="margin-bottom:var(--gap-card)" ${g.认识几个 > 0 ? 'open' : ''}>
             <summary style="cursor:pointer;padding:6px 0;font-weight:600">
               群 ${esc(g.groupId)} · ${g.总数} 人 · 认识 ${g.认识几个} 个 ${stale}
             </summary>
