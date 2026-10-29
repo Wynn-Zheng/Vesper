@@ -323,7 +323,14 @@ export function switchCard(id: string): { ok: boolean; error?: string } {
   const SELF = 'persona/self.md'
   ensureDir()
   try {
-    if (cur && existsSync(SELF)) copyFileSync(SELF, join(DIR, cur + '.self.md'))
+    // 只归档"有内容"的 self.md。
+    // 踩过的坑：切到新卡时 self.md 会被清成空模板，再切回来时
+    // 这个空文件把之前好的归档覆盖掉，用户的特征和自述就没了。
+    if (cur && existsSync(SELF)) {
+      const text = readFileSync(SELF, 'utf8')
+      const meaningful = /我·[^:]+:/.test(text) || /^#\s+\S/m.test(text) || text.length > 120
+      if (meaningful) copyFileSync(SELF, join(DIR, cur + '.self.md'))
+    }
   } catch {
     /* 归档失败不阻断切换 */
   }
