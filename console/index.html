@@ -1345,6 +1345,8 @@
 
 <script>
 const token = new URLSearchParams(location.search).get('token') || localStorage.getItem('qqbot-token') || ''
+// settings.js 等外部脚本要拼 /api/export?token=，这里暴露出去（之前是 undefined → 导出页 401）
+window.__token = token
 if (token) localStorage.setItem('qqbot-token', token)
 
 /** 当前在看谁的档案。空 = 后端用默认（主人） */
@@ -1529,7 +1531,8 @@ const GROUPS = {
   logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志'], ['v-qzone', '说说']],
   // 设置是一页滚到底，所以只有一个入口。
   // 页内用 set-head 分块：连接 / 规则 / 权限 / 数据 / 关于 / 健康检查
-  settings: [['v-settings', '设置']],
+  // v-ops 是导出/从备份恢复，之前不在任何 GROUPS 里 —— 卡片存在但永远打不开
+  settings: [['v-settings', '设置'], ['v-ops', '备份']],
   test: [['v-try', '试聊'], ['v-tools-test', '工具连通性'], ['v-recall-test', '记忆检索']],
 }
 const TITLES = { dashboard: '仪表盘', self: '自我', ability: '插件', people: '成员', logs: '日志', settings: '设置', test: '测试' }

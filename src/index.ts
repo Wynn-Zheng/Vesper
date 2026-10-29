@@ -254,11 +254,11 @@ if (prunedLogs) info(`清理了 ${prunedLogs} 个过期日志文件（保留 ${k
 // 保留 35 天够了。不清的话 raw/ 会按天无限增长。
 {
   const { pruneRaw } = await import('./memory/store.ts')
-  const prunedRaw = pruneRaw(35)
+  const prunedRaw = pruneRaw(120)
   if (prunedRaw) info(`清理了 ${prunedRaw} 天的原始对话（保留 35 天）`)
   setInterval(() => {
     try {
-      const n = pruneRaw(35)
+      const n = pruneRaw(120)
       if (n) info(`清理了 ${n} 天的原始对话`)
     } catch {
       /* 删不掉就下次再说 */
