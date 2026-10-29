@@ -54,6 +54,7 @@ export function setConfigPath(raw: string, key: string, value: unknown): { text:
 }
 
 /** 把值写成 yaml 字面量 */
+/** 把值写成 yaml 字面量 */
 function formatValue(value: unknown): string {
   if (typeof value === 'boolean') return String(value)
   if (typeof value === 'number') return String(value)
@@ -61,7 +62,12 @@ function formatValue(value: unknown): string {
     const items = value.map((x) => (typeof x === 'number' ? String(x) : JSON.stringify(String(x))))
     return `[${items.join(', ')}]`
   }
+  // 对象不能 stringify 成 "[object Object]"：那是坏值，直接拒掉
+  if (value && typeof value === 'object') throw new Error('配置值不能是对象')
   const s = String(value)
-  // 含特殊字符就加引号
-  return /[:#,\[\]{}]/.test(s) || !s ? JSON.stringify(s) : s
+  // 一律用 JSON.stringify 包：普通字符串也包（YAML 兼容），
+  // 这样换行/引号/冒号/#/花括号全都不会破坏结构。
+  // 之前只对部分字符加引号，\\n 原样拼进去会把 rules.yaml 写坏，
+  // 甚至能插一个顶层键（越权改 电脑操作.允许操作）。
+  return JSON.stringify(s)
 }

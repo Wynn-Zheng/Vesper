@@ -966,6 +966,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           return
         }
         json(res, 200, { ok: true, item })
+        return
       }
 
       if (req.method === 'POST' && path === '/api/learnings/drop') {
