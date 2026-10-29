@@ -119,7 +119,15 @@
       btnRow.appendChild(snap)
 
       const exp = el('button', 'mini-btn', '导出全部（JSON）')
-      exp.onclick = () => window.open('/api/export?token=' + encodeURIComponent(window.__token || ''), '_blank')
+      exp.onclick = () => {
+    const t = window.__token || new URLSearchParams(location.search).get('token') || ''
+    if (!t) {
+      alert('当前页面没有 token，请用带 token 的地址打开控制台再导出')
+      return
+    }
+    // 绝对地址：Electron 交给系统浏览器时，相对路径会变成 file:///… 打不开
+    window.open(location.origin + '/api/export?token=' + encodeURIComponent(t), '_blank')
+  }
       btnRow.appendChild(exp)
 
       const imp = el('button', 'mini-btn', '从备份恢复')

@@ -5435,7 +5435,17 @@ $('search-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') d
 // ---------- 导出 ----------
 function doExport() {
   const a = document.createElement('a')
-  a.href = '/api/export?token=' + encodeURIComponent(token) + (currentPerson ? '&person=' + encodeURIComponent(currentPerson) : '')
+  // 绝对地址：Electron 里 window.open 交给系统浏览器打开时，相对路径会被解析成 file:///…
+  // 结果就是"链接里没有 token"那个 401 页（老版本的坑）。
+  if (!token) {
+    alert('当前页面没有 token，请用带 token 的地址打开控制台再导出')
+    return
+  }
+  a.href =
+    location.origin +
+    '/api/export?token=' +
+    encodeURIComponent(token) +
+    (currentPerson ? '&person=' + encodeURIComponent(currentPerson) : '')
   a.download = ''
   document.body.appendChild(a)
   a.click()
