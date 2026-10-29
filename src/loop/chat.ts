@@ -29,6 +29,7 @@ import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
 import { loadCodeMapBrief } from '../self/codemap.ts'
 import { compressHistory, shouldCompress } from './compress.ts'
 import { buildPrompt, buildSystem } from './prompt.ts'
+import { loadCard, cardPromptBlock } from '../persona/card.ts'
 import { getSession, getTurns, historyMessages, pushTurn, sessionKey, setSummary } from './session.ts'
 
 export interface GenerateOptions {
@@ -208,6 +209,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
 
   const system = buildSystem({
     rules: opts.rules,
+    card: cardPromptBlock(loadCard()),
+    actionDesc: loadCard()?.actionDesc === true,
     self: buildSelfBlock(opts.rules, new Date(), personId, m.from.name),
     codeMap: loadCodeMapBrief(),
     // 群里 m.from.name 是群名，不能当人名用

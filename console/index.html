@@ -445,6 +445,7 @@
 @media (max-width:1100px){.self-status-grid{grid-template-columns:1fr}}
 .self-status-right{display:flex;flex-direction:column;gap:10px}
 .self-card-birth{text-align:right;flex-shrink:0}
+.self-card-switch{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .self-birth{font-size:15px;font-weight:600;margin-top:2px}
 .self-activity{font-size:16px;line-height:1.6;padding:6px 0 10px}
 .self-mood-big{display:flex;align-items:center;gap:12px;padding:4px 0 6px}
@@ -2593,6 +2594,7 @@ let SELF_MORE = {}
 
 /** 角色卡（GET /api/card） */
 let SELF_CARD = null
+let SELF_CARD_LIST = []
 /** 状态页的关系数据（GET /api/status 的 relation） */
 let SELF_REL = null
 
@@ -2611,9 +2613,22 @@ async function loadSelfCard() {
   try {
     const r = await api('/api/card')
     SELF_CARD = r.card
+    SELF_CARD_LIST = r.list || []
     renderSelfV2()
   } catch (e) {
     SELF_CARD = null
+  }
+}
+
+async function switchSelfCard(id) {
+  try {
+    await sendJson('/api/card/switch', { id }, 'POST')
+    SELF_CARD = null
+    SELF_DATA = null
+    toast('已切换角色卡')
+    await loadSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
   }
 }
 
@@ -2793,6 +2808,24 @@ function renderSelfCardPage(body, d) {
       esc(card.birthday || '—') +
       '</div>'
     hero.appendChild(main)
+    // 角色卡切换（列表来自 GET /api/card）
+    if (SELF_CARD_LIST.length > 1) {
+      const sw = el('div', 'self-card-switch')
+      sw.appendChild(el('span', 'self-kv-k', '角色卡'))
+      const sel = el('select', 'self-select')
+      sel.style.width = '150px'
+      for (const item of SELF_CARD_LIST) {
+        const o = document.createElement('option')
+        o.value = item.id
+        o.textContent = item.name || item.id
+        sel.appendChild(o)
+      }
+      sel.value = card.id
+      sel.onchange = () => switchSelfCard(sel.value)
+      sw.appendChild(sel)
+      hero.appendChild(sw)
+    }
+
     hero.appendChild(side)
     body.appendChild(hero)
   }
@@ -3244,13 +3277,118 @@ function renderSelfStatusPage(body, d) {
  * 3. 学习
  *    GET /api/self/v2 的 plays（以后接道理/知识）
  * ============================================================ */
+/** 学习记录（GET /api/learnings） */
+let SELF_LEARNINGS = null
+
+async function loadSelfLearnings() {
+  try {
+    const r = await api('/api/learnings')
+    SELF_LEARNINGS = r.learnings || []
+  } catch {
+    SELF_LEARNINGS = []
+  }
+  renderSelfV2()
+}
+
+async function addLearning() {
+  const inp = $('learn-input')
+  const kind = $('learn-kind')
+  if (!inp || !inp.value.trim()) return
+  try {
+    await sendJson('/api/learnings', { text: inp.value.trim(), kind: kind ? kind.value : '知识' }, 'POST')
+    inp.value = ''
+    toast('记下了')
+    SELF_LEARNINGS = null
+    renderSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+async function dropLearning(id) {
+  if (!confirm('忘掉这条？')) return
+  try {
+    await sendJson('/api/learnings/drop', { id }, 'POST')
+    SELF_LEARNINGS = null
+    renderSelfV2()
+  } catch (e) {
+    alert('失败：' + e.message)
+  }
+}
+
+/* ============================================================
+ * 3. 学习
+ *    GET/POST /api/learnings（它自己记的 + 你让它学的）
+ *    GET /api/self/v2 的 plays（从对话里学到的说话方式）
+ * ============================================================ */
 function renderSelfLearnPage(body, d) {
   const plays = d.plays || []
 
+  // 让它去学
+  {
+    const c = selfCard('让它去学', '写一句它该学的东西，会记进学习记录')
+    const row = el('div', 'self-field')
+    const inp = el('input', 'self-input')
+    inp.id = 'learn-input'
+    inp.placeholder = '比如：去了解一下「阈值」是什么意思'
+    const kind = el('select', 'self-select')
+    kind.id = 'learn-kind'
+    kind.style.width = '96px'
+    kind.style.flex = 'none'
+    for (const k of ['说话方式', '道理', '知识', '用户指派']) {
+      const o = document.createElement('option')
+      o.textContent = k
+      kind.appendChild(o)
+    }
+    kind.value = '知识'
+    const add = el('button', 'mini-btn', '记下')
+    add.onclick = () => addLearning()
+    row.appendChild(inp)
+    row.appendChild(kind)
+    row.appendChild(add)
+    c.appendChild(row)
+    body.appendChild(c)
+  }
+
+  // 学习记录（按类型分组）
+  {
+    const list = SELF_LEARNINGS
+    if (!list) {
+      body.appendChild(el('div', 'self-empty', '读取中…'))
+      void loadSelfLearnings()
+    } else if (!list.length) {
+      body.appendChild(selfEmpty('还没学什么。它看到有用的会记下来，你也可以让它去学。'))
+    } else {
+      for (const kind of ['说话方式', '道理', '知识', '用户指派']) {
+        const items = list.filter((x) => x.kind === kind)
+        if (!items.length) continue
+        const c = selfCard(kind, items.length + ' 条')
+        for (const it of items) {
+          const row = el('div', 'self-core-row')
+          const txt = el('div', 'self-item')
+          txt.textContent = it.text
+          row.appendChild(txt)
+          const meta = el(
+            'div',
+            'self-todo-meta',
+            new Date(it.at).toLocaleString() + (it.source === 'user' ? ' · 你让它学的' : ' · 它自己记的'),
+          )
+          row.appendChild(meta)
+          const x = el('button', 'self-mini-x', '删')
+          x.onclick = () => dropLearning(it.id)
+          row.appendChild(x)
+          c.appendChild(row)
+        }
+        body.appendChild(c)
+      }
+    }
+  }
+
+  // 学到的说话方式（从对话里挑的）
   {
     const c = selfCard('学到的说话方式', plays.length ? plays.length + ' 条' : '')
     if (!plays.length) {
-      c.appendChild(selfEmpty('还没学到。它从"回得好的"对话里挑出来，下次遇到类似场景会参考。'))
+      c.appendChild(selfEmpty('还没从对话里学到话术。'))
     } else {
       const all = SELF_MORE.plays ? plays : plays.slice(0, 8)
       for (const x of all) {
@@ -3261,18 +3399,6 @@ function renderSelfLearnPage(body, d) {
       }
       if (plays.length > 8) c.appendChild(selfMoreBtn('plays', plays.length))
     }
-    body.appendChild(c)
-  }
-
-  {
-    const c = selfCard('学到的道理', '')
-    c.appendChild(selfEmpty('还没接：这里以后放它总结出来的"道理"（从经历里抽的规律）。'))
-    body.appendChild(c)
-  }
-
-  {
-    const c = selfCard('学到的知识', '')
-    c.appendChild(selfEmpty('还没接：这里以后放它学到的知识（事实类、方法类）。'))
     body.appendChild(c)
   }
 }

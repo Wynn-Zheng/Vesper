@@ -923,6 +923,46 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         return
       }
 
+      /* ============ 学习记录 ============ */
+      if (req.method === 'GET' && path === '/api/learnings') {
+        const { loadLearnings } = await import('../persona/learnings.ts')
+        const list = loadLearnings().slice().reverse()
+        json(res, 200, { learnings: list, total: list.length })
+        return
+      }
+
+      if (req.method === 'POST' && path === '/api/learnings') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string; kind?: string }
+        const text = String(body.text ?? '').trim()
+        if (!text) {
+          json(res, 400, { error: '学什么？写一句' })
+          return
+        }
+        const { addLearning, KINDS } = await import('../persona/learnings.ts')
+        const kind = (KINDS as readonly string[]).includes(String(body.kind)) ? (body.kind as never) : '知识'
+        const item = addLearning(text, kind, 'user')
+        json(res, 200, { ok: true, item })
+        return
+      }
+
+      if (req.method === 'POST' && path === '/api/learnings/drop') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const { dropLearning } = await import('../persona/learnings.ts')
+        if (!dropLearning(String(body.id ?? ''))) {
+          json(res, 404, { error: '没有这条' })
+          return
+        }
+        json(res, 200, { ok: true })
+        return
+      }
+
+      if (req.method === 'POST' && path === '/api/card/switch') {
+        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const { switchCard } = await import('../persona/card.ts')
+        const r = switchCard(String(body.id ?? ''))
+        json(res, r.ok ? 200 : 400, r)
+        return
+      }
       /* ============ 秘密 ============ */
       if (req.method === 'GET' && path === '/api/secrets') {
         const { loadSecrets } = await import('../persona/secrets.ts')

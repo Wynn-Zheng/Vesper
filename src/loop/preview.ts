@@ -9,6 +9,7 @@ import { loadProfile } from '../persona/profile.ts'
 import { buildRelationBlock } from '../relation/format.ts'
 import { loadRelation } from '../relation/store.ts'
 import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
+import { loadCard, cardPromptBlock } from '../persona/card.ts'
 import { buildSystem } from './prompt.ts'
 
 export interface PreviewOptions {
@@ -59,6 +60,8 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
 
   const system = buildSystem({
     rules: opts.rules,
+    card: cardPromptBlock(loadCard()),
+    actionDesc: loadCard()?.actionDesc === true,
     self: buildSelfBlock(opts.rules, new Date(), personId, loadPerson(personId)?.name ?? opts.accountId),
     personName: loadPerson(personId)?.name ?? opts.accountId,
     profile: loadProfile(personId),

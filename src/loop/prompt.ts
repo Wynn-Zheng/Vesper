@@ -32,6 +32,10 @@ export interface PromptParts {
   now?: Date
   /** 关于你自己：名字、自述、自己的生活 */
   self?: string
+  /** 角色卡人设（外貌/身份/性格/语言风格/小动作/喜好/反应） */
+  card?: string
+  /** 小动作开关：开启时允许用（）写动作和神态 */
+  actionDesc?: boolean
   /** 现在跟你说话的是谁 */
   personName?: string
   /** 和这个人的关系（主人/朋友/同事/网友/陌生人） */
@@ -110,6 +114,17 @@ export function buildSystem(parts: PromptParts): string {
     lines.push('关于你自己：')
     lines.push('- 你刚被创造出来，还没有明确的性格和喜好，这些会在相处里慢慢长出来。')
     lines.push('- 不知道自己是什么样的人时，可以诚实地说"我还在想"。不要编造。')
+  }
+  // 角色卡人设：外貌/身份/性格/语言风格/喜好/反应
+  if (parts.card?.trim()) {
+    lines.push('')
+    lines.push(parts.card.trim())
+  }
+  // 小动作开关：开了才允许用（）写动作，否则明确禁止（不然它会自己加戏）
+  if (parts.actionDesc) {
+    lines.push('- 你说话时会带一点小动作或神态，用（）写在句子里，比如「（揉眼睛）……」。别每句都加，自然些。')
+  } else {
+    lines.push('- 不要用括号写动作或神态，只用说的。')
   }
   if (rules.人格.不假装) lines.push('- 不知道就是不知道，别为了接话硬编。')
   for (const b of rules.人格.边界) lines.push(`- ${b}`)

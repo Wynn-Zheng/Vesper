@@ -8,7 +8,7 @@
  * 文件格式：frontmatter 放名字/生日/开关，正文按二级标题分节。
  * 没有卡时 ensureDefaultCard() 会从 self.md 的名字生成一张空卡。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
 
@@ -252,4 +252,78 @@ export function ensureDefaultCard(fallbackName: string): CharCard {
   const card: CharCard = { ...EMPTY_CARD('default'), name: fallbackName || '' }
   saveCard(card)
   return card
+}
+
+/**
+ * 把角色卡渲染成 prompt 里的一段人设。
+ *
+ * 只输出有内容的字段，避免一堆空标签把 prompt 撑长。
+ */
+export function cardPromptBlock(card: CharCard | null): string {
+  if (!card) return ''
+  const lines: string[] = []
+  const push = (label: string, v: string): void => {
+    if (v && v.trim()) lines.push(`- ${label}：${v.trim()}`)
+  }
+
+  if (card.name) lines.push(`你的名字是「${card.name}」。`)
+  push('外貌', card.appearance)
+  push('基础身份', card.identity)
+  if (card.traits.core) push('核心特质', card.traits.core)
+  if (card.traits.good) push('优点', card.traits.good)
+  if (card.traits.bad) push('缺点', card.traits.bad)
+  if (card.speech.tone) push('语气', card.speech.tone)
+  if (card.speech.catchphrase) push('口头禅', card.speech.catchphrase)
+  if (card.actions.length) lines.push('- 习惯的小动作：' + card.actions.map((a) => a.trim()).filter(Boolean).join('、'))
+  if (card.likes.length) lines.push('- 喜欢：' + card.likes.map((a) => a.trim()).filter(Boolean).join('、'))
+  if (card.dislikes.length) lines.push('- 讨厌：' + card.dislikes.map((a) => a.trim()).filter(Boolean).join('、'))
+
+  const reactions = REACTIONS.filter((k) => card.reactions[k]?.trim())
+  if (reactions.length) {
+    lines.push('- 不同情境下的反应：')
+    for (const k of reactions) lines.push(`  · ${k}时：${card.reactions[k]!.trim()}`)
+  }
+
+  if (!lines.length) return ''
+  return ['关于你这个人的设定：', ...lines].join('\n')
+}
+
+/**
+ * 切换角色卡。
+ *
+ * 用户要的是「跟着走」——换卡就是换一个人，所以 self.md（名字/自述）
+ * 也要跟着换：
+ *   1. 当前 self.md 归档成 <旧卡>.self.md
+ *   2. 新卡的 <新卡>.self.md 恢复成 self.md（没有就按卡名新建）
+ *   3. 改 current 指针
+ *
+ * 这样每张卡有自己的名字和自述，互不覆盖。
+ */
+export function switchCard(id: string): { ok: boolean; error?: string } {
+  const cur = currentCardId()
+  if (!id) return { ok: false, error: '没指定卡片' }
+  const target = loadCard(id)
+  if (!target) return { ok: false, error: '没有这张卡' }
+  if (cur === id) return { ok: true }
+
+  const SELF = 'persona/self.md'
+  ensureDir()
+  try {
+    if (cur && existsSync(SELF)) copyFileSync(SELF, join(DIR, cur + '.self.md'))
+  } catch {
+    /* 归档失败不阻断切换 */
+  }
+  try {
+    const saved = join(DIR, id + '.self.md')
+    if (existsSync(saved)) {
+      copyFileSync(saved, SELF)
+    } else {
+      // 新卡：从零开始，名字用卡上的名字
+      writeAtomic(SELF, '---\n名字: ' + (target.name || '') + '\n---\n\n# 我是谁\n\n')
+    }
+  } catch {
+    /* 恢复失败也不阻断 */
+  }
+  writeAtomic(CURRENT, id)
+  return { ok: true }
 }
