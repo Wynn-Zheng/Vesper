@@ -217,7 +217,8 @@ export function createPluginService(options: {
         const enabled = body['enabled']
         if (typeof enabled !== 'boolean') return invalidBody('enabled')
 
-        // 停用前先卸载已加载的实例；启用后不自动加载，交给上层决定
+        // 停用前先卸载；启用后立刻加载 —— 之前只写标记不 load,
+        // 控制台提示"启用成功"但插件根本没在跑，得用户自己再点一次重载。
         if (!enabled && isLoaded(id)) {
           const unloaded = await host.unload(id)
           if (!unloaded.ok && unloaded.error !== 'not loaded') {
@@ -227,6 +228,10 @@ export function createPluginService(options: {
 
         const result = await setEnabled({ id, pluginsRoot, enabled })
         if (!result.ok) return { ok: false, error: result.error ?? '切换启用状态失败' }
+        if (enabled && !isLoaded(id)) {
+          const loaded = await host.load(id)
+          if (!loaded.ok) return { ok: false, error: loaded.error ?? '插件已启用，但加载失败' }
+        }
         return { ok: true, data: { id, enabled } }
       }),
     },

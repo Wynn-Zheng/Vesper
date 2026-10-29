@@ -115,8 +115,12 @@ export async function installPlugin(options: {
 
     await mkdir(pluginsRoot, { recursive: true })
 
-    // 覆盖安装时先清空旧目录，避免上一版本的文件残留
+    // 覆盖安装时先清空旧目录，但要先把「用户停用」标记留住：
+    // 之前整个 rm 掉，插件升级后自己又变回启用，用户的停用被悄悄撤销。
+    const disabledMark = join(targetDir, 'disabled')
+    let wasDisabled = false
     if (existsSync(targetDir)) {
+      wasDisabled = existsSync(disabledMark)
       await rm(targetDir, { recursive: true, force: true })
     }
 
@@ -129,7 +133,9 @@ export async function installPlugin(options: {
       return { ok: false, error: `复制插件文件失败：${errorMessage(err)}` }
     }
 
-    // 4. 写入安装记录，source 用绝对路径，便于排查来源
+    if (wasDisabled) {
+      await writeFile(disabledMark, '', 'utf8').catch(() => undefined)
+    }
     const record: InstallRecord = {
       id: manifest.id,
       version: manifest.version,
