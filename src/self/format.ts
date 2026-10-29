@@ -13,7 +13,12 @@ function minutesOf(hhmm: string): number {
 
 /** 按时间判断它现在的状态。睡眠段用 rules.yaml 的静默时段。 */
 export function phaseOf(rules: Rules, now = new Date()): Phase {
-  const [startS, endS] = rules.行为.静默时段
+  // 静默时段配错形状（只写一个、写成数字）时不能让 split 抛错：
+  // phaseOf 每轮都要调，抛了就是整轮回复失败。
+  const span = rules.行为.静默时段
+  const okSpan = Array.isArray(span) && span.length === 2 && typeof span[0] === 'string' && typeof span[1] === 'string'
+  const startS = okSpan ? (span[0] as string) : '00:00'
+  const endS = okSpan ? (span[1] as string) : '00:00'
   const start = minutesOf(startS)
   const end = minutesOf(endS)
   const cur = now.getHours() * 60 + now.getMinutes()
@@ -59,7 +64,11 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
   if (self.about && self.about !== '（还没想清楚。）') {
     lines.push(`- 你对自己的认识：${self.about.replace(/\s+/g, ' ').trim()}`)
   }
-
+  // 「我写」模式下，它补充的那一段也要进 prompt：之前只读 about，
+  // 用户在「它补充的」里写的内容对聊天完全没有影响。
+  if (self.aboutExtra && self.aboutExtra !== '（还没补充。）') {
+    lines.push(`- 你自己补的：${self.aboutExtra.replace(/\s+/g, ' ').trim()}`)
+  }
   if (self.thinking) {
     lines.push(`- 你最近在想：${self.thinking.replace(/\s+/g, ' ').trim()}`)
   }

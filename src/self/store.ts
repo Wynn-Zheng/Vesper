@@ -60,9 +60,16 @@ function splitFront(text: string): { meta: Record<string, string>; body: string 
   return { meta, body: m[2] ?? '' }
 }
 
-/** 从正文里取出某一节（一级或二级标题都认） */
+// 认识的几个顶层章节。只有它们才算「下一节」的开始：
+// 之前用通用的 `#{1,2}\s` 当边界，用户粘贴带标题的 markdown（或模型自述里带 ## 小标题）
+// 会被当成新章节，load 出来只剩前半段，下一次 saveSelf 就把后半段永久写没了。
+const SELF_SECTIONS = ['我是谁', '它补充的', '我能做什么', '我最近在想'] as const
+
 function section(body: string, title: string): string {
-  const re = new RegExp(`(?:^|\\n)#{1,2}\\s*${title}\\s*\\n([\\s\\S]*?)(?=\\n#{1,2}\\s|$)`)
+  const boundary = SELF_SECTIONS.filter((s) => s !== title)
+    .map((s) => `#{1,2}\\s*${s}`)
+    .join('|')
+  const re = new RegExp(`(?:^|\\n)#{1,2}\\s*${title}\\s*\\n([\\s\\S]*?)(?=\\n(?:${boundary})\\s|$)`)
   const m = re.exec(body)
   return m ? (m[1] ?? '').trim() : ''
 }
