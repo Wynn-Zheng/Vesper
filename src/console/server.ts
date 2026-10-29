@@ -41,6 +41,8 @@ export interface ConsoleOptions {
   token: string
   getRules: () => Rules
   transport: Transport
+  /** OneBot 通道的运行状态（连接/监听失败原因），给状态接口用 */
+  getChannelStatus?: () => { connected: boolean; startError: string | null }
   llm?: LlmOptions
 }
 
@@ -65,7 +67,6 @@ function json(res: ServerResponse, code: number, data: unknown): void {
 }
 
 function text(res: ServerResponse, code: number, body: string, type = 'text/plain; charset=utf-8'): void {
-  res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' })
   res.end(body)
 }
 
@@ -112,6 +113,8 @@ function status(opts: ConsoleOptions, personId: string): unknown {
 
   return {
     connected: opts.transport.connected ?? false,
+    // 通道监听失败（端口被占用等）：界面上要能看见，否则"起来了但收不到消息"根本查不出
+    channel: opts.getChannelStatus?.() ?? null,
     transport: opts.transport.kind,
     model: opts.llm?.model ?? null,
     uptimeSec: Math.floor(process.uptime()),

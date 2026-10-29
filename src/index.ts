@@ -290,7 +290,19 @@ setInterval(() => {
 const consolePort = Number(process.env['CONSOLE_PORT']) || 7788
 const consoleToken = process.env['CONSOLE_TOKEN'] ?? ''
 try {
-  await startConsole({ port: consolePort, token: consoleToken, getRules, transport, llm })
+    await startConsole({
+      port: consolePort,
+      token: consoleToken,
+      getRules,
+      transport,
+      // 端口被占用时 WebSocketServer 不会 reject，start() 照样 resolve —— 
+      // 把 startError 暴露给状态接口，控制台能显示"通道没起来"。
+      getChannelStatus: () => ({
+        connected: transport.connected === true,
+        startError: (transport as { startError?: string | null }).startError ?? null,
+      }),
+      llm,
+    })
 } catch (err) {
   warnAt('控制台启动失败，不影响聊天', { err: String(err) })
 }
