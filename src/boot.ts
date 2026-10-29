@@ -17,6 +17,7 @@ import { refreshGroupMembers, groupMembers, isKnownMember, setGroupMembersMissin
 import { evaluateTurn } from './relation/evaluate.ts'
 import { judgeReply } from './loop/judge.ts'
 import { recordPlayReviewed } from './learn/plays.ts'
+import { maybeSendEmoji } from './loop/chat.ts'
 
 /**
  * 退避：连续决定不说话后，慢一点再看。
@@ -381,6 +382,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
       }
       const target = qd.quote && m.id ? { ...m.from, replyTo: m.id } : m.from
       const ids = await say(transport, target, reply, rules)
+      // 表情包等文字发完再补：之前它是在 generateReply 里发的，早于文字，
+      // 文字被限流/为空/失败时表情包已经出去了。
+      void maybeSendEmoji(m, rules)
       if (qd.quote && m.id) lastQuoteAt.set(scopeNow, Date.now())
       backoff.delete(scopeOf(m.from))
       if (ids.length) {

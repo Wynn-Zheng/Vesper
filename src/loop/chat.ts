@@ -156,7 +156,7 @@ async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<voi
 }
 
 /** 回复后按当前情绪挑一张表情包发出去；失败不影响文字回复 */
-async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
+export async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
   const limit = Math.max(0, Math.floor(rules.表情包.每条最多))
   if (!rules.表情包.开启 || limit === 0) return
 
@@ -382,8 +382,6 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
 
   // 历史压成滚动摘要，避免 session 无限增长；失败不挡这一轮
   await compressIfNeeded(key, opts)
-  // 文字回复已经生成，按情绪补一张表情包；失败只 warn
-  await maybeSendEmoji(m, opts.rules)
 
   if (res.usage) info('token 用量', res.usage)
   if (recalled.facts.length || recalled.episodes.length) {
