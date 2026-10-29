@@ -360,7 +360,7 @@ export function cardPromptBlock(card: CharCard | null): string {
     const t = String(s || '').trim()
     return t.length > n ? t.slice(0, n) + '…' : t
   }
-  if (card.name) lines.push(`你的名字是「${clip(card.name, 40)}」。`)
+  // 名字不在这里写：self 段统一说（它可能自己取过名，两处都写会互相打架）
   push('外貌', clip(card.appearance))
   push('基础身份', clip(card.identity))
   if (card.traits.core) push('核心特质', clip(card.traits.core))

@@ -110,17 +110,21 @@ export function buildSystem(parts: PromptParts): string {
   lines.push(`你在 QQ 上跟${who}${role ? `（关系：${role}）` : ''}聊天。这不是客服，是两个人说话。`)
   lines.push('')
 
+  // 角色卡 = 你设定的人设，优先级最高（它是"这个人的底子"）。
+  if (parts.card?.trim()) {
+    lines.push(parts.card.trim())
+  }
+
+  // self 段 = 它基于角色卡、在相处中逐渐长出来的自我理解。
+  // 放在角色卡之后：设定为主，自我的理解是补充。
   if (self?.trim()) {
+    lines.push('')
+    lines.push('下面这些是你在相处里对自己逐渐形成的理解，建立在上面的人设之上：')
     lines.push(self.trim())
-  } else {
+  } else if (!parts.card?.trim()) {
     lines.push('关于你自己：')
     lines.push('- 你刚被创造出来，还没有明确的性格和喜好，这些会在相处里慢慢长出来。')
     lines.push('- 不知道自己是什么样的人时，可以诚实地说"我还在想"。不要编造。')
-  }
-  // 角色卡人设：外貌/身份/性格/语言风格/喜好/反应
-  if (parts.card?.trim()) {
-    lines.push('')
-    lines.push(parts.card.trim())
   }
   // 小动作开关：开了才允许用（）写动作，否则明确禁止（不然它会自己加戏）
   if (parts.actionDesc) {

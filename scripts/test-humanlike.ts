@@ -121,7 +121,7 @@ console.log('\n=== 5. 自己的偏好 ===')
   check('prompt 里让输出「喜欢」', reflect.includes('"喜欢"'), '')
   check('要求喜欢和不喜欢都有', reflect.includes('尽量都有'), '')
   check('特征写进 frontmatter', store.includes('我·'), '')
-  check('特征进了 prompt', format.includes('你给自己定的规矩'), '')
+  // 文案改过（从「你给自己定的规矩」→「你在相处中对自己形成的理解」），断言跟着改语义：\n  // 要验证的是「self.traits 会被拼进 prompt」，不是某一句话的具体说法\n  check('特征进了 prompt', format.includes('self.traits') && format.includes('理解'), '')
 
   // 真实的 self.md 里有没有
   if (existsSync('persona/self.md')) {

@@ -104,7 +104,7 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
   // 结构化特征：这是"约束"，不是描述——它得照着做
   const traits = Object.entries(self.traits ?? {}).filter(([, v]) => v && v.trim())
   if (traits.length) {
-    lines.push('- 你给自己定的规矩，说话时照着做：')
+    lines.push('- 你在相处中对自己形成的理解（说话的倾向、喜好、不喜欢）：')
     for (const [k, v] of traits) lines.push(`  · ${k}：${v.trim()}`)
   }
 
