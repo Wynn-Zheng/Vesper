@@ -1112,6 +1112,7 @@
       </div>
     </section>
 <section class="view" id="v-self">
+      <div class="group-tabs" id="self-tabs"></div>
       <div id="self-body"></div>
     </section>
 
@@ -2532,6 +2533,34 @@ function selfFieldRow(label, nodes) {
  * ============================================================ */
 
 /** 长列表的"展开/收起"状态（只影响渲染，不落盘） */
+/* ============================================================
+ * 自我页：六个板块
+ *
+ *   1 角色卡   它叫什么、是谁、对自己的认识、自己写的规矩
+ *   2 状态     心情、待办、生活线
+ *   3 学习     学到的说话方式
+ *   4 经历     记住的事（经历 + 只属于自己的记忆）
+ *   5 想法     洞察、发现的问题
+ *   6 对话规则 全局的说话方式 + 底线
+ *
+ * 每个页面一个独立函数（body, d），页面内只读固定字段。
+ * 具体内容还会改，接口也后面接 —— 所以这里先把结构定死，
+ * 字段名和数据来源都集中在这几个函数里，避免以后接线接乱。
+ * ============================================================ */
+
+const SELF_TABS = [
+  ['card', '角色卡'],
+  ['status', '状态'],
+  ['learn', '学习'],
+  ['exp', '经历'],
+  ['think', '想法'],
+  ['talk', '对话规则'],
+]
+
+/** 当前板块。默认第一页。 */
+let SELF_TAB = 'card'
+
+/** 长列表的"展开/收起"状态（只影响渲染，不落盘） */
 let SELF_MORE = {}
 
 function selfToggle(key) {
@@ -2540,32 +2569,52 @@ function selfToggle(key) {
 }
 
 /** 「展开全部（N）」/「收起」 */
-function selfMoreBtn(key, total, shown) {
+function selfMoreBtn(key, total) {
   const b = el('button', 'self-more', SELF_MORE[key] ? '收起' : '展开全部（' + total + '）')
   b.onclick = () => selfToggle(key)
   return b
 }
 
+function renderSelfTabs() {
+  const bar = $('self-tabs')
+  if (!bar) return
+  bar.innerHTML = ''
+  for (const [k, label] of SELF_TABS) {
+    const b = el('button', 'gtab' + (k === SELF_TAB ? ' on' : ''), label)
+    b.onclick = () => {
+      SELF_TAB = k
+      renderSelfV2()
+    }
+    bar.appendChild(b)
+  }
+}
+
+/** 入口：选一个板块渲染 */
 function renderSelfV2() {
   const body = $('self-body')
   if (!body || !SELF_DATA) return
   const d = SELF_DATA
+  renderSelfTabs()
   body.innerHTML = ''
 
-  const coreList = d.coreList || []
-  const traits = d.traits || []
-  const life = d.life || []
-  const plays = d.plays || []
-  const issues = d.issues || []
-  const own = d.ownMemories || []
-  const episodes = d.episodes || []
-  const insights = d.insights || []
-  const todo = (d.intent && d.intent.todo) || []
-  const speech = d.说话方式 || {}
+  const pages = {
+    card: renderSelfCardPage,
+    status: renderSelfStatusPage,
+    learn: renderSelfLearnPage,
+    exp: renderSelfExpPage,
+    think: renderSelfThinkPage,
+    talk: renderSelfTalkPage,
+  }
+  ;(pages[SELF_TAB] || pages.card)(body, d)
+}
 
-  /* ============================================================
-   * 顶部身份卡
-   * ============================================================ */
+/* ============================================================
+ * 1. 角色卡
+ * ============================================================ */
+function renderSelfCardPage(body, d) {
+  const traits = d.traits || []
+
+  // ---- 顶部身份 ----
   {
     const hero = el('div', 'self-hero')
     const main = el('div', 'self-hero-main')
@@ -2573,7 +2622,6 @@ function renderSelfV2() {
     const h1 = el('h1', '', d.name || '还没取名字')
     if (!d.name) h1.style.color = 'var(--dim)'
     main.appendChild(h1)
-
     if (d.nameReason) main.appendChild(el('div', 'self-hero-why', d.nameReason))
 
     const firstLine = String(d.selfText || '').trim().split(/\n+/)[0] || ''
@@ -2581,10 +2629,11 @@ function renderSelfV2() {
     main.appendChild(el('p', 'self-hero-desc', desc || '它还没写下对自己的认识。'))
 
     const chips = el('div', 'self-chips')
-    if (d.mood) chips.appendChild(selfChip('心情 · ' + (d.mood.情绪 || '—'), 'yellow'))
-    chips.appendChild(selfChip(d.aboutOwner === 'me' ? '自述：你写的' : '自述：它自己写的', d.aboutOwner === 'me' ? 'blue' : 'green'))
-    if (todo.length) chips.appendChild(selfChip(todo.length + ' 件要做的事', 'purple'))
-    if (SELF_REQUESTS.length) chips.appendChild(selfChip(SELF_REQUESTS.length + ' 条等你决定', 'yellow'))
+    chips.appendChild(
+      selfChip(d.aboutOwner === 'me' ? '自述：你写的' : '自述：它自己写的', d.aboutOwner === 'me' ? 'blue' : 'green'),
+    )
+    if (d.称呼) chips.appendChild(selfChip('称呼：' + d.称呼, 'blue'))
+    if (traits.length) chips.appendChild(selfChip('规矩 ' + traits.length + ' 条', ''))
     main.appendChild(chips)
 
     const side = el('div', 'self-hero-side')
@@ -2597,138 +2646,11 @@ function renderSelfV2() {
     body.appendChild(hero)
   }
 
-  /* ============================================================
-   * 状态
-   * ============================================================ */
-  body.appendChild(selfSec('状态', '它现在是什么样、记着要做什么', 'blue'))
+  // ---- 名字 / 称呼 ----
   {
-    const g = el('div', 'self-grid cols2')
-
-    // ---- 我准备做的事 ----
-    {
-      const c = selfCard('我准备做的事', todo.length ? todo.length + ' 件' : '')
-      if (!todo.length) {
-        c.appendChild(selfEmpty('没有待办。它自己记着要做的事会出现在这儿。'))
-      } else {
-        const all = SELF_MORE.todo ? todo : todo.slice(0, 4)
-        for (const x of all) {
-          const row = el('div', 'self-todo')
-          const mid = el('div', 'self-todo-main')
-          mid.appendChild(el('div', 'self-item', x.text || ''))
-          mid.appendChild(el('div', 'self-todo-meta', [x.source, x.date].filter(Boolean).join(' · ')))
-          row.appendChild(mid)
-          const okb = el('button', 'mini-btn', '完成')
-          okb.onclick = () => intentAction('complete', x.text)
-          const delb = el('button', 'mini-btn', '删')
-          delb.onclick = () => intentAction('drop', x.text)
-          row.appendChild(okb)
-          row.appendChild(delb)
-          c.appendChild(row)
-        }
-        if (todo.length > 4) c.appendChild(selfMoreBtn('todo', todo.length, all.length))
-      }
-
-      const add = el('div', 'self-field')
-      const inp = el('input', 'self-input')
-      inp.id = 'self-todo-input'
-      inp.placeholder = '加一条它要做的事……'
-      const addb = el('button', 'mini-btn', '加')
-      addb.onclick = () => {
-        const v = inp.value.trim()
-        if (v) intentAction('add', v)
-      }
-      add.appendChild(inp)
-      add.appendChild(addb)
-      c.appendChild(add)
-
-      g.appendChild(c)
-    }
-
-    // ---- 情绪 ----
-    {
-      const c = selfCard('情绪')
-      if (!d.mood) {
-        c.appendChild(selfEmpty('现在没有特别的心情'))
-      } else {
-        const m = el('div', 'self-mood')
-        m.appendChild(el('b', '', d.mood.情绪 || '—'))
-        m.appendChild(el('span', 'self-mood-i', '强度 ' + Number(d.mood.强度 ?? 0).toFixed(2)))
-        c.appendChild(m)
-        if (d.mood.原因) c.appendChild(el('div', 'self-item muted', '因为：' + d.mood.原因))
-      }
-      const history = d.moodHistory || []
-      if (history.length) {
-        c.appendChild(el('div', 'self-kv-k', '最近变化'))
-        for (const h of history.slice(-4).reverse()) {
-          c.appendChild(
-            el('div', 'self-item muted', (h.情绪 || '?') + ' ' + (h.强度 ?? '') + '  ' + (h.at ? new Date(h.at).toLocaleString() : '')),
-          )
-        }
-      }
-      g.appendChild(c)
-    }
-
-    // ---- 我自己的生活 ----
-    {
-      const c = selfCard('我自己的生活', life.length ? life.length + ' 条' : '')
-      if (!life.length) {
-        c.appendChild(selfEmpty('还没有生活记录'))
-      } else {
-        const all = SELF_MORE.life ? life : life.slice(-6).reverse()
-        const list = el('div', 'self-eplist')
-        for (const l of SELF_MORE.life ? life.slice().reverse() : all) list.appendChild(el('div', 'self-item muted', '· ' + l))
-        c.appendChild(list)
-        if (life.length > 6) c.appendChild(selfMoreBtn('life', life.length, all.length))
-      }
-      g.appendChild(c)
-    }
-
-    // ---- 它记得的事 ----
-    {
-      const c = selfCard('它记得的事', episodes.length + ' 段 · ' + insights.length + ' 条')
-      if (!episodes.length && !insights.length) {
-        c.appendChild(selfEmpty('还没有记住的事'))
-      } else {
-        const epN = SELF_MORE.ep ? episodes.length : 4
-        const inN = SELF_MORE.ep ? insights.length : 3
-        const list = el('div', 'self-eplist')
-        for (const e of episodes.slice(0, epN)) {
-          const row = el('div', 'self-ep')
-          const head = el('div', 'self-ep-head')
-          head.appendChild(el('span', '', e.date || '—'))
-          if (e.title) head.appendChild(el('span', '', '· ' + e.title))
-          row.appendChild(head)
-          row.appendChild(el('div', 'self-ep-body', e.body || ''))
-          list.appendChild(row)
-        }
-        for (const i of insights.slice(0, inN)) {
-          const row = el('div', 'self-ep')
-          row.appendChild(el('div', 'self-ep-head', '洞察'))
-          row.appendChild(el('div', 'self-ep-body', i.text || ''))
-          list.appendChild(row)
-        }
-        c.appendChild(list)
-        if (episodes.length > 4 || insights.length > 3) {
-          c.appendChild(selfMoreBtn('ep', episodes.length + insights.length, epN + inN))
-        }
-      }
-      g.appendChild(c)
-    }
-
-    body.appendChild(g)
-  }
-
-  /* ============================================================
-   * 你设的
-   * ============================================================ */
-  body.appendChild(selfSec('你设的', '这些话是你的，它照做', 'green'))
-  {
-    // 设置项平铺成"行"而不是一张张卡：行与行之间本来就没那么多空白，
-    // 拆成卡反而每张都要自己的 padding 和标题。
     const c = selfCard('设定', '改完立即生效')
     const form = el('div', 'self-form')
 
-    // ---- 名字 ----
     {
       const row = el('div', 'self-field')
       row.appendChild(el('label', '', '名字'))
@@ -2744,7 +2666,6 @@ function renderSelfV2() {
       form.appendChild(row)
     }
 
-    // ---- 称呼 ----
     {
       const row = el('div', 'self-field')
       row.appendChild(el('label', '', '称呼'))
@@ -2760,200 +2681,16 @@ function renderSelfV2() {
       form.appendChild(row)
     }
 
-    // ---- 说话方式（一行，超宽自动折行）----
-    {
-      const row = el('div', 'self-field')
-      row.style.flexWrap = 'wrap'
-      row.appendChild(el('label', '', '说话'))
-
-      const mkNum = (id, val, step, min, max, w) => {
-        const i = el('input', 'self-input num')
-        i.id = id
-        i.type = 'number'
-        i.step = step
-        i.min = String(min)
-        i.max = String(max)
-        i.value = String(val ?? '')
-        if (w) i.style.width = w
-        return i
-      }
-
-      const piece = (nodes) => {
-        const s = el('span', 'self-piece')
-        // 数组里混着字符串和元素：字符串要转成文本节点，直接 appendChild 会抛
-        for (const n of nodes) s.appendChild(typeof n === 'string' ? document.createTextNode(n) : n)
-        return s
-      }
-
-      row.appendChild(piece(['每轮 ', mkNum('talk-max', speech.每轮最多条数, '1', 1, 10), ' 条']))
-      row.appendChild(piece(['每条 ', mkNum('talk-chars', speech.每条最多字数, '5', 1, 500), ' 字']))
-
-      const gap = Array.isArray(speech.条间延迟) ? speech.条间延迟 : [400, 1500]
-      row.appendChild(
-        piece([
-          '间隔 ',
-          mkNum('talk-gap0', (Number(gap[0]) / 1000).toFixed(1), '0.1', 0, 60),
-          '~',
-          mkNum('talk-gap1', (Number(gap[1]) / 1000).toFixed(1), '0.1', 0, 60),
-          ' 秒',
-        ]),
-      )
-
-      const before = Array.isArray(speech.回复前延迟) ? speech.回复前延迟 : [1000, 4000]
-      row.appendChild(
-        piece([
-          '前等 ',
-          mkNum('talk-before0', (Number(before[0]) / 1000).toFixed(1), '0.1', 0, 60),
-          '~',
-          mkNum('talk-before1', (Number(before[1]) / 1000).toFixed(1), '0.1', 0, 60),
-          ' 秒',
-        ]),
-      )
-
-      const sel = el('select', 'self-select')
-      sel.id = 'talk-quote'
-      sel.style.width = '86px'
-      sel.style.flex = 'none'
-      for (const [v, label] of [
-        ['never', '从不引用'],
-        ['occasionally', '偶尔引用'],
-        ['often', '经常引用'],
-      ]) {
-        const o = document.createElement('option')
-        o.value = v
-        o.textContent = label
-        sel.appendChild(o)
-      }
-      sel.value = speech.引用频率 || 'occasionally'
-      row.appendChild(sel)
-
-      const save = el('button', 'mini-btn', '保存')
-      save.onclick = () => saveTalkStyle()
-      row.appendChild(save)
-      form.appendChild(row)
-    }
-
-    // ---- 底线 ----
-    {
-      const row = el('div', 'self-field')
-      row.style.alignItems = 'flex-start'
-      row.appendChild(el('label', '', '底线'))
-
-      const box = el('div', 'self-form')
-      box.style.flex = '1'
-      box.style.minWidth = '0'
-
-      if (!coreList.length) box.appendChild(selfEmpty('还是空的。加几条它一定不能弄错的事。'))
-      for (const item of coreList) {
-        const r = el('div', 'self-core-row')
-        const txt = el('div', 'self-item')
-        txt.innerHTML = '<span class="self-kv-k">' + esc(item.kind) + '</span>' + esc(item.text)
-        r.appendChild(txt)
-        const x = el('button', 'self-mini-x', '删')
-        x.onclick = () => selfCoreDrop(item.index)
-        r.appendChild(x)
-        box.appendChild(r)
-      }
-
-      const add = el('div', 'self-field')
-      const inp = el('input', 'self-input')
-      inp.id = 'self-core-input'
-      inp.placeholder = '加一条它一定不能弄错的事'
-      const kind = el('select', 'self-select')
-      kind.id = 'self-core-kind'
-      kind.style.width = '76px'
-      kind.style.flex = 'none'
-      for (const k of ['身份', '边界', '诺言', '偏好']) {
-        const o = document.createElement('option')
-        o.textContent = k
-        kind.appendChild(o)
-      }
-      kind.value = '边界'
-      const addb = el('button', 'mini-btn', '加')
-      addb.onclick = () => selfCoreAdd()
-      add.appendChild(inp)
-      add.appendChild(kind)
-      add.appendChild(addb)
-      box.appendChild(add)
-      row.appendChild(box)
-      form.appendChild(row)
-    }
-
     c.appendChild(form)
     body.appendChild(c)
   }
 
-  body.appendChild(selfSec('协商中', '这些是它想动、等你点头的', 'yellow'))
-  {
-    const g = el('div', 'self-grid cols2')
-
-    // ---- 它想改的 ----
-    {
-      const c = selfCard('它想改的', SELF_REQUESTS.length ? SELF_REQUESTS.length + ' 条待处理' : '')
-      if (!SELF_REQUESTS.length) {
-        c.appendChild(selfEmpty('暂时没有。它想改被锁住的东西时会提申请。'))
-      } else {
-        for (const r of SELF_REQUESTS) {
-          const box = el('div', 'self-req')
-          const t = el('div', 'self-item')
-          t.innerHTML = '<b>' + esc(r.label || r.target) + '</b> → ' + esc(r.content)
-          box.appendChild(t)
-          if (r.reason) box.appendChild(el('div', 'self-req-why', r.reason))
-
-          const acts = el('div', 'self-req-acts')
-          const ok = el('button', 'mini-btn', '批准')
-          ok.onclick = () => decideRequest(r.id, 'approve', false)
-          acts.appendChild(ok)
-          if (r.target === 'about' || r.target === 'traits') {
-            const grant = el('button', 'mini-btn', '批准并交权')
-            grant.title = '以后这一项它自己就能改，不用再问你'
-            grant.onclick = () => decideRequest(r.id, 'approve', true)
-            acts.appendChild(grant)
-          }
-          const no = el('button', 'mini-btn', '忽略')
-          no.onclick = () => decideRequest(r.id, 'reject', false)
-          acts.appendChild(no)
-          box.appendChild(acts)
-          c.appendChild(box)
-        }
-      }
-      g.appendChild(c)
-    }
-
-    // ---- 规矩（可编辑）----
-    {
-      const c = selfCard('它自己写的规矩', '进 prompt 当约束')
-      const box = el('div', 'self-form')
-      box.id = 'self-traits-box'
-      for (const [k, v] of traits) addTraitRowTo(box, k, v)
-      c.appendChild(box)
-
-      const acts = el('div', 'self-acts')
-      const add = el('button', 'mini-btn', '加一条')
-      add.onclick = () => addTraitRowTo($('self-traits-box'), '', '')
-      const save = el('button', 'mini-btn', '保存规矩')
-      save.onclick = () => saveSelfTraits()
-      acts.appendChild(add)
-      acts.appendChild(save)
-      c.appendChild(acts)
-      g.appendChild(c)
-    }
-
-    body.appendChild(g)
-  }
-
-  /* ============================================================
-   * 它长的
-   * ============================================================ */
-  body.appendChild(selfSec('它长的', '这些是它自己积出来的，你不改', 'purple'))
-
-  // ---- 我是谁（全宽）----
+  // ---- 我是谁 ----
   {
     const c = selfCard('我是谁', d.aboutOwner === 'me' ? '你写的' : '它自己写的')
     const ta = el('textarea')
     ta.value = d.selfText || ''
-    // 按内容行数定高，内容少的时候不要留一大块空输入框
-    ta.rows = Math.min(8, Math.max(2, String(d.selfText || '').split(/\n/).length + 1))
+    ta.rows = Math.min(8, Math.max(3, String(d.selfText || '').split(/\n/).length + 1))
     ta.className = 'self-ta'
     c.appendChild(ta)
 
@@ -2979,63 +2716,30 @@ function renderSelfV2() {
     } else if (isMine) {
       c.appendChild(el('div', 'self-item muted', '它还没补充过什么。等它想明白会自己加在这儿。'))
     }
+
     body.appendChild(c)
   }
 
-  // ---- 学到 / 问题 / 自己的记忆（三列）----
+  // ---- 它自己写的规矩 ----
   {
-    const g = el('div', 'self-grid cols3')
+    const c = selfCard('它自己写的规矩', '进 prompt 当约束')
+    const box = el('div', 'self-form')
+    box.id = 'self-traits-box'
+    for (const [k, v] of traits) addTraitRowTo(box, k, v)
+    c.appendChild(box)
 
-    {
-      const c = selfCard('学到的说话方式', plays.length ? plays.length + ' 条' : '')
-      if (!plays.length) {
-        c.appendChild(selfEmpty('还没学到'))
-      } else {
-        const all = SELF_MORE.plays ? plays : plays.slice(0, 3)
-        for (const x of all) {
-          const row = el('div', 'self-play')
-          if (x.scene) row.appendChild(el('div', 'self-play-scene', '他会说：' + x.scene))
-          row.appendChild(el('div', 'self-item', x.reply || '（没有内容）'))
-          c.appendChild(row)
-        }
-        if (plays.length > 3) c.appendChild(selfMoreBtn('plays', plays.length, all.length))
-      }
-      g.appendChild(c)
-    }
-
-    {
-      const c = selfCard('它发现的问题', issues.length ? issues.length + ' 条' : '')
-      if (!issues.length) {
-        c.appendChild(selfEmpty('暂时没有'))
-      } else {
-        const all = SELF_MORE.issues ? issues : issues.slice(-3).reverse()
-        for (const it of all) c.appendChild(el('div', 'self-item muted', '· ' + (it.text || it.msg || String(it))))
-        if (issues.length > 3) c.appendChild(selfMoreBtn('issues', issues.length, all.length))
-      }
-      g.appendChild(c)
-    }
-
-    {
-      const c = selfCard('只属于它自己的记忆', own.length ? own.length + ' 条' : '')
-      if (!own.length) {
-        c.appendChild(selfEmpty('还没有'))
-      } else {
-        const all = SELF_MORE.own ? own : own.slice(0, 3)
-        for (const x of all) c.appendChild(el('div', 'self-item muted', '· ' + (x.text || x.title || '')))
-        if (own.length > 3) c.appendChild(selfMoreBtn('own', own.length, all.length))
-      }
-      g.appendChild(c)
-    }
-
-    body.appendChild(g)
+    const acts = el('div', 'self-acts')
+    const add = el('button', 'mini-btn', '加一条')
+    add.onclick = () => addTraitRowTo($('self-traits-box'), '', '')
+    const save = el('button', 'mini-btn', '保存规矩')
+    save.onclick = () => saveSelfTraits()
+    acts.appendChild(add)
+    acts.appendChild(save)
+    c.appendChild(acts)
+    body.appendChild(c)
   }
 
-  /* ============================================================
-   * 它是怎么变的
-   * ============================================================ */
-  body.appendChild(selfSec('它是怎么变的', '看它改了什么，不是让你改', 'yellow'))
-
-  // ---- 版本对比（全宽）----
+  // ---- 它变过吗（人格变化史）----
   {
     const c = selfCard('人格变化', '选两个版本对比')
     const acts = el('div', 'self-acts')
@@ -3055,6 +2759,7 @@ function renderSelfV2() {
 
     const diffBox = el('div', 'self-diff')
     c.appendChild(diffBox)
+    body.appendChild(c)
 
     api('/api/self/versions')
       .then((r) => {
@@ -3111,11 +2816,8 @@ function renderSelfV2() {
       .catch(() => {
         diffBox.innerHTML = '<div class="self-empty">版本列表读不到</div>'
       })
-
-    body.appendChild(c)
   }
 
-  // ---- 漂移时间线（全宽，折叠）----
   {
     const c = selfCard('它变过几次', '相似度低于 45% 才算明显变了')
     const box = el('div', 'self-list')
@@ -3131,7 +2833,7 @@ function renderSelfV2() {
           box.innerHTML = '<div class="self-empty">还没记到明显的变化。</div>'
           return
         }
-        const all = SELF_MORE.drift ? items : items.slice(0, 4)
+        const all = SELF_MORE.drift ? items : items.slice(0, 5)
         for (const it of all) {
           const row = el('div', 'self-play')
           row.appendChild(
@@ -3145,11 +2847,369 @@ function renderSelfV2() {
           row.appendChild(el('div', 'self-item', '新：' + String(it.to || '').slice(0, 60)))
           box.appendChild(row)
         }
-        if (items.length > 4) box.appendChild(selfMoreBtn('drift', items.length, all.length))
+        if (items.length > 5) box.appendChild(selfMoreBtn('drift', items.length))
       })
       .catch(() => {
         box.innerHTML = '<div class="self-empty">漂移记录读不到</div>'
       })
+  }
+}
+
+/* ============================================================
+ * 2. 状态
+ * ============================================================ */
+function renderSelfStatusPage(body, d) {
+  const todo = (d.intent && d.intent.todo) || []
+  const life = d.life || []
+
+  // ---- 情绪 ----
+  {
+    const c = selfCard('情绪')
+    if (!d.mood) {
+      c.appendChild(selfEmpty('现在没有特别的心情'))
+    } else {
+      const m = el('div', 'self-mood')
+      m.appendChild(el('b', '', d.mood.情绪 || '—'))
+      m.appendChild(el('span', 'self-mood-i', '强度 ' + Number(d.mood.强度 ?? 0).toFixed(2)))
+      c.appendChild(m)
+      if (d.mood.原因) c.appendChild(el('div', 'self-item muted', '因为：' + d.mood.原因))
+    }
+    const history = d.moodHistory || []
+    if (history.length) {
+      c.appendChild(el('div', 'self-kv-k', '最近变化'))
+      for (const h of history.slice(-5).reverse()) {
+        c.appendChild(
+          el('div', 'self-item muted', (h.情绪 || '?') + ' ' + (h.强度 ?? '') + '  ' + (h.at ? new Date(h.at).toLocaleString() : '')),
+        )
+      }
+    }
+    body.appendChild(c)
+  }
+
+  // ---- 我准备做的事 ----
+  {
+    const c = selfCard('我准备做的事', todo.length ? todo.length + ' 件' : '')
+    if (!todo.length) {
+      c.appendChild(selfEmpty('没有待办。它自己记着要做的事会出现在这儿。'))
+    } else {
+      const all = SELF_MORE.todo ? todo : todo.slice(0, 6)
+      for (const x of all) {
+        const row = el('div', 'self-todo')
+        const mid = el('div', 'self-todo-main')
+        mid.appendChild(el('div', 'self-item', x.text || ''))
+        mid.appendChild(el('div', 'self-todo-meta', [x.source, x.date].filter(Boolean).join(' · ')))
+        row.appendChild(mid)
+        const okb = el('button', 'mini-btn', '完成')
+        okb.onclick = () => intentAction('complete', x.text)
+        const delb = el('button', 'mini-btn', '删')
+        delb.onclick = () => intentAction('drop', x.text)
+        row.appendChild(okb)
+        row.appendChild(delb)
+        c.appendChild(row)
+      }
+      if (todo.length > 6) c.appendChild(selfMoreBtn('todo', todo.length))
+    }
+
+    const add = el('div', 'self-field')
+    const inp = el('input', 'self-input')
+    inp.id = 'self-todo-input'
+    inp.placeholder = '加一条它要做的事……'
+    const addb = el('button', 'mini-btn', '加')
+    addb.onclick = () => {
+      const v = inp.value.trim()
+      if (v) intentAction('add', v)
+    }
+    add.appendChild(inp)
+    add.appendChild(addb)
+    c.appendChild(add)
+    body.appendChild(c)
+  }
+
+  // ---- 我自己的生活 ----
+  {
+    const c = selfCard('我自己的生活', life.length ? life.length + ' 条' : '')
+    if (!life.length) {
+      c.appendChild(selfEmpty('还没有生活记录'))
+    } else {
+      const all = SELF_MORE.life ? life.slice().reverse() : life.slice(-8).reverse()
+      const list = el('div', 'self-eplist')
+      for (const l of all) list.appendChild(el('div', 'self-item muted', '· ' + l))
+      c.appendChild(list)
+      if (life.length > 8) c.appendChild(selfMoreBtn('life', life.length))
+    }
+    body.appendChild(c)
+  }
+
+  // ---- 预留 ----
+  {
+    const c = selfCard('其他')
+    c.appendChild(selfEmpty('状态页还可以放什么，等你定。'))
+    body.appendChild(c)
+  }
+}
+
+/* ============================================================
+ * 3. 学习
+ * ============================================================ */
+function renderSelfLearnPage(body, d) {
+  const plays = d.plays || []
+
+  {
+    const c = selfCard('学到的说话方式', plays.length ? plays.length + ' 条' : '')
+    if (!plays.length) {
+      c.appendChild(selfEmpty('还没学到。它从"回得好的"对话里挑出来，下次遇到类似场景会参考。'))
+    } else {
+      const all = SELF_MORE.plays ? plays : plays.slice(0, 8)
+      for (const x of all) {
+        const row = el('div', 'self-play')
+        if (x.scene) row.appendChild(el('div', 'self-play-scene', '他会说：' + x.scene))
+        row.appendChild(el('div', 'self-item', x.reply || '（没有内容）'))
+        c.appendChild(row)
+      }
+      if (plays.length > 8) c.appendChild(selfMoreBtn('plays', plays.length))
+    }
+    body.appendChild(c)
+  }
+
+  {
+    const c = selfCard('其他')
+    c.appendChild(selfEmpty('学习页还可以放什么，等你定。'))
+    body.appendChild(c)
+  }
+}
+
+/* ============================================================
+ * 4. 经历
+ * ============================================================ */
+function renderSelfExpPage(body, d) {
+  const episodes = d.episodes || []
+  const own = d.ownMemories || []
+
+  {
+    const c = selfCard('记住的事', episodes.length ? episodes.length + ' 段' : '')
+    if (!episodes.length) {
+      c.appendChild(selfEmpty('还没有记住的经历'))
+    } else {
+      const all = SELF_MORE.episodes ? episodes : episodes.slice(0, 10)
+      for (const e of all) {
+        const row = el('div', 'self-ep')
+        const head = el('div', 'self-ep-head')
+        head.appendChild(el('span', '', e.date || '—'))
+        if (e.title) head.appendChild(el('span', '', '· ' + e.title))
+        if (e.scope) head.appendChild(el('span', '', '· ' + e.scope))
+        row.appendChild(head)
+        row.appendChild(el('div', 'self-ep-body', e.body || ''))
+        c.appendChild(row)
+      }
+      if (episodes.length > 10) c.appendChild(selfMoreBtn('episodes', episodes.length))
+    }
+    body.appendChild(c)
+  }
+
+  {
+    const c = selfCard('只属于它自己的记忆', own.length ? own.length + ' 条' : '不和某个人绑在一起')
+    if (!own.length) {
+      c.appendChild(selfEmpty('还没有。跟人、跟群绑在一起的经历在上面的列表里。'))
+    } else {
+      const all = SELF_MORE.own ? own : own.slice(0, 8)
+      for (const x of all) {
+        const row = el('div', 'self-item')
+        row.appendChild(el('div', '', x.text || x.title || ''))
+        const meta = [x.date, x.kind === 'insight' ? '想法' : '经历'].filter(Boolean).join(' · ')
+        if (meta) row.appendChild(el('div', 'self-todo-meta', meta))
+        c.appendChild(row)
+      }
+      if (own.length > 8) c.appendChild(selfMoreBtn('own', own.length))
+    }
+    body.appendChild(c)
+  }
+
+  {
+    const c = selfCard('其他')
+    c.appendChild(selfEmpty('经历页还可以放什么，等你定。'))
+    body.appendChild(c)
+  }
+}
+
+/* ============================================================
+ * 5. 想法
+ * ============================================================ */
+function renderSelfThinkPage(body, d) {
+  const insights = d.insights || []
+  const issues = d.issues || []
+
+  {
+    const c = selfCard('洞察', insights.length ? insights.length + ' 条' : '')
+    if (!insights.length) {
+      c.appendChild(selfEmpty('还没有洞察。它想到什么会写在这儿。'))
+    } else {
+      const all = SELF_MORE.insights ? insights : insights.slice(0, 10)
+      for (const i of all) {
+        const row = el('div', 'self-ep')
+        if (i.scope) row.appendChild(el('div', 'self-ep-head', i.scope))
+        row.appendChild(el('div', 'self-ep-body', i.text || ''))
+        c.appendChild(row)
+      }
+      if (insights.length > 10) c.appendChild(selfMoreBtn('insights', insights.length))
+    }
+    body.appendChild(c)
+  }
+
+  {
+    const c = selfCard('它发现的问题', issues.length ? issues.length + ' 条' : '')
+    if (!issues.length) {
+      c.appendChild(selfEmpty('暂时没有'))
+    } else {
+      const all = SELF_MORE.issues ? issues.slice().reverse() : issues.slice(-10).reverse()
+      for (const it of all) {
+        c.appendChild(el('div', 'self-item muted', '· ' + (it.text || it.msg || String(it))))
+      }
+      if (issues.length > 10) c.appendChild(selfMoreBtn('issues', issues.length))
+    }
+    body.appendChild(c)
+  }
+
+  {
+    const c = selfCard('其他')
+    c.appendChild(selfEmpty('想法页还可以放什么，等你定。'))
+    body.appendChild(c)
+  }
+}
+
+/* ============================================================
+ * 6. 对话规则（全局）
+ * ============================================================ */
+function renderSelfTalkPage(body, d) {
+  const speech = d.说话方式 || {}
+  const coreList = d.coreList || []
+
+  // 说明：这一页的规则对所有对话生效，不是针对某个人
+  {
+    const c = selfCard('这些是全局的', '对所有会话生效')
+    c.appendChild(
+      el('div', 'self-item muted', '这里改的是它「怎么说话」的默认规则，跟某个人、某个群无关。针对具体某人只在成员页。'),
+    )
+    body.appendChild(c)
+  }
+
+  // ---- 说话方式 ----
+  {
+    const c = selfCard('说话方式', '改完立即生效')
+    const form = el('div', 'self-form')
+
+    const mkNum = (id, val, step, min, max) => {
+      const i = el('input', 'self-input num')
+      i.id = id
+      i.type = 'number'
+      i.step = step
+      i.min = String(min)
+      i.max = String(max)
+      i.value = String(val ?? '')
+      return i
+    }
+    const piece = (nodes) => {
+      const s = el('span', 'self-piece')
+      for (const n of nodes) s.appendChild(typeof n === 'string' ? document.createTextNode(n) : n)
+      return s
+    }
+
+    const row = el('div', 'self-field')
+    row.style.flexWrap = 'wrap'
+    row.appendChild(el('label', '', '说话'))
+    row.appendChild(piece(['每轮 ', mkNum('talk-max', speech.每轮最多条数, '1', 1, 10), ' 条']))
+    row.appendChild(piece(['每条 ', mkNum('talk-chars', speech.每条最多字数, '5', 1, 500), ' 字']))
+
+    const gap = Array.isArray(speech.条间延迟) ? speech.条间延迟 : [400, 1500]
+    row.appendChild(
+      piece([
+        '间隔 ',
+        mkNum('talk-gap0', (Number(gap[0]) / 1000).toFixed(1), '0.1', 0, 60),
+        '~',
+        mkNum('talk-gap1', (Number(gap[1]) / 1000).toFixed(1), '0.1', 0, 60),
+        ' 秒',
+      ]),
+    )
+
+    const before = Array.isArray(speech.回复前延迟) ? speech.回复前延迟 : [1000, 4000]
+    row.appendChild(
+      piece([
+        '前等 ',
+        mkNum('talk-before0', (Number(before[0]) / 1000).toFixed(1), '0.1', 0, 60),
+        '~',
+        mkNum('talk-before1', (Number(before[1]) / 1000).toFixed(1), '0.1', 0, 60),
+        ' 秒',
+      ]),
+    )
+
+    const sel = el('select', 'self-select')
+    sel.id = 'talk-quote'
+    sel.style.width = '86px'
+    sel.style.flex = 'none'
+    for (const [v, label] of [
+      ['never', '从不引用'],
+      ['occasionally', '偶尔引用'],
+      ['often', '经常引用'],
+    ]) {
+      const o = document.createElement('option')
+      o.value = v
+      o.textContent = label
+      sel.appendChild(o)
+    }
+    sel.value = speech.引用频率 || 'occasionally'
+    row.appendChild(sel)
+    form.appendChild(row)
+
+    const acts = el('div', 'self-acts')
+    const save = el('button', 'mini-btn', '保存说话方式')
+    save.onclick = () => saveTalkStyle()
+    acts.appendChild(save)
+    c.appendChild(form)
+    c.appendChild(acts)
+    body.appendChild(c)
+  }
+
+  // ---- 底线 ----
+  {
+    const c = selfCard('不能越的线', '只有你能改，它只能提申请')
+    if (!coreList.length) c.appendChild(selfEmpty('还是空的。加几条它一定不能弄错的事。'))
+    for (const item of coreList) {
+      const row = el('div', 'self-core-row')
+      const txt = el('div', 'self-item')
+      txt.innerHTML = '<span class="self-kv-k">' + esc(item.kind) + '</span>' + esc(item.text)
+      row.appendChild(txt)
+      const x = el('button', 'self-mini-x', '删')
+      x.onclick = () => selfCoreDrop(item.index)
+      row.appendChild(x)
+      c.appendChild(row)
+    }
+
+    const add = el('div', 'self-field')
+    const inp = el('input', 'self-input')
+    inp.id = 'self-core-input'
+    inp.placeholder = '加一条它一定不能弄错的事'
+    const kind = el('select', 'self-select')
+    kind.id = 'self-core-kind'
+    kind.style.width = '76px'
+    kind.style.flex = 'none'
+    for (const k of ['身份', '边界', '诺言', '偏好']) {
+      const o = document.createElement('option')
+      o.textContent = k
+      kind.appendChild(o)
+    }
+    kind.value = '边界'
+    const addb = el('button', 'mini-btn', '加')
+    addb.onclick = () => selfCoreAdd()
+    add.appendChild(inp)
+    add.appendChild(kind)
+    add.appendChild(addb)
+    c.appendChild(add)
+    body.appendChild(c)
+  }
+
+  {
+    const c = selfCard('其他')
+    c.appendChild(selfEmpty('对话规则还可以放什么，等你定。'))
+    body.appendChild(c)
   }
 }
 

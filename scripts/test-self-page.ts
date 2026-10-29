@@ -23,36 +23,46 @@ function check(name: string, ok: boolean, extra = ''): void {
 
 const html = readFileSync('console/index.html', 'utf8')
 
-console.log('=== 1. 三段标题都在 ===')
-check('有「你设的」', html.includes('你设的'))
-check('有「协商中」', html.includes('协商中'))
-check('有「它长的」', html.includes('它长的'))
-check('有观察区「它是怎么变的」', html.includes('它是怎么变的'))
+console.log('=== 1. 六个板块都在 ===')
+for (const [k, label] of [
+  ['card', '角色卡'],
+  ['status', '状态'],
+  ['learn', '学习'],
+  ['exp', '经历'],
+  ['think', '想法'],
+  ['talk', '对话规则'],
+]) {
+  check(`tab「${label}」`, html.includes("['" + k + "', '" + label + "']"))
+}
+for (const fn of [
+  'renderSelfCardPage',
+  'renderSelfStatusPage',
+  'renderSelfLearnPage',
+  'renderSelfExpPage',
+  'renderSelfThinkPage',
+  'renderSelfTalkPage',
+]) {
+  check(`页面函数 ${fn}`, html.includes('function ' + fn + '('))
+}
+check('有 tab 容器', html.includes('id="self-tabs"'))
+check('默认停在角色卡', /let SELF_TAB = 'card'/.test(html))
 
-console.log('\n=== 2. 旧 tab 机制已移除 ===')
-check('没有 SELF_TABS 常量', !html.includes('const SELF_TABS'))
-check('没有 SELF_TAB 变量', !/let SELF_TAB\b/.test(html))
-check('renderSelfV2 不再引用 SELF_TAB', (() => {
-  const i = html.indexOf('function renderSelfV2()')
-  const j = html.indexOf('\nfunction ', i + 10)
-  const body = html.slice(i, j > 0 ? j : i + 20000)
-  return !body.includes('SELF_TAB ')
-})(), )
+console.log('\n=== 2. 人格变化史仍在（角色卡页）===')
+check('有版本对比', html.includes('/api/self/versions'))
+check('有版本 diff', html.includes('/api/self/versions/diff'))
+check('有漂移', html.includes('/api/self/drift'))
 
 console.log('\n=== 3. 保留的功能函数 ===')
-// v3 改版：renderRequestBlock / selfSection / selfBlockTitle 三个旧辅助已合并进
-// renderSelfV2（请求渲染内联、段头/卡片改用 selfSec/selfCard）。
 for (const fn of ['saveSelfText', 'switchSelfOwner', 'decideRequest', 'selfSec', 'selfCard', 'selfChip', 'selfEmpty']) {
   check(`有 ${fn}`, html.includes(fn))
 }
 check('有 renderSelfV2', html.includes('function renderSelfV2()'))
 
-console.log('\n=== 3b. 状态区块（心事/情绪/经历）===')
-check('有「状态」段', html.includes("selfSec('状态'"))
+console.log('\n=== 3b. 状态与经历（分页后）===')
 check('有「我准备做的事」', html.includes('我准备做的事'))
 check('有「我自己的生活」', html.includes('我自己的生活'))
-check('有「它记得的事」（经历/洞察）', html.includes('它记得的事'))
-check('待办有输入框', html.includes("self-todo-input"))
+check('有「记住的事」', html.includes('记住的事'))
+check('待办有输入框', html.includes('self-todo-input'))
 check('待办走 intentAction', html.includes("intentAction('complete'"))
 
 console.log('\n=== 3c. 就地编辑 ===')
