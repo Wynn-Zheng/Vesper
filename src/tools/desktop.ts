@@ -167,10 +167,13 @@ async function blockedWindow(): Promise<string> {
 
   const r = await run(['windows'], 8_000)
   const list = Array.isArray(r['windows']) ? (r['windows'] as Array<Record<string, unknown>>) : []
+  // 查不到窗口列表时不能当"没敏感窗口"：那等于把最后一道闸拆了。
+  // 宁可这次不截，让模型说一句"现在截不了"。
+  if (!list.length) return (null as unknown) as string
+
   const fg = list.find((w) => w['active'] === true)
   if (!fg) return ''
-
-  const hay = `${String(fg['title'] ?? '')} ${String(fg['app'] ?? '')}`.toLowerCase()
+  const hay = (String(fg['title'] ?? '') + ' ' + String(fg['app'] ?? '')).toLowerCase()
   for (const w of words) {
     if (w && hay.includes(w.toLowerCase())) return String(fg['title'] ?? w)
   }
@@ -212,6 +215,13 @@ export const screenshotTool: Tool = {
     // 没有"只截某个窗口"的能力；打码要自己算窗口区域再抠图，
     // 而窗口可能被遮挡、可能半透明，算错了反而更糟。直接不截最稳。
     const blocked = await blockedWindow()
+    if (blocked === null || blocked === undefined) {
+      return ok({
+        ok: false,
+        blocked: true,
+        error: '拿不到当前窗口信息，为了不误截敏感画面，这次先不截图。',
+      })
+    }
     if (blocked) {
       return ok({
         ok: false,

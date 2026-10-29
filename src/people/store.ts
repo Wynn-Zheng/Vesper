@@ -98,7 +98,15 @@ function normalizeMeta(id: string, raw: unknown): PersonMeta | null {
 }
 
 export function loadPerson(id: string): PersonMeta | null {
-  const f = metaFile(id)
+  // 先校验 id 再拼路径：personDir 对非法 id 会抛错，
+  // 以前是先 metaFile→personDir 再 existsSync，一个脏目录就能让 listPeople 整条崩掉。
+  if (!isValidPersonId(id)) return null
+  let f: string
+  try {
+    f = metaFile(id)
+  } catch {
+    return null
+  }
   if (!existsSync(f)) return null
   try {
     return normalizeMeta(id, JSON.parse(readFileSync(f, 'utf8')) as unknown)
@@ -192,6 +200,7 @@ export function listPeople(): PersonMeta[] {
   const out: PersonMeta[] = []
   for (const e of readdirSync(ROOT, { withFileTypes: true })) {
     if (!e.isDirectory()) continue
+    if (!isValidPersonId(e.name)) continue
     const meta = loadPerson(e.name)
     if (meta) out.push(meta)
   }

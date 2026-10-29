@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import { info } from '../core/log.ts'
 import { similarity } from '../core/text.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -44,8 +44,15 @@ export function playsFile(): string {
 
 export function loadPlays(): Play[] {
   if (!existsSync(FILE)) return []
+  // 读失败（被占用/无权限）不能让整轮回复崩：这个文件是拼 prompt 时读的。
+  let text = ''
+  try {
+    text = readFileSync(FILE, 'utf8')
+  } catch {
+    return []
+  }
   const out: Play[] = []
-  for (const line of readFileSync(FILE, 'utf8').split(/\r?\n/)) {
+  for (const line of text.split(/\r?\n/)) {
     // ★ 表示人工精选过；有没有它都要能读
     const m = /^-\s+\[(\d+)分\](★?)\s+他说「(.+?)」→\s*我回「(.+?)」\s*（(\d{4}-\d{2}-\d{2})）\s*$/.exec(line.trim())
     if (!m) continue
@@ -78,6 +85,20 @@ export function toggleChecked(scene: string, checked: boolean): boolean {
 }
 
 export function savePlays(items: Play[]): void {
+  // 现有文件里如果有解析不了的正文，先备份再覆盖 —— 
+  // 之前是"解析出几条就写几条"，格式手改坏一次，历史就被 1 条盖掉。
+  try {
+    if (existsSync(FILE)) {
+      const raw = readFileSync(FILE, 'utf8')
+      const parsed = raw.split(/\r?\n/).filter((l) => l.trim().startsWith('- ')).length
+      const usable = loadPlays().length
+      if (parsed > 0 && usable === 0) {
+        copyFileSync(FILE, FILE + '.bad-' + Date.now())
+      }
+    }
+  } catch {
+    /* 备份失败也继续写 */
+  }
   const good = items.filter((p) => p.score >= 7).slice(-MAX_KEEP)
   const bad = items.filter((p) => p.score <= 3).slice(-20)
   const body = [
