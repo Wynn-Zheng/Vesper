@@ -200,7 +200,10 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     minScore: opts.rules.记忆.检索.最低分,
     decay: opts.rules.记忆.衰减,
   })
-
+  // 最近几轮对话已经在 session history 里了（同 scope 的所有消息都进同一个 session），
+  // 再让 recall 把最近 8 条原始消息塞进 system，等于最近对话注入两遍：
+  // token 翻倍，而且模型容易去回一条旧消息。这里只保留召回的事实/经历/待办。
+  recalled.recent = []
   const groupBlock = scope.startsWith('group:')
     ? [renderGroupContext(scope.slice('group:'.length)), renderJargon(explainJargon(text, scope.slice('group:'.length)))]
         .filter((s) => s.trim())
