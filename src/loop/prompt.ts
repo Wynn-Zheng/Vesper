@@ -11,6 +11,8 @@ function nowText(d: Date): string {
 }
 
 export interface PromptParts {
+  /** 它已经提了、还在等主人批的修改申请（没批之前不算数） */
+  requests?: string
   /** 核心记忆（只能人改的那部分），优先级最高 */
   core?: string
   /** 说话习惯（从它自己说过的话统计出来的） */
@@ -142,6 +144,10 @@ export function buildSystem(parts: PromptParts): string {
     lines.push(parts.core, '')
   }
 
+  // 它提了、还在等批的申请：不告诉它的话，下次会以为自己已经改了
+  if (parts.requests) {
+    lines.push(parts.requests, '')
+  }
   lines.push('几条硬的：')
 
   // 能不能看屏幕/动鼠标，取决于配置。不能写死——

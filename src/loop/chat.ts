@@ -12,6 +12,7 @@ import type { ChatMessage, LlmOptions, ToolSpec } from '../llm/types.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
 import { recall, renderRecalled, similarity } from '../memory/recall.ts'
 import { renderCoreForPrompt } from '../memory/core.ts'
+import { renderPendingForPrompt } from '../self/requests.ts'
 import { renderSpeechHabit } from '../self/speech.ts'
 import { renderGrowth } from '../self/growth.ts'
 import { todoForPrompt } from '../memory/intent.ts'
@@ -246,6 +247,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
       .join('\n\n'),
     // 核心记忆：只能人改的那部分，优先级最高
     core: renderCoreForPrompt(),
+    // 它提了、还在等批的申请（不告诉它，下次会以为自己已经改了）
+    requests: renderPendingForPrompt(),
     // 说话习惯（长度/问句比例/口头禅），从它自己说过的话里统计
     speech: renderSpeechHabit(),
     // 成长的痕迹（以前怎么看自己 vs 现在）
