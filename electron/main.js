@@ -49,7 +49,7 @@ process.on('unhandledRejection', (e) => {
 const { app, BrowserWindow, shell, Menu, Tray, nativeImage } = require('electron')
 trace('electron 模块已加载')
 const { spawn } = require('node:child_process')
-const { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync } = require('node:fs')
+const { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, appendFileSync, rmSync } = require('node:fs')
 const { randomBytes } = require('node:crypto')
 const path = require('node:path')
 const http = require('node:http')
@@ -150,7 +150,7 @@ function ensureDataRoot() {
     /* 建不出来后面也会报，不用在这拦 */
   }
 
-  // 1. .env：没有就生成一份（随机 token；API key 留空，让用户在设置页填）
+// 1. .env：没有就生成一份（随机 token；API key 留空，让用户在设置页填）
   const envPath = path.join(DATA_ROOT, '.env')
   if (!existsSync(envPath)) {
     const token = randomBytes(16).toString('hex')
@@ -162,13 +162,28 @@ function ensureDataRoot() {
         `CONSOLE_TOKEN=${token}`,
         'DEEPSEEK_API_KEY=',
         'DEEPSEEK_MODEL=deepseek-chat',
+        'UPDATE_URL=https://web.wynnzheng.icu/QQbot',
+        'UPDATE_TOKEN=REDACTED',
         '',
       ].join('\n'),
       'utf8',
     )
     console.log('[main] 首次启动：已生成 .env')
+  } else {
+    // 老 .env 只补缺失的更新配置，不动用户已有的值
+    try {
+      const text = readFileSync(envPath, 'utf8')
+      const add = []
+      if (!/^UPDATE_URL=/m.test(text)) add.push('UPDATE_URL=https://web.wynnzheng.icu/QQbot')
+      if (!/^UPDATE_TOKEN=/m.test(text)) add.push('UPDATE_TOKEN=REDACTED')
+      if (add.length) {
+        appendFileSync(envPath, '\n# 在线更新（自动补上的，可改）\n' + add.join('\n') + '\n', 'utf8')
+        console.log('[main] 已给 .env 补上更新配置')
+      }
+    } catch {
+      /* 补不上也不影响启动，用户可手动加 */
+    }
   }
-
   // 2. persona/：从模板复制（模板在有 resources/persona-template）
   const personaDir = path.join(DATA_ROOT, 'persona')
   if (!existsSync(personaDir)) {
