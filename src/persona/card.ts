@@ -195,10 +195,24 @@ function cardPath(id: string): string {
   return join(DIR, id + '.md')
 }
 
+/**
+ * 卡片 id 合法性。
+ *
+ * 踩过的坑：切换时把 <id>.self.md（self.md 的归档）当成了角色卡，
+ * 切一次多一张，越滚越多。所以 id 里不允许出现 .self，也不允许路径分隔符。
+ */
+function validCardId(id: string): boolean {
+  return !!id && !id.endsWith('.self') && !id.includes('/') && !id.includes('\\\\')
+}
+
 /** 当前卡片 id（没有就返回空串） */
 export function currentCardId(): string {
   try {
-    if (existsSync(CURRENT)) return readFileSync(CURRENT, 'utf8').trim()
+    if (existsSync(CURRENT)) {
+      const id = readFileSync(CURRENT, 'utf8').trim()
+      // 指向不存在的卡 / 脏 id 都当没有，否则后续会越切越多
+      if (validCardId(id) && existsSync(cardPath(id))) return id
+    }
   } catch {
     /* 读不到当没有 */
   }
@@ -227,7 +241,7 @@ export function listCards(): Array<{ id: string; name: string }> {
 
 export function loadCard(id?: string): CharCard | null {
   const cid = id || currentCardId()
-  if (!cid) return null
+  if (!cid || !validCardId(cid)) return null
   try {
     if (!existsSync(cardPath(cid))) return null
     return parseCard(cid, readFileSync(cardPath(cid), 'utf8'))
@@ -301,7 +315,7 @@ export function cardPromptBlock(card: CharCard | null): string {
  */
 export function switchCard(id: string): { ok: boolean; error?: string } {
   const cur = currentCardId()
-  if (!id) return { ok: false, error: '没指定卡片' }
+  if (!validCardId(id)) return { ok: false, error: '卡片 id 不合法' }
   const target = loadCard(id)
   if (!target) return { ok: false, error: '没有这张卡' }
   if (cur === id) return { ok: true }
