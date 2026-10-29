@@ -3493,7 +3493,11 @@ function renderSelfStatusPage(body, d) {
       if (m) meta.appendChild(el('div', 'self-mood-i', '强度 ' + Number(m.强度 ?? 0).toFixed(2)))
       box.appendChild(meta)
       c.appendChild(box)
-      if (m && m.原因) c.appendChild(el('div', 'self-item muted', '因为：' + m.原因))
+      if (m) {
+        // 没写原因时也给一行提示，否则「担心 强度 1.00」看着像信息丢了
+        if (m.原因) c.appendChild(el('div', 'self-item muted', '因为：' + m.原因))
+        else c.appendChild(el('div', 'self-item muted', '（这次没写原因）'))
+      }
       right.appendChild(c)
     }
 
