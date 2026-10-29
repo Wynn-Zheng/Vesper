@@ -6,7 +6,7 @@ import { sendImageTool } from './tools/image.ts'
 import { requestChangeTool } from './tools/request.ts'
 import { refreshCodeMap } from './self/codemap.ts'
 import { startConsole } from './console/server.ts'
-import { loadRules } from './core/config.ts'
+import { DEFAULTS, loadRules } from './core/config.ts'
 import { info, initLog, pruneLogs, warnAt, errorAt } from './core/log.ts'
 import { loadAccess } from './core/access.ts'
 import { generateReply } from './loop/chat.ts'
@@ -26,10 +26,25 @@ import { watch } from 'node:fs'
 
 initLog()
 
-let rules = loadRules().rules
+// 配置写错不能让进程直接退出：那样控制台永远打不开，用户只能去翻日志。
+// 先用默认配置把控制台起起来，明确告诉他去修 rules.yaml。
+let startConfigBroken = false
+let rules: ReturnType<typeof loadRules>['rules']
+try {
+  const loaded = loadRules()
+  rules = loaded.rules
+  for (const w of loaded.warnings ?? []) errorAt('配置告警', { msg: String(w) })
+} catch (err) {
+  errorAt('rules.yaml 解析失败，先用默认配置启动；请到控制台修改后重启', {
+    err: String(err).slice(0, 300),
+  })
+  rules = { ...DEFAULTS }
+  startConfigBroken = true
+}
 const getRules = (): typeof rules => rules
+if (startConfigBroken) info('当前用的是内置默认配置（rules.yaml 有错），修好后重启生效')
 
-info('规则已加载：persona/rules.yaml')
+if (!startConfigBroken) info('规则已加载：persona/rules.yaml')
 
 // rules.yaml 改动后自动重载
 try {

@@ -395,7 +395,16 @@ function createWindow(failInfo = null) {
 
   // 外链（比如 NapCat WebUI 的"在浏览器打开"）走系统浏览器，不要在应用里开
   win.webContents.setWindowOpenHandler(({ url: u }) => {
-    shell.openExternal(u)
+    // 相对路径要先按当前页解析成绝对地址：shell.openExternal 只认绝对 URL。
+    // 之前导出用的就是 /api/export?token=…，交给系统浏览器后 query 丢了，
+    // 用户看到的就是"链接里没有 token"。这里做一层兜底。
+    let abs = u
+    try {
+      abs = new URL(u, win.webContents.getURL()).toString()
+    } catch {
+      /* 解析不了就按原样 */
+    }
+    if (/^https?:/i.test(abs)) shell.openExternal(abs)
     return { action: 'deny' }
   })
 
