@@ -180,14 +180,14 @@
 .log .line .m{color:var(--fg);flex-shrink:0}
 .log .line .ex{color:var(--dim2);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding-left:6px;border-left:1px solid var(--line);margin-left:2px;line-height:1.5;opacity:.85}
 .log .line .wh{color:var(--dim2);flex-shrink:0;margin-left:auto;font-size:10.5px;opacity:.55;padding-left:10px}
-  .item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:var(--fs-md);line-height:1.65;color:var(--text)}
+  .item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:var(--fs-md);line-height:1.65;color:var(--text);word-break:break-word;min-width:0}
   .item:last-child{border-bottom:0}
   .item .tag{font-size:10.5px;padding:1px 7px;border-radius:5px;height:fit-content;background:var(--blue)22;color:var(--blue);flex-shrink:0;margin-top:2px}
   .item .tag.warn{background:var(--yellow)22;color:var(--yellow)}
   .item .tag.pink{background:rgba(247,120,186,.13);color:var(--pink)}
   .item .tag.good{background:rgba(63,185,80,.13);color:var(--green)}
-  .item .txt{font-size:13px}
-  .item .sub{font-size:11.5px;color:var(--dim2);margin-top:2px}
+  .item .txt{word-break:break-word;min-width:0;font-size:13px}
+  .item .sub{word-break:break-word;min-width:0;font-size:11.5px;color:var(--dim2);margin-top:2px}
   .cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .big{display:flex;align-items:baseline;gap:12px}
   .big .num{font-size:48px;font-weight:700;letter-spacing:-2px;line-height:1}
