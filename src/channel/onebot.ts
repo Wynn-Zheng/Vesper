@@ -446,6 +446,25 @@ export class OnebotTransport implements Transport {
     await new Promise<void>((r) => (this.wss ? this.wss.close(() => r()) : r()))
     this.wss = null
   }
+  /** 把所有在飞的调用快速失败（断线/停止时用） */
+  private failPending(reason: string): void {
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer)
+      p.reject(new Error(reason))
+    }
+    this.pending.clear()
+  }
+
+  /** 未连接时等一会儿（NapCat 重连窗口内），超时才报错 */
+  private async waitConnected(timeoutMs = 8_000): Promise<WebSocket> {
+    const until = Date.now() + timeoutMs
+    while (Date.now() < until) {
+      const ws = this.socket
+      if (ws && ws.readyState === WebSocket.OPEN) return ws
+      await new Promise((r) => setTimeout(r, 150))
+    }
+    throw new Error('NapCat 未连接')
+  }
 
   private checkAuth(req: IncomingMessage): boolean {
     if (!this.opts.token) return true
@@ -504,6 +523,8 @@ export class OnebotTransport implements Transport {
       clearInterval(hb)
       info('NapCat 断开')
       if (this.socket === ws) this.socket = null
+      // 断线时把在飞请求立刻失败，别让它们各自等满 10s
+      this.failPending('NapCat 断开')
     })
   }
 
@@ -632,9 +653,10 @@ export class OnebotTransport implements Transport {
     }
   }
 
-  private callAction(action: string, params: Record<string, unknown>): Promise<unknown> {
-    const ws = this.socket
-    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('NapCat 未连接'))
+  private async callAction(action: string, params: Record<string, unknown>): Promise<unknown> {
+    // 未连接时先等一会儿（NapCat 重连通常几秒），而不是立刻 reject：
+    // 之前重连窗口内的回复全部直接丢掉，用户那边就是"它没反应"。
+    const ws = await this.waitConnected()
     const echo = `e${Date.now()}${Math.random().toString(16).slice(2, 8)}`
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
