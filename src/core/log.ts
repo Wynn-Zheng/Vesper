@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 
@@ -54,7 +54,19 @@ export function log(level: Level, msg: string, extra?: Record<string, unknown>):
 
   if (!toFile) return
   try {
-    appendFileSync(join(logDir, `${day()}.jsonl`), `${JSON.stringify(record)}\n`)
+    const file = join(logDir, `${day()}.jsonl`)
+    // 单文件超过 50MB 就轮转成 .1（覆盖上一份）：重连/心跳类的 warn 风暴
+    // 一天能写几百 MB，没有上限的话打开日志页会卡死。
+    try {
+      if (statSync(file).size > 50 * 1024 * 1024) {
+        const rotated = file + '.1'
+        rmSync(rotated, { force: true })
+        renameSync(file, rotated)
+      }
+    } catch {
+      /* 文件还不存在时 stat 会抛，忽略 */
+    }
+    appendFileSync(file, `${JSON.stringify(record)}\\n`)
   } catch {
     /* 落盘失败不该影响主流程 */
   }
