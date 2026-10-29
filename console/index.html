@@ -25,6 +25,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QQ Bot 控制台</title>
 <style>
+  /* 隐藏所有可见滚动条（规范见 docs/DESIGN.md §7「滚动」）：
+     内容照样能滚，只是不显示系统滑块。 */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
   :root{
     /* 设计令牌：近黑暖底 + 发丝边框 + 单一低饱和强调色（参考 Linear 系） */
     --bg:#0a0b0d; --panel:#121316; --panel2:#17181c; --line:rgba(255,255,255,.07);
