@@ -602,11 +602,26 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
         })
+        let dropped = 0
         const onLog = (rec: LogRecord) => {
-          res.write(`data: ${JSON.stringify(rec)}\n\n`)
+          // 页面休眠/网络卡住时 write 会返回 false（缓冲已满）：这时候继续写只会让
+          // 内存无上限增长。直接丢这条（日志本来就有文件持久化）。
+          try {
+            if (res.writableEnded || res.destroyed) return
+            const okWrite = res.write(`data: ${JSON.stringify(rec)}\\n\\n`)
+            if (!okWrite) dropped++
+          } catch {
+            // 某个客户端写失败绝不能把异常抛回业务代码（logBus.emit 是同步的）
+          }
         }
         logBus.on('log', onLog)
-        const ping = setInterval(() => res.write(': ping\n\n'), 15000)
+        const ping = setInterval(() => {
+          try {
+            if (!res.writableEnded && !res.destroyed) res.write(': ping\\n\\n')
+          } catch {
+            /* ignore */
+          }
+        }, 15000)
         req.on('close', () => {
           logBus.off('log', onLog)
           clearInterval(ping)

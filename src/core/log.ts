@@ -50,7 +50,12 @@ export function log(level: Level, msg: string, extra?: Record<string, unknown>):
   console.log(`${DIM}[${t}]${RESET} ${tag} ${msg}${tail}`)
 
   const record: LogRecord = { ts: Date.now(), level, msg, ...(extra ? { extra } : {}) }
-  logBus.emit('log', record)
+  // 某个订阅者（比如断掉的 SSE 连接）抛错不能把异常抛回业务代码
+  try {
+    logBus.emit('log', record)
+  } catch {
+    /* ignore */
+  }
 
   if (!toFile) return
   try {

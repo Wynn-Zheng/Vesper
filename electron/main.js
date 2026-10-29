@@ -74,12 +74,14 @@ const DATA_ROOT = app.isPackaged
   ? path.join(app.getPath('userData'), 'data-root')
   : APP_ROOT
 
-const CONSOLE_PORT = 7788
+// 端口跟着 .env 走（后端从 .env 读）：写死 7788 的话，用户改端口后永远"后端起不来"
+const CONSOLE_PORT = Number(readDotEnv().CONSOLE_PORT || process.env.CONSOLE_PORT || 7788) || 7788
 const CONSOLE_URL = `http://127.0.0.1:${CONSOLE_PORT}`
 
 let backend = null
 /** 后端异常退出的自动重启次数（防崩溃循环） */
-let crashRestarts = 0 // 我拉起的后端进程（null = 复用了别人的）
+let crashRestarts = 0
+// 我拉起的后端进程（null = 复用了别人的）
 let win = null
 let tray = null
 
@@ -121,11 +123,11 @@ function readDotEnv() {
   return out
 }
 
-/** 取控制台 token（先看环境变量，再看 .env） */
+/** 取控制台 token：子进程用 {…process.env, …readDotEnv()}，.env 优先，这里同优先级 */
 function consoleToken() {
-  const fromEnv = process.env.CONSOLE_TOKEN
-  if (fromEnv) return fromEnv
-  return readDotEnv().CONSOLE_TOKEN || ''
+  const fromFile = readDotEnv().CONSOLE_TOKEN
+  if (fromFile) return fromFile
+  return process.env.CONSOLE_TOKEN || ''
 }
 
 /* ============================================================
@@ -441,8 +443,9 @@ function createWindow(failInfo = null) {
   })
 
   win.on('close', (e) => {
-    // 关窗口不退出（留托盘）
-    if (!app.isQuitting) {
+    // 关窗口不退出（留托盘）。但托盘没建起来时不能再 hide：
+    // 那会变成窗口永久消失、没有入口，只能杀进程。
+    if (!app.isQuitting && tray) {
       e.preventDefault()
       win.hide()
     }
@@ -479,6 +482,20 @@ function createTray() {
 /* ============================================================
  * 生命周期
  * ============================================================ */
+// 单实例锁：允许双开的话会各拉一个后端，第二个必然 EADDRINUSE 白屏。
+// 第二个实例直接退出，并尝试把已有窗口拉到前面。
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
   trace('app ready；isPackaged=' + app.isPackaged + ' resources=' + process.resourcesPath)
   trace('APP_ROOT=' + APP_ROOT)
