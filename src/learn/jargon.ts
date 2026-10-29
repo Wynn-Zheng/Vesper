@@ -5,6 +5,7 @@ import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import type { RawTurn } from '../memory/types.ts'
 import { writeAtomic } from '../store/fs.ts'
+import { cardScopedPath } from '../persona/card.ts'
 
 /**
  * 学这个群里的"黑话"：只有这里的人才懂的词和梗。
@@ -25,7 +26,11 @@ export interface Jargon {
   date: string
 }
 
-const FILE = 'persona/jargon.yaml'
+// 黑话是按角色走的：换卡就是换人。
+const FILE_LEGACY = 'persona/jargon.yaml'
+function FILE(): string {
+  return cardScopedPath('jargon.yaml', FILE_LEGACY)
+}
 
 interface Store {
   [groupId: string]: Jargon[]
@@ -57,9 +62,9 @@ function parse(text: string): Array<{ 词?: string; 意思?: string; 依据?: st
 }
 
 export function loadJargon(groupId: string): Jargon[] {
-  if (!existsSync(FILE)) return []
+  if (!existsSync(FILE())) return []
   try {
-    const store = YAML.parse(readFileSync(FILE, 'utf8')) as Store | null
+    const store = YAML.parse(readFileSync(FILE(), 'utf8')) as Store | null
     return store?.[groupId] ?? []
   } catch {
     return []
@@ -67,9 +72,9 @@ export function loadJargon(groupId: string): Jargon[] {
 }
 
 function loadAll(): Store {
-  if (!existsSync(FILE)) return {}
+  if (!existsSync(FILE())) return {}
   try {
-    return (YAML.parse(readFileSync(FILE, 'utf8')) as Store | null) ?? {}
+    return (YAML.parse(readFileSync(FILE(), 'utf8')) as Store | null) ?? {}
   } catch {
     return {}
   }
@@ -78,7 +83,7 @@ function loadAll(): Store {
 export function saveJargon(groupId: string, items: Jargon[]): void {
   const store = loadAll()
   store[groupId] = items.slice(-80)
-  writeAtomic(FILE, `${YAML.stringify(store)}\n`)
+  writeAtomic(FILE(), `${YAML.stringify(store)}\n`)
 }
 
 /** 从一段群聊里学新词，和已有的合并 */
@@ -144,5 +149,5 @@ export function renderJargon(items: Jargon[]): string {
 }
 
 export function jargonFile(): string {
-  return FILE
+  return FILE()
 }

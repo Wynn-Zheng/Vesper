@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { cardScopedPath } from '../persona/card.ts'
 import { dirname, join } from 'node:path'
 import { appendJsonl, ensureDir, writeAtomic } from '../store/fs.ts'
 import { appendFacts, loadDeleted, loadFacts, type PersonFact } from '../memory/facts.ts'
@@ -50,6 +51,12 @@ const CONTENT_FILES: Array<[string, string]> = [
   ['plays', 'persona/learned/plays.md'],
 ]
 
+/** 按角色卡解析内容文件路径（life/plays/jargon/mood 已按卡隔离；self 保持全局副本） */
+function scopedContentPath(name: string, fallback: string): string {
+  if (name === 'self') return fallback
+  const file = name === 'jargon' ? 'jargon.yaml' : name === 'mood' ? 'mood.yaml' : name + '.md'
+  return cardScopedPath(file, fallback)
+}
 function readIf(p: string): string | null {
   try {
     return readFileSync(p, 'utf8')
@@ -131,7 +138,7 @@ export function exportAll(days = 30): BackupV2 {
   }
 
   const files: Record<string, string | null> = {}
-  for (const [name, p] of [...CONTENT_FILES, ...CONFIG_FILES]) files[name] = readIf(p)
+  for (const [name, p] of [...CONTENT_FILES, ...CONFIG_FILES]) files[name] = readIf(scopedContentPath(name, p))
 
   return {
     schema: BACKUP_SCHEMA,
@@ -402,9 +409,10 @@ export function importBackup(data: BackupV2, opts: ImportOptions = {}): ImportSt
     if (!canWriteState && STATE_FILES.has(name)) continue
     const content = data.files[name]
     if (typeof content !== 'string' || !content.trim()) continue
+    const realTarget = scopedContentPath(name, target)
     if (!dryRun) {
-      ensureDir(dirname(target))
-      writeAtomic(target, content)
+      ensureDir(dirname(realTarget))
+      writeAtomic(realTarget, content)
     }
     stats.files.push(name)
   }

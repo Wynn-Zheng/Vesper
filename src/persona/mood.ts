@@ -1,9 +1,14 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { warnAt } from '../core/log.ts'
+import { cardScopedPath } from './card.ts'
 import { writeAtomic } from '../store/fs.ts'
 
 /** 心情是全局的：它这一刻对所有人都是这个情绪 */
-const FILE = 'persona/mood.yaml'
+// 心情是按角色走的：换卡就是换人。没有卡时回退到老的全局路径。
+const FILE_LEGACY = 'persona/mood.yaml'
+function FILE(): string {
+  return cardScopedPath('mood.yaml', FILE_LEGACY)
+}
 
 export interface MoodEntry {
   emotion: string
@@ -37,7 +42,7 @@ export interface Mood extends MoodEntry {
 }
 
 export function moodFile(): string {
-  return FILE
+  return FILE()
 }
 
 function parseLine(line: string): { k: string; v: string } | null {
@@ -48,10 +53,10 @@ function parseLine(line: string): { k: string; v: string } | null {
 
 /** 用极简 YAML 手写/手读，避免为几行数据引依赖 */
 export function loadMood(): Mood | null {
-  if (!existsSync(FILE)) return null
+  if (!existsSync(FILE())) return null
   let text: string
   try {
-    text = readFileSync(FILE, 'utf8')
+    text = readFileSync(FILE(), 'utf8')
   } catch {
     return null
   }
@@ -119,7 +124,7 @@ export function loadMood(): Mood | null {
       const parsed = Date.parse(String(out['时间'] ?? ''))
       if (Number.isFinite(parsed) && parsed > 0) return parsed
       try {
-        return statSync(FILE).mtimeMs
+        return statSync(FILE()).mtimeMs
       } catch {
         return Date.now()
       }
@@ -151,7 +156,7 @@ export function saveMood(m: Mood): void {
         ]
       : []),
   ]
-  writeAtomic(FILE, `${lines.join('\n')}\n`)
+  writeAtomic(FILE(), `${lines.join('\n')}\n`)
 }
 
 /** 心情随时间回落到平静 */

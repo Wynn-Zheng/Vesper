@@ -51,7 +51,9 @@ console.log('\n=== 2. 精选标记 ===')
   check('好的一条被标记了', good.some((p) => p.checked), JSON.stringify(after.map((p) => ({ s: p.score, c: p.checked }))))
 
   // 文件里应该有 ★
-  const raw = readFileSync('persona/learned/plays.md', 'utf8')
+// plays.md 现在按角色卡隔离，用 playsFile() 拿真实路径
+const { playsFile } = await import('../src/learn/plays.ts')
+const raw = readFileSync(playsFile(), 'utf8')
   check('plays.md 里有 ★', raw.includes('★'), raw.split('\n').find((l) => l.includes('★')) || '（没找到）')
 
   // 再取消

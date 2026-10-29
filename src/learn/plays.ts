@@ -6,6 +6,7 @@ import type { LlmOptions } from '../llm/types.ts'
 import type { Rules } from '../core/config.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { serialized } from '../store/serialize.ts'
+import { cardScopedPath } from '../persona/card.ts'
 
 /**
  * 记住"什么话怎么接，效果如何"。
@@ -30,7 +31,11 @@ export interface Play {
   checked?: boolean
 }
 
-const FILE = 'persona/learned/plays.md'
+// 学到的说话方式是按角色走的：换卡就是换人。
+const FILE_LEGACY = 'persona/learned/plays.md'
+function FILE(): string {
+  return cardScopedPath('plays.md', FILE_LEGACY)
+}
 const MAX_KEEP = 60
 
 function today(): string {
@@ -39,15 +44,15 @@ function today(): string {
 }
 
 export function playsFile(): string {
-  return FILE
+  return FILE()
 }
 
 export function loadPlays(): Play[] {
-  if (!existsSync(FILE)) return []
+  if (!existsSync(FILE())) return []
   // 读失败（被占用/无权限）不能让整轮回复崩：这个文件是拼 prompt 时读的。
   let text = ''
   try {
-    text = readFileSync(FILE, 'utf8')
+    text = readFileSync(FILE(), 'utf8')
   } catch {
     return []
   }
@@ -88,12 +93,12 @@ export function savePlays(items: Play[]): void {
   // 现有文件里如果有解析不了的正文，先备份再覆盖 —— 
   // 之前是"解析出几条就写几条"，格式手改坏一次，历史就被 1 条盖掉。
   try {
-    if (existsSync(FILE)) {
-      const raw = readFileSync(FILE, 'utf8')
+    if (existsSync(FILE())) {
+      const raw = readFileSync(FILE(), 'utf8')
       const parsed = raw.split(/\r?\n/).filter((l) => l.trim().startsWith('- ')).length
       const usable = loadPlays().length
       if (parsed > 0 && usable === 0) {
-        copyFileSync(FILE, FILE + '.bad-' + Date.now())
+        copyFileSync(FILE(), FILE + '.bad-' + Date.now())
       }
     }
   } catch {
@@ -111,7 +116,7 @@ export function savePlays(items: Play[]): void {
     ...(bad.length ? bad.map(formatLine) : ['- （还没有）']),
     '',
   ]
-  writeAtomic(FILE, body.join('\n'))
+  writeAtomic(FILE(), body.join('\n'))
 }
 
 /** 只有明显好或明显不好的才值得记，中间的不记（没信号） */

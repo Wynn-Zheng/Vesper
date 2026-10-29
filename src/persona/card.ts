@@ -228,6 +228,35 @@ export function currentCardId(): string {
   return ''
 }
 
+// 当前卡 id 的小缓存：这些按卡隔离的文件（生活线/说话方式/黑话/心情）每条消息都要读，
+// 每次都读 current.txt 太亏。切卡时会清掉。
+let curCardCache: { id: string; at: number } | null = null
+
+export function currentCardIdCached(): string {
+  const now = Date.now()
+  if (curCardCache && now - curCardCache.at < 1000) return curCardCache.id
+  const id = currentCardId()
+  curCardCache = { id, at: now }
+  return id
+}
+
+/**
+ * 当前角色的「私有」数据文件：life / plays / jargon / mood。
+ *
+ * 换卡就是换人：这些是这个人自己的经历和学到的说法，必须跟着卡走。
+ * 没有卡的时候（老数据/异常）回退到原来的全局路径，保证不丢。
+ */
+export function cardScopedPath(name: string, globalPath: string): string {
+  const id = currentCardIdCached()
+  if (!id) return globalPath
+  return join(DIR, id, name)
+}
+
+/** 切卡后清缓存，下一次读路径立刻生效 */
+export function resetCardCache(): void {
+  curCardCache = null
+}
+
 export function listCards(): Array<{ id: string; name: string }> {
   ensureDir()
   try {
@@ -355,6 +384,34 @@ function selfHasContent(text: string): boolean {
   return body.split(/\r?\n/).some((l) => l.trim() && !l.trim().startsWith('#'))
 }
 
+/**
+ * 把老的「全局」生活线/说话方式/黑话/心情，复制到当前卡自己的目录里。
+ *
+ * 只复制不删除：老文件留着当备份，万一哪里还读它也不会空。
+ * 只在目标不存在时复制，所以重复调用是幂等的。
+ */
+export function ensureCardScopedData(): void {
+  const id = currentCardId()
+  if (!id) return
+  const dir = join(DIR, id)
+  mkdirSync(dir, { recursive: true })
+  const pairs: Array<[string, string]> = [
+    ['life.md', 'persona/life.md'],
+    ['plays.md', 'persona/learned/plays.md'],
+    ['jargon.yaml', 'persona/jargon.yaml'],
+    ['mood.yaml', 'persona/mood.yaml'],
+  ]
+  for (const [name, legacy] of pairs) {
+    const dest = join(dir, name)
+    if (existsSync(dest)) continue
+    if (!existsSync(legacy)) continue
+    try {
+      copyFileSync(legacy, dest)
+    } catch {
+      /* 复制失败就算了，下次启动再试 */
+    }
+  }
+}
 export function switchCard(id: string): { ok: boolean; error?: string } {
   const clean = String(id || '').trim()
   if (!validCardId(clean)) return { ok: false, error: '卡片 id 不合法' }
@@ -398,6 +455,7 @@ export function switchCard(id: string): { ok: boolean; error?: string } {
   // 3) 指针放最后
   try {
     writeAtomic(CURRENT, clean)
+    resetCardCache()
   } catch (e) {
     return { ok: false, error: '写 current 指针失败：' + String(e) }
   }

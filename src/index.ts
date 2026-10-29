@@ -26,6 +26,15 @@ import { watchFile } from 'node:fs'
 
 initLog()
 
+// 老版本的 life/plays/jargon/mood 是全局文件；现在按角色卡隔离。
+// 启动时把当前卡对应的那份复制到 cards/<id>/ 下（只复制，不删原文件）。
+try {
+  const { ensureCardScopedData } = await import('./persona/card.ts')
+  ensureCardScopedData()
+} catch {
+  /* 迁移失败不挡启动 */
+}
+
 // 清理上次被强杀留下的临时文件（writeAtomic 的 .tmp）
 try {
   const { readdirSync, rmSync } = await import('node:fs')
