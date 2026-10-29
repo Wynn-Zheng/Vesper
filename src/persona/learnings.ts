@@ -48,8 +48,12 @@ function saveAll(list: Learning[]): void {
   writeAtomic(FILE, JSON.stringify(list, null, 2))
 }
 
-export function addLearning(text: string, kind: LearningKind, source: 'itself' | 'user'): Learning {
+export function addLearning(text: string, kind: LearningKind, source: 'itself' | 'user'): Learning | null {
   const list = loadLearnings()
+  const t = text.trim()
+  // 去重：反思每 12 小时跑一次，同一条道理会被反复"学到"
+  const dup = list.find((x) => x.text === t || x.text.includes(t) || t.includes(x.text))
+  if (dup) return null
   const item: Learning = {
     id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     text: text.trim().slice(0, 500),

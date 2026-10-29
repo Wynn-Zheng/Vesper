@@ -960,7 +960,11 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         const { addLearning, KINDS } = await import('../persona/learnings.ts')
         const kind = (KINDS as readonly string[]).includes(String(body.kind)) ? (body.kind as never) : '知识'
         const item = addLearning(text, kind, 'user')
-        json(res, 200, { ok: true, item })
+        if (!item) {
+          // 去重命中：内容已经记过了
+          json(res, 200, { ok: false, duplicate: true, error: '这条已经记过了' })
+          return
+        }
         return
       }
 

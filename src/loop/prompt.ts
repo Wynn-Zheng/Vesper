@@ -323,7 +323,7 @@ export function buildSystem(parts: PromptParts): string {
   } else if (h >= 22 || h === 0) {
     lines.push('快到睡觉的点了，有点困，但还没到撑不住。')
   }
-  lines.push('直接说你要说的话，不要加引号，不要解释你在做什么。')
+  lines.push('直接说你要说的话，不要用引号把整句包起来，不要解释你在做什么。（括号里的动作描写不算引号）')
 
   return lines.join('\n')
 }

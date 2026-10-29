@@ -1552,6 +1552,12 @@ function showGroup(g, subIndex = 0) {
   const target = document.getElementById(viewId)
   if (target) target.classList.add('on')
 
+  // 粘贴抽屉挂在 body 上，不随页面切换消失：离开自我页就收掉
+  if (viewId !== 'v-self') {
+    document.querySelectorAll('.self-drawer,.self-drawer-mask').forEach((n) => n.remove())
+    if (typeof SELF_PASTE_OPEN !== 'undefined') SELF_PASTE_OPEN = false
+  }
+
   const bar = $('group-tabs')
   if (bar) {
     bar.innerHTML = ''
@@ -2648,8 +2654,9 @@ let SELF_PARSE = null
 let SELF_PASTE_OPEN = false
 
 async function newSelfCard() {
-  const name = prompt('新角色卡叫什么名字？（之后也能改）', '新角色')
-  if (name === null) return
+  // 不用原生 prompt()：Electron 桌面版禁用，点了会毫无反应
+  const name = await askText('新角色卡叫什么名字？（之后也能改）', '新角色')
+  if (name === null || name === undefined) return
   try {
     await sendJson('/api/card/new', { name }, 'POST')
     SELF_CARD = null
@@ -2980,8 +2987,10 @@ function renderSelfCardPage(body, d) {
 
     const side = el('div', 'self-card-birth')
     const bdParts = String(card.birthday || '').split('-')
-    const bdText =
-      bdParts.length === 3 && bdParts[0] ? bdParts[0] + ' 年 ' + Number(bdParts[1]) + ' 月 ' + Number(bdParts[2]) + ' 日' : '—'
+    const bdY = Number(bdParts[0])
+    const bdM = Number(bdParts[1])
+    const bdD = Number(bdParts[2])
+    const bdText = bdY && bdM && bdD ? bdY + ' 年 ' + bdM + ' 月 ' + bdD + ' 日' : card.birthday || '—'
     side.innerHTML = '<div class="self-kv-k">生日（第一次对话）</div><div class="self-birth">' + esc(bdText) + '</div>'
     hero.appendChild(main)
 
@@ -3181,7 +3190,8 @@ function renderSelfCardPage(body, d) {
       const dd = SELF_CARD_FORM.dI.value.trim()
       const patch = {
         name: SELF_CARD_FORM.nameI.value.trim(),
-        birthday: y && m && dd ? y + '-' + String(m).padStart(2, '0') + '-' + String(dd).padStart(2, '0') : '',
+        // 只填年份也能存（补 01-01），别因为少填两格就把生日清掉
+        birthday: y ? y + '-' + String(m || '1').padStart(2, '0') + '-' + String(dd || '1').padStart(2, '0') : '',
       }
       const p = {
         ...patch,
@@ -5592,7 +5602,12 @@ function renderPicker(person) {
       if (p.id === currentPerson) return
       currentPerson = p.id
       localStorage.setItem('qqbot-person', currentPerson)
-      // 换了个人，当前页面上的东西基本都变了：整组重新拉一遍
+      // 换人 = 换关系：自我页缓存的关系/秘密/学习必须作废
+      SELF_REL = null
+      SELF_REL_ERR = null
+      SELF_CARD = null
+      SELF_SECRETS = null
+      SELF_LEARNINGS = null
       loadStatus()
       runLoaders(activeView())
       toast('已切换到 ' + (p.name || p.id))
