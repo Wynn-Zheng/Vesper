@@ -5,7 +5,7 @@ import { scoreReply } from './loop/score.ts'
 import { decideQuote, QUOTE_THRESHOLD } from './loop/quote.ts'
 import { decayedMood, loadMood } from './persona/mood.ts'
 import { info, warnAt } from './core/log.ts'
-import { allow } from './core/ratelimit.ts'
+import { allow, hit, peek } from './core/ratelimit.ts'
 import type { Transport } from './core/transport.ts'
 import type { Incoming } from './core/types.ts'
 import type { LlmOptions } from './llm/types.ts'
@@ -275,9 +275,12 @@ export function boot(transport: Transport, opts: BootOptions): void {
       return
     }
 
-    // 限流按"轮"算，不按消息算：连发五条算一轮，不该耗五次额度
+    // 限流按"轮"算，不按消息算：连发五条算一轮，不该耗五次额度。
+    // 只 peek 不计数 —— 计数放到"真要回"之前，不然被判"不回"的轮也白吃额度，
+    // 用户看到的就是"@ 了也不理"。键里带上会话，群里刷屏不再吃私聊的额度。
     const senderKey = m.senderId ?? m.from.id
-    if (!allow(`u:${senderKey}`, rules.行为.每分钟上限)) {
+    const rateKey = `u:${scopeOf(m.from)}:${senderKey}`
+    if (!peek(rateKey, rules.行为.每分钟上限)) {
       warnAt(`触发限流，丢弃：${who}`)
       return
     }
@@ -358,10 +361,12 @@ export function boot(transport: Transport, opts: BootOptions): void {
         return
       }
 
-      if (m.from.kind === 'group' && !allow(`g:${m.from.id}`, rules.行为.群每分钟上限)) {
+      if (m.from.kind === 'group' && !allow('g:' + m.from.id, rules.行为.群每分钟上限)) {
         info(`群 ${m.from.id} 触发限速，这条不发`)
         return
       }
+      // 真的要回了，才记一次用户额度
+      hit(rateKey)
 
       // 要不要引用对方那句。
       //
