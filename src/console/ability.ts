@@ -13,7 +13,7 @@
  * 分组：交流 / 感知 / 行动 —— 按"它跟外界怎么交互"分，
  * 记忆和内心不在这里（那些属于「自我」）。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 
@@ -107,8 +107,6 @@ function usageStats(): Map<string, { count: number; last: number; recent: Array<
 
 function readdirSafe(p: string): string[] {
   try {
-    // 用 readFileSync 的方式不稳，这里直接用 fs 的 readdirSync
-    const { readdirSync } = require('node:fs') as typeof import('node:fs')
     return readdirSync(p)
   } catch {
     return []

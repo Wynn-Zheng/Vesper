@@ -1627,7 +1627,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 这是"它动了你的鼠标"的记录，性质不一样。
       if (req.method === 'GET' && path === '/api/desktop/log') {
         const { readDesktopLog } = await import('../tools/desktop-log.ts')
-        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 50)))
+        const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 50) || 50))
         json(res, 200, { rows: readDesktopLog(limit) })
         return
       }

@@ -234,7 +234,7 @@ export async function handleMiscApi(
   // NapCat 自己不写日志文件（logs/ 目录一直是空的），cmd 窗口的输出只在屏幕上。
   // 启动脚本里加了 Tee-Object，会同时写一份到 <NapCat目录>/napcat-console.log。
   if (method === 'GET' && path === '/api/napcat/console') {
-    const limit = Math.min(2000, Math.max(1, Number(_url.searchParams.get('lines') ?? 200)))
+    const limit = Math.min(2000, Math.max(1, Number(_url.searchParams.get('lines') ?? 200) || 200))
     const f = NC.logFile()
 
     if (!f) {

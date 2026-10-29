@@ -115,7 +115,7 @@ export async function handleTestApi(
         personId: personId || `qq-${process.env['OWNER_QQ'] ?? ''}`,
         scope,
         query: String(body.query ?? ''),
-        limit: Math.min(20, Math.max(1, Number(body.limit ?? 8))),
+        limit: Math.min(20, Math.max(1, Number(body.limit ?? 8) || 8)),
         weights: rules.记忆.检索.权重,
       })
 

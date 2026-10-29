@@ -7,7 +7,7 @@
  * 这里记的是：模型想干什么、参数是什么、你批没批、结果如何。
  * 排查"它为什么点了那个地方"时看这份。
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 const FILE = join('data', 'desktop-log.jsonl')
@@ -43,9 +43,7 @@ function pruneIfNeeded(): void {
     if (lines.length <= MAX_LINES) return
     // 只留后面一半：一次裁 1000 行，不用每写一行都重写整个文件
     const keep = lines.slice(-Math.floor(MAX_LINES / 2))
-    appendFileSync(FILE, '', 'utf8')
-    // 用 writeFileSync 覆盖（这里引入一次，不常走到）
-    const { writeFileSync } = require('node:fs') as typeof import('node:fs')
+    writeFileSync(FILE, `${keep.join('\n')}\n`, 'utf8')
     writeFileSync(FILE, `${keep.join('\n')}\n`, 'utf8')
   } catch {
     /* 裁不掉就算了，继续追加 */

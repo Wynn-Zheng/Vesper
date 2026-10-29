@@ -190,7 +190,7 @@ export async function handleMemberApi(
   /* ============ 抽屉：一个人的历史对话 ============ */
   if (method === 'GET' && path === '/api/member/chat') {
     const id = url.searchParams.get('id') ?? ''
-    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 60)))
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 60) || 60))
     const { isValidPersonId, loadPerson } = await import('../people/store.ts')
     if (!isValidPersonId(id)) {
       json(res, 400, { error: 'id 不对' })
