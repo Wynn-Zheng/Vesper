@@ -97,7 +97,18 @@ export function decayRelation(rules: Rules, personId: string, now = Date.now(), 
   const grace = graceDaysOf(rules, stage.名)
   if (days < grace) return { changed: false, days, delta: 0 }
 
-  const baseAmount = Math.floor((days - grace) / 3) + 1
+  // 按「增量」扣，不是每天把累积值重扣一遍。
+  // 设计语义：每多 3 天多扣 1 点、单次最多 3。
+  // 之前直接拿「距最后说话的天数」算 baseAmount，每天调度器跑一次就重扣一次累积量，
+  // 朋友阶段静默 20 天能掉几十点 —— 比设计快好几倍。
+  const decayAnchors = state.anchors.filter((a) => a.event.includes('天没说话'))
+  const lastAnchor = decayAnchors[decayAnchors.length - 1]
+  let alreadyDeducted = 0
+  if (lastAnchor) {
+    const prevDays = (Date.parse(lastAnchor.date) - lastTalkAt) / DAY
+    if (prevDays >= grace) alreadyDeducted = Math.floor((prevDays - grace) / 3) + 1
+  }
+  const baseAmount = Math.max(0, Math.floor((days - grace) / 3) + 1 - alreadyDeducted)
   // 强关系抗衰减：60 分以上每次只掉一半
   const scaled = state.closeness >= 60 ? Math.max(1, Math.ceil(baseAmount / 2)) : baseAmount
   const amount = Math.min(3, scaled, Math.max(0, Math.ceil(state.closeness - 3)))

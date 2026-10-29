@@ -324,9 +324,12 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const relation = loadRelation(personId)
   const stage = stageOf(rules, relation.closeness)
 
-  // 只看这个人的消息：别人在说话不代表你在和他聊
+  // 窗口要覆盖阶段的主动间隔：陌生/眼熟是 30/14 天，只看 3 天的话
+  // lastTalkAt 会变成 0，间隔门失效 → 对方 4 天前说过话也可能被主动。
+  const minGapH = Number((stage as { 主动间隔小时?: number }).主动间隔小时) || 24
+  const windowDays = Math.max(3, Math.ceil(minGapH / 24) + 2)
   const accounts = accountIdsOf(personId)
-  const raw = recentRaw(3).filter((t) =>
+  const raw = recentRaw(windowDays).filter((t) =>
     t.senderId ? accounts.includes(t.senderId) : accounts.some((a) => t.scope === `private:${a}`),
   )
   const lastTalkAt = raw.reduce((max, t) => Math.max(max, t.ts), 0)
