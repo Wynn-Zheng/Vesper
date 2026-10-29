@@ -5,9 +5,12 @@ import type { Rules, StageRule } from '../core/config.ts'
 import { stageOf } from '../core/config.ts'
 
 import { writeAtomic } from '../store/fs.ts'
+import * as cardModule from '../persona/card.ts'
 import { EMPTY_RELATION, type Anchor, type DimensionEvent, type RelationState } from './types.ts'
 
 let ROOT = 'persona/people'
+/** 测试里用 setRelationRoot 覆盖过目录时，不能再去拼角色卡路径 */
+let rootOverridden = false
 
 /** 锚点 / 维度事件的保留上限，防止文件无限长 */
 export const MAX_ANCHORS = 200
@@ -20,6 +23,7 @@ const CLOSENESS_MAX = 100
 /** 测试用 */
 export function setRelationRoot(p: string): void {
   ROOT = p
+  rootOverridden = true
 }
 
 function finiteNumber(v: unknown, fallback: number): number {
@@ -36,7 +40,20 @@ function asArray<T>(v: unknown): T[] {
 }
 
 function relationFile(personId: string): string {
-  return join(ROOT, personId, 'relation.yaml')
+  // 同一个好友，不同角色卡眼里的关系深浅不一样 —— 按卡再分一层
+  if (rootOverridden) return join(ROOT, personId, 'relation.yaml')
+  // 同一个好友，不同角色卡眼里的关系深浅不一样 —— 按卡再分一层
+  return cardScopedRelation(personId, 'relation.yaml', join(ROOT, personId, 'relation.yaml'))
+}
+
+/** relation 的按卡路径（没有卡时回退老路径） */
+function cardScopedRelation(personId: string, name: string, fallback: string): string {
+  try {
+    const { personScopedPath } = cardModule
+    return personScopedPath(personId, name, fallback)
+  } catch {
+    return fallback
+  }
 }
 
 export function relationPath(personId: string): string {

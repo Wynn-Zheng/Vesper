@@ -2,18 +2,30 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:f
 import { join } from 'node:path'
 import { similarity } from '../core/text.ts'
 import { appendJsonl, readJsonl, writeAtomic } from '../store/fs.ts'
+import { cardMemoryRoot } from '../persona/card.ts'
 import type { Episode, Insight, RawTurn, Scope } from './types.ts'
 
-let ROOT = 'persona/memory'
+// 记忆根目录按角色卡走：换卡就是换人，经历/洞察/原文都是这个人的。
+// 没有卡或测试覆盖时回退到老路径。
+let rootOverride: string | null = null
 
 /** 测试用：把记忆根目录指向临时目录 */
 export function setMemoryRoot(p: string): void {
-  ROOT = p
+  rootOverride = p
   epCache = null
 }
 
+function currentRoot(): string {
+  if (rootOverride) return rootOverride
+  try {
+    return cardMemoryRoot()
+  } catch {
+    return 'persona/memory'
+  }
+}
+
 export function memoryRoot(): string {
-  return ROOT
+  return currentRoot()
 }
 
 export function today(): string {
@@ -29,7 +41,7 @@ function ensure(p: string): string {
 /* ---------------- raw ---------------- */
 
 function rawFile(date = today()): string {
-  return join(ROOT, 'raw', `${date}.jsonl`)
+  return join(currentRoot(), 'raw', `${date}.jsonl`)
 }
 
 export function appendRaw(turn: RawTurn): void {
@@ -67,11 +79,11 @@ export function recentRaw(days = 7): RawTurn[] {
 /* ---------------- episodes ---------------- */
 
 function episodeDir(scope: Scope): string {
-  if (scope === 'shared') return join(ROOT, 'episodes', 'shared')
+  if (scope === 'shared') return join(currentRoot(), 'episodes', 'shared')
   const idx = scope.indexOf(':')
   const kind = scope.slice(0, idx)
   const id = scope.slice(idx + 1)
-  return join(ROOT, 'episodes', kind === 'group' ? `group-${id}` : `private-${id}`)
+  return join(currentRoot(), 'episodes', kind === 'group' ? `group-${id}` : `private-${id}`)
 }
 
 function parseFrontmatter(text: string): Record<string, string> {
@@ -163,7 +175,7 @@ export function loadEpisodes(): Episode[] {
 }
 
 function readEpisodes(): Episode[] {
-  const base = join(ROOT, 'episodes')
+  const base = join(currentRoot(), 'episodes')
   if (!existsSync(base)) return []
   const out: Episode[] = []
   for (const dir of readdirSync(base, { withFileTypes: true })) {
@@ -198,7 +210,7 @@ function readEpisodes(): Episode[] {
  * 35 是留出余量后的最小安全值。
  */
 export function pruneRaw(keepDays = 35): number {
-  const base = join(ROOT, 'raw')
+  const base = join(currentRoot(), 'raw')
   if (!existsSync(base)) return 0
   const cutoff = Date.now() - Math.max(1, keepDays) * 86_400_000
   let removed = 0
@@ -220,7 +232,7 @@ export function pruneRaw(keepDays = 35): number {
 /* ---------------- insights ---------------- */
 
 function insightsFile(): string {
-  return join(ROOT, 'insights.jsonl')
+  return join(currentRoot(), 'insights.jsonl')
 }
 
 /** 同一条看法换个说法也算重复（0.75 只抓"基本一样的句子"） */

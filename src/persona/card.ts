@@ -8,7 +8,7 @@
  * 文件格式：frontmatter 放名字/生日/开关，正文按二级标题分节。
  * 没有卡时 ensureDefaultCard() 会从 self.md 的名字生成一张空卡。
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
 import { warnAt } from '../core/log.ts'
@@ -246,6 +246,22 @@ export function currentCardIdCached(): string {
  * 换卡就是换人：这些是这个人自己的经历和学到的说法，必须跟着卡走。
  * 没有卡的时候（老数据/异常）回退到原来的全局路径，保证不丢。
  */
+/**
+ * 「某个人」和「某个角色」的关系文件：relation.yaml / impression.md。
+ *
+ * 同一个 QQ 好友，在不同角色卡眼里是不同的人（关系深浅、印象都不同），
+ * 所以按卡再分一层；没有卡时回退到老路径。
+ */
+export function personScopedPath(personId: string, name: string, fallback: string): string {
+  const id = currentCardIdCached()
+  if (!id) return fallback
+  return join('persona', 'people', personId, 'cards', id, name)
+}
+
+/** 当前角色的记忆根目录（episodes / insights / raw 都在这下面） */
+export function cardMemoryRoot(): string {
+  return cardScopedPath('memory', 'persona/memory')
+}
 export function cardScopedPath(name: string, globalPath: string): string {
   const id = currentCardIdCached()
   if (!id) return globalPath
@@ -410,6 +426,37 @@ export function ensureCardScopedData(): void {
     } catch {
       /* 复制失败就算了，下次启动再试 */
     }
+  }
+  const memDest = join(dir, 'memory')
+  if (!existsSync(memDest) && existsSync('persona/memory')) {
+    try {
+      cpSync('persona/memory', memDest, { recursive: true })
+    } catch {
+      /* 下次启动再试 */
+    }
+  }
+
+  // 每个人和这个角色的关系/印象：按人复制到 people/<id>/cards/<card>/
+  try {
+    const peopleRoot = 'persona/people'
+    for (const e of readdirSync(peopleRoot, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue
+      const srcDir = join(peopleRoot, e.name)
+      const destDir = join(srcDir, 'cards', id)
+      for (const f of ['relation.yaml', 'impression.md']) {
+        const src = join(srcDir, f)
+        const dest = join(destDir, f)
+        if (existsSync(dest) || !existsSync(src)) continue
+        try {
+          mkdirSync(destDir, { recursive: true })
+          copyFileSync(src, dest)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  } catch {
+    /* people 目录不存在就算了 */
   }
 }
 export function switchCard(id: string): { ok: boolean; error?: string } {

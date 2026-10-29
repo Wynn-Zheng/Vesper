@@ -13,7 +13,7 @@
  * 不该在触发的那一秒现想。
  */
 import { existsSync, mkdirSync } from 'node:fs'
-import { cardScopedPath } from '../persona/card.ts'
+import { cardScopedPath, personScopedPath } from '../persona/card.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
@@ -150,5 +150,6 @@ export function willFile(): string {
 }
 
 export function impressionFileOf(personId: string): string {
-  return join('persona', 'people', personId, 'impression.md')
+  // 印象也按角色卡分：同一个好友，不同角色眼里的印象不一样
+  return personScopedPath(personId, 'impression.md', join('persona', 'people', personId, 'impression.md'))
 }
