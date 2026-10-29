@@ -112,6 +112,31 @@ function splitKV(line: string): { key: string; value: string } | null {
   return { key: m[1]!.trim(), value: m[2]!.trim() }
 }
 
+/** 裸标题：整行就是别名（外貌 / 基础身份 / 喜好…），不带 # 和冒号 */
+function bareHeading(line: string): string | null {
+  const t = line.trim()
+  if (!t || t.length > 12) return null
+  if (/[：:→]/.test(t)) return null
+  const k = normKey(t)
+  if (!k) return null
+  return ALIAS[k] || REACTION_ALIAS[k] ? k : null
+}
+
+/** 箭头行：被夸 → 「哦。」…… （很多角色卡用箭头写反应） */
+function splitArrow(line: string): { key: string; value: string } | null {
+  const m = /^\s*(?:[-*]\s*)?([^→:：]{1,12})\s*→\s*(.+)$/.exec(line)
+  if (!m) return null
+  return { key: m[1]!.trim(), value: m[2]!.trim() }
+}
+
+/** 空白分隔的键值：核心特质    混世小魔头… （表格复制常见） */
+function splitSpaceKV(line: string): { key: string; value: string } | null {
+  const m = /^\s*([^\s：:]{1,12})\s{2,}(.+)$/.exec(line)
+  if (!m) return null
+  return { key: m[1]!.trim(), value: m[2]!.trim() }
+}
+
+
 /** 标题行：## 外貌 / 【外貌】 / [外貌] / 外貌: */
 function headingKey(line: string): string | null {
   const t = line.trim()
@@ -161,9 +186,50 @@ export function parseCardText(text: string): ParsedCard {
 
   for (const raw of lines) {
     const line = raw.trimEnd()
-    if (!line.trim()) {
-      if (cur === 'appearance' || cur === 'identity') continue
+    // 0) 噪音：从别的 UI 复制时带的按钮字、表格表头
+    if (!line.trim()) continue
+
+    const noise = line.trim()
+    if (/^(复制|复制代码|复制全部|格\s+填什么|字段\s*填什么)$/.test(noise)) continue
+    if (/^(建议|注[:：]|说明[:：])/.test(noise)) {
+      rest.push(noise)
       continue
+    }
+
+    // 0.5) 裸标题：整行就是别名（外貌 / 基础身份 / 喜好…）
+    const bh = bareHeading(line)
+    if (bh && !splitKV(line) && !splitArrow(line)) {
+      cur = ALIAS[bh] ?? (REACTION_ALIAS[bh] ? 'r:' + REACTION_ALIAS[bh] : null)
+      continue
+    }
+
+
+    // 2.5) 空白分隔的键值 / 箭头（表格复制常见）
+    const sk = splitSpaceKV(line)
+    if (sk) {
+      const k2 = normKey(sk.key)
+      const t2 = ALIAS[k2]
+      const r2 = REACTION_ALIAS[k2]
+      if (t2 || r2) {
+        if (t2) {
+          pushValue(t2, sk.value)
+          cur = t2
+        } else {
+          pushValue('r:' + r2, sk.value)
+          cur = 'r:' + r2
+        }
+        continue
+      }
+    }
+    const ar = splitArrow(line)
+    if (ar) {
+      // 任意场景名都收（用户常写「被夸 / 被凶 / 深夜」这种自由场景）
+      const k3 = normKey(ar.key)
+      if (k3) {
+        pushValue('r:' + k3, ar.value)
+        cur = 'r:' + k3
+        continue
+      }
     }
 
     // 1) 标题行

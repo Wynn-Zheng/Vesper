@@ -372,10 +372,17 @@ export function cardPromptBlock(card: CharCard | null): string {
   if (card.likes.length) lines.push('- 喜欢：' + clip(card.likes.map((a) => a.trim()).filter(Boolean).join('、'), 300))
   if (card.dislikes.length) lines.push('- 讨厌：' + clip(card.dislikes.map((a) => a.trim()).filter(Boolean).join('、'), 300))
 
-  const reactions = REACTIONS.filter((k) => card.reactions[k]?.trim())
+  // 白名单场景排前面，其余场景（用户自己写的「被夸 / 深夜」）也带上：
+  // 之前只渲染白名单，粘贴进来的自定义场景全丢了。
+  const customKeys = Object.keys(card.reactions).filter((k) => card.reactions[k]?.trim())
+  const ordered = [
+    ...REACTIONS.filter((k) => customKeys.includes(k)),
+    ...customKeys.filter((k) => !(REACTIONS as readonly string[]).includes(k)),
+  ]
+  const reactions = ordered
   if (reactions.length) {
     lines.push('- 不同情境下的反应：')
-    for (const k of reactions) lines.push(`  · ${k}时：${card.reactions[k]!.trim()}`)
+    for (const k of reactions) lines.push(`  · ${k}：${card.reactions[k]!.trim()}`)
   }
 
   if (!lines.length) return ''
