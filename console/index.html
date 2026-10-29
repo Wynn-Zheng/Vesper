@@ -56,14 +56,17 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;display:flex;height:100vh;overflow:hidden}
-  aside{width:196px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
+  aside{width:200px;background:var(--sunk);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
   .brand{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
   .brand h1{font-size:15px;font-weight:600}
   .brand p{font-size:11px;color:var(--dim2);margin-top:2px}
   nav{padding:10px 8px;flex:1}
-  nav button{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;color:var(--dim);text-align:left;padding:9px 10px;border-radius:6px;cursor:pointer;font-size:13.5px;font-family:inherit}
+  nav button{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;color:var(--dim);text-align:left;padding:6px 9px;border-radius:var(--r-sm);cursor:pointer;font-size:13px;font-family:inherit;transition:background .16s var(--ease),color .16s var(--ease)}
   nav button:hover{background:var(--panel2);color:var(--text)}
-  nav button.on{background:var(--blue)22;color:var(--blue);box-shadow:inset 2px 0 0 var(--blue)}
+  nav .ico{width:15px;height:15px;flex:none;opacity:.85}
+  nav .nav-sep{height:1px;background:var(--line);margin:10px 4px}
+  nav{padding:10px 8px;display:flex;flex-direction:column;gap:1px}
+  nav button.on{background:var(--panel2);color:var(--text);box-shadow:inset 2px 0 0 var(--blue)}
   nav .ico{width:16px;text-align:center;opacity:.9}
   .foot{border-top:1px solid var(--line);padding:10px 14px;font-size:11px;color:var(--dim2)}
   .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px}
@@ -107,16 +110,14 @@
 @media (max-width:840px){.dash-hero{grid-template-columns:1fr}}
 
 .dash-main>*{position:relative;z-index:1}
-.dash-main{position:relative;overflow:hidden;border-radius:12px;padding:16px 18px 14px;display:flex;flex-direction:column;
-  background:var(--panel);
-  border:1px solid var(--line)}
+.dash-main{position:relative;overflow:hidden;border-radius:var(--r-md);padding:18px 20px 14px;display:flex;flex-direction:column;justify-content:space-between;background:var(--panel);border:1px solid var(--line)}
 .dash-label{font-size:11.5px;color:var(--dim);letter-spacing:.05em}
-.dash-value{font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1.05;margin-top:4px}
+.dash-value{font-size:40px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1.05;margin-top:4px}
 .dash-delta{font-size:11.5px;color:var(--dim2);margin-top:2px}
 .dash-spark{display:block;margin-top:6px}
-.dash-foot{margin-top:auto;padding-top:10px;border-top:1px solid rgba(56,139,253,.14);font-size:11px;color:var(--dim2);display:flex;gap:14px;flex-wrap:wrap}
+.dash-foot{margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:11px;color:var(--dim2);display:flex;gap:14px;flex-wrap:wrap}
 .dash-foot b{color:var(--dim);font-weight:600;font-variant-numeric:tabular-nums}
-.dash-side{display:grid;grid-template-rows:repeat(2,1fr);gap:16px}
+.dash-side{display:grid;grid-template-rows:repeat(2,1fr);gap:12px}
 .dash-mini{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;min-height:0}
 .dash-mini .k{font-size:11px;color:var(--dim);letter-spacing:.04em}
 .dash-mini .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;line-height:1.2}
@@ -539,13 +540,14 @@
 <aside>
   <div class="brand"><h1>QQ Bot</h1><p id="brand-sub">连接中…</p></div>
     <nav id="nav">
-    <button class="on" data-v="dashboard"><span class="ico">◎</span>仪表盘</button>
-    <button data-v="self"><span class="ico">✦</span>自我</button>
-    <button data-v="ability"><span class="ico">🧩</span>插件</button>
-    <button data-v="people"><span class="ico">◉</span>成员</button>
-    <button data-v="logs"><span class="ico">≡</span>日志</button>
-    <button data-v="settings"><span class="ico">⚙</span>设置</button>
-    <button data-v="test"><span class="ico">◐</span>测试</button>
+    <button class="on" data-v="dashboard"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>仪表盘</button>
+    <button data-v="self"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.5 14c0-3 2.5-4.6 5.5-4.6s5.5 1.6 5.5 4.6"/></svg>自我</button>
+    <button data-v="ability"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h4v2.6a1.6 1.6 0 0 0 3.2 0V2H14v4h-2.6a1.6 1.6 0 0 0 0 3.2H14V14h-4v-2.6a1.6 1.6 0 0 0-3.2 0V14H2v-4h2.6a1.6 1.6 0 0 0 0-3.2H2V2h4z"/></svg>插件</button>
+    <button data-v="people"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5.5" r="2.4"/><path d="M1.5 13.5c0-2.6 2-4 4.5-4s4.5 1.4 4.5 4"/><path d="M11 4.2a2.2 2.2 0 0 1 0 4.2M12.2 13.5c0-1.8-.8-3-2-3.6"/></svg>成员</button>
+    <button data-v="logs"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M3 8h10M3 12h6"/></svg>日志</button>
+    <div class="nav-sep"></div>
+    <button data-v="settings"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/></svg>设置</button>
+    <button data-v="test"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 1.5h4M6.5 1.5v4L3.2 12a1.4 1.4 0 0 0 1.2 2.1h7.2a1.4 1.4 0 0 0 1.2-2.1L9.5 5.5v-4"/></svg>测试</button>
   </nav>
   <div class="foot"><span class="dot" id="dot"></span><span id="conn">未连接</span></div>
 </aside>
