@@ -118,6 +118,8 @@ export function loadMood(): Mood | null {
     intensity: Number.isFinite(rawIntensity) ? Math.min(1, Math.max(0, rawIntensity)) : 0.3,
     // 老文件没有效价 → undefined，decayedMood 会按 0（平淡）处理
     ...(Number.isFinite(v) ? { valence: Math.min(1, Math.max(-1, v)) } : {}),
+    // 顶层「因为」：状态页要显示"为什么是这个情绪"
+    ...(out['因为'] ? { reason: String(out['因为']).trim().slice(0, 40) } : {}),
     // 时间缺失/写坏时不能退化成 Date.now()：那样每次 load 都算"刚发生"，心情永不衰减。
     // 退而用文件的 mtime 当写入时间；实在拿不到才当现在（至少不会显示成"刚刚"）。
     at: (() => {
@@ -143,6 +145,8 @@ export function saveMood(m: Mood): void {
     // 有效价才写这一行：老机器/老脚本读到的还是原来的三行
     ...(Number.isFinite(m.valence) ? [`效价: ${m.valence}`] : []),
     `时间: ${new Date(m.at).toISOString()}`,
+    // 顶层也要写「因为」：之前只写在 recent 里，状态页就读不到原因
+    ...(m.reason ? [`因为: ${String(m.reason).replace(/[,}{]/g, ' ').trim().slice(0, 40)}`] : []),
     ...(keepRecent.length
       ? [
           '最近:',

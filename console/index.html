@@ -3649,7 +3649,8 @@ function renderSelfLearnPage(body, d) {
   {
     const c = selfCard('学到的说话方式', plays.length ? plays.length + ' 条' : '')
     if (!plays.length) {
-      c.appendChild(selfEmpty('还没从对话里学到话术。'))
+      // 说明清楚：怎么才会出现、星标是什么——否则用户不知道有这个功能
+      c.appendChild(selfEmpty('还没从对话里学到话术。聊得多了、回得好的会自动记下来；评分高的会在列表里出现星标，点一下就是「精选」。'))
     } else {
       const all = SELF_MORE.plays ? plays : plays.slice(0, 8)
       for (const x of all) {
@@ -4817,6 +4818,8 @@ async function createPersonFromGroup(accountId, name) {
 
 // ---------- 从快照恢复群名单 ----------
 async function restoreGroups() {
+  // 会覆盖当前群名单，先确认
+  if (!confirm('从快照恢复群名单？当前的群名单会被快照里的覆盖。')) return
   try {
     const r = await sendJson('/api/action', { action: 'restoreGroups', payload: {} })
     const detail = (r['详情'] || []).join('\n')

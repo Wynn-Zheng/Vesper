@@ -300,6 +300,13 @@
         return
       }
 
+    /** 各分区的空状态说明：光写"没有"会让人以为数据丢了 */
+    const EMPTY_HINT = {
+      事实: '还没有确认过的事实。聊得多了、它觉得重要会记下来。',
+      经历: '还没有提炼出经历。等下一次「整理记忆」后才会有。',
+      待问: '没有待确认的事。',
+    }
+
       const sec = (title, items) => {
         const c = document.createElement('div')
         c.className = 'card'
@@ -311,7 +318,8 @@
         if (!items.length) {
           const e = document.createElement('div')
           e.className = 'empty'
-          e.textContent = '没有'
+          // 别只写「没有」——用户看到「聊了几条却全空」会以为坏了
+          e.textContent = EMPTY_HINT[title] || '没有'
           c.appendChild(e)
         } else {
           for (const it of items) {
