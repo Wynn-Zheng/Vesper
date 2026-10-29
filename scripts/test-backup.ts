@@ -11,6 +11,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 
 let pass = 0
 let fail = 0
@@ -141,7 +142,7 @@ console.log('\n=== 2. 导出 ===')
   check('导入经历', stats.episodes === 1)
   check('导入洞察', stats.insights === 1)
   check('导入会话', stats.sessions === 1)
-  check('导入人格文件（self）', stats.files.includes('self'), stats.files.join(','))
+  check('合并模式不覆盖人格文件（防冲掉当前 self）', !stats.files.includes('self'), stats.files.join(','))
   check('默认不导入 rules（怕冲掉手调配置）', !stats.files.includes('rules'), stats.files.join(','))
   check('导入前拍了快照', typeof stats.snapshot === 'string' && stats.snapshot.length > 0, String(stats.snapshot))
 
@@ -151,7 +152,7 @@ console.log('\n=== 2. 导出 ===')
   check('磁盘上经历恢复', store.loadEpisodes().some((e) => e.title === '聊到吉他'))
   check('磁盘上洞察恢复', store.loadInsights().length === 1)
   check('磁盘上会话恢复', session.loadSession('private:50001').turns.length === 1)
-  check('磁盘上自述恢复', readFileSync('persona/self.md', 'utf8').includes('认真听'))
+  check('合并模式磁盘上的自述保持原样', !existsSync('persona/self.md') || !readFileSync('persona/self.md', 'utf8').includes('认真听'))
   check('磁盘上没有 rules（默认跳过）', !readFileExists('persona/rules.yaml'))
   check('原文按 ts 落到今天', store.readRaw(todayKey()).length >= 1)
 
