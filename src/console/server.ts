@@ -965,7 +965,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           json(res, 200, { ok: false, duplicate: true, error: '这条已经记过了' })
           return
         }
-        return
+        json(res, 200, { ok: true, item })
       }
 
       if (req.method === 'POST' && path === '/api/learnings/drop') {

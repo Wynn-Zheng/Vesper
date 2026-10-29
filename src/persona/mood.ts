@@ -129,21 +129,24 @@ export function loadMood(): Mood | null {
 }
 
 export function saveMood(m: Mood): void {
+  // 调用方没带 recent 时保留磁盘上已有的：peek 秘密、迁移脚本只传单条心情，
+  // 之前直接把「最近的情绪」序列整个清空，prompt 里的多轮情绪上下文就没了。
+  const keepRecent = m.recent?.length ? m.recent : (loadMood()?.recent ?? [])
   const lines = [
     `情绪: ${m.emotion}`,
     `强度: ${m.intensity}`,
     // 有效价才写这一行：老机器/老脚本读到的还是原来的三行
     ...(Number.isFinite(m.valence) ? [`效价: ${m.valence}`] : []),
     `时间: ${new Date(m.at).toISOString()}`,
-    ...(m.recent?.length
+    ...(keepRecent.length
       ? [
           '最近:',
-          ...m.recent.map((r) => {
-            const v = Number.isFinite(r.valence) ? `, 效价: ${r.valence}` : ''
-            const base = `- { 情绪: ${r.emotion}, 强度: ${r.intensity}${v}, 时间: ${new Date(r.at).toISOString()}`
-            // reason 里可能有逗号/花括号，落盘前把会破坏解析的字符换掉
+          ...keepRecent.map((r) => {
+            const v = Number.isFinite(r.valence) ? ', 效价: ' + r.valence : ''
+            const base =
+              '- { 情绪: ' + r.emotion + ', 强度: ' + r.intensity + v + ', 时间: ' + new Date(r.at).toISOString()
             const why = r.reason?.replace(/[,}{]/g, ' ').trim().slice(0, 40)
-            return why ? `${base}, 因为: ${why} }` : `${base} }`
+            return why ? base + ', 因为: ' + why + ' }' : base + ' }'
           }),
         ]
       : []),

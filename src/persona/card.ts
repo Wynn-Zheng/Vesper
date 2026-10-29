@@ -272,8 +272,28 @@ export function saveCard(card: CharCard): void {
 export function ensureDefaultCard(fallbackName: string): CharCard {
   const cur = loadCard()
   if (cur) return cur
+  // 只有「从来没有过卡」时才建默认卡。current.txt 缺失/指向已删的卡时，
+  // 之前每次 GET /api/card 都重写一遍 cards/default.md —— 用户编辑过的默认卡
+  // 刷新页面就被清空，而且指针一直不写，对话里根本不用这张卡。
+  if (existsSync(cardPath('default'))) {
+    const existing = loadCard('default')
+    if (existing) {
+      // 已经在磁盘上：只补指针，不重写内容
+      try {
+        writeAtomic(CURRENT, 'default')
+      } catch {
+        /* 写不了指针也不影响读 */
+      }
+      return existing
+    }
+  }
   const card: CharCard = { ...EMPTY_CARD('default'), name: fallbackName || '' }
   saveCard(card)
+  try {
+    writeAtomic(CURRENT, 'default')
+  } catch {
+    /* ignore */
+  }
   return card
 }
 
