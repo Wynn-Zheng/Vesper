@@ -2788,12 +2788,17 @@ function renderPasteDrawer() {
   document.body.appendChild(drawer)
 }
 
+/** 关系数据加载状态：null=没试过 / 加载中 / 错误文案 */
+let SELF_REL_ERR = null
+
 async function loadSelfRelation() {
   try {
     const r = await api('/api/status')
     SELF_REL = r.relation || null
-  } catch {
-    SELF_REL = null
+    SELF_REL_ERR = null
+  } catch (e) {
+    // 记下原因，别让 renderSelfV2 再触发一次加载（会无限循环）
+    SELF_REL_ERR = e && e.message ? e.message : '加载失败'
   }
   renderSelfV2()
 }
@@ -2924,8 +2929,23 @@ function renderSelfV2() {
   }
   if (SELF_TAB === 'status') {
     if (!SELF_REL) {
-      body.appendChild(el('div', 'self-empty', '关系数据加载中…'))
-      void loadSelfRelation()
+      if (SELF_REL_ERR && SELF_REL_ERR !== '加载中') {
+        // 失败过就停住，给个手动重试 —— 自动重试会死循环
+        const box = el('div', 'self-empty', '关系数据加载失败：' + SELF_REL_ERR)
+        const retry = el('button', 'mini-btn', '重试')
+        retry.onclick = () => {
+          SELF_REL_ERR = null
+          void loadSelfRelation()
+        }
+        box.appendChild(retry)
+        body.appendChild(box)
+      } else {
+        body.appendChild(el('div', 'self-empty', '关系数据加载中…'))
+        if (!SELF_REL_ERR) {
+          SELF_REL_ERR = '加载中'
+          void loadSelfRelation()
+        }
+      }
       return
     }
     renderSelfStatusPage(body, d)
@@ -3079,24 +3099,24 @@ function renderSelfCardPage(body, d) {
     c.appendChild(head)
 
     const list = el('div', 'self-form')
-    for (const a of card.actions) {
+    card.actions.forEach((a, idx) => {
       const row = el('div', 'self-field')
       const inp = el('input', 'self-input')
       inp.value = a
       inp.placeholder = '说话时会做的小动作'
+      // 用下标定位：用值定位的话，改一个字之后 indexOf 就再也找不到原值了
       inp.oninput = () => {
-        const i = card.actions.indexOf(a)
-        if (i >= 0) card.actions[i] = inp.value
+        card.actions[idx] = inp.value
       }
       row.appendChild(inp)
       const x = el('button', 'self-mini-x', '×')
       x.onclick = () => {
-        card.actions = card.actions.filter((v) => v !== a)
+        card.actions.splice(idx, 1)
         saveSelfCard({ actions: card.actions })
       }
       row.appendChild(x)
       list.appendChild(row)
-    }
+    })
     c.appendChild(list)
 
     const acts = el('div', 'self-acts')
@@ -3481,7 +3501,10 @@ function renderSelfLearnPage(body, d) {
 function renderSelfExpPage(body, d) {
   const episodes = d.episodes || []
   const life = d.life || []
-  const today = new Date().toISOString().slice(0, 10)
+  // 用本地日期：toISOString 是 UTC，东八区凌晨会差一天
+  const nowD = new Date()
+  const today =
+    nowD.getFullYear() + '-' + String(nowD.getMonth() + 1).padStart(2, '0') + '-' + String(nowD.getDate()).padStart(2, '0')
 
   // 今天干了什么（生活线里今天的条目）
   {

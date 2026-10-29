@@ -8,7 +8,7 @@
  *
  * 所以"看"是有代价的 —— 这是这个功能的设计意图，不是 bug。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import { writeAtomic } from '../store/fs.ts'
 
 const FILE = 'persona/secrets.json'
@@ -23,12 +23,18 @@ export interface Secret {
 }
 
 export function loadSecrets(): Secret[] {
+  if (!existsSync(FILE)) return []
   try {
-    if (!existsSync(FILE)) return []
     const raw = JSON.parse(readFileSync(FILE, 'utf8'))
-    if (!Array.isArray(raw)) return []
+    if (!Array.isArray(raw)) throw new Error('不是数组')
     return raw.filter((s) => s && typeof s.id === 'string' && typeof s.text === 'string') as Secret[]
   } catch {
+    // 文件坏了：先留一份后缀备份再当空，避免下次写入把原数据彻底覆盖
+    try {
+      copyFileSync(FILE, FILE + '.bad-' + Date.now())
+    } catch {
+      /* 备份不了就算了 */
+    }
     return []
   }
 }
@@ -39,7 +45,7 @@ function saveAll(list: Secret[]): void {
 
 export function addSecret(text: string): Secret {
   const list = loadSecrets()
-  const s: Secret = { id: 's' + Date.now().toString(36), text, at: Date.now() }
+  const s: Secret = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text, at: Date.now() }
   list.push(s)
   saveAll(list)
   return s

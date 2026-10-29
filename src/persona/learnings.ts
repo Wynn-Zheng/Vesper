@@ -8,7 +8,7 @@
  * 和「学到的说话方式」(plays) 的区别：plays 是从"回得好的对话"里统计出来的话术；
  * learnings 是它主动记下的知识/道理/方法，更接近笔记。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import { writeAtomic } from '../store/fs.ts'
 
 const FILE = 'persona/learnings.json'
@@ -29,12 +29,17 @@ export interface Learning {
 }
 
 export function loadLearnings(): Learning[] {
+  if (!existsSync(FILE)) return []
   try {
-    if (!existsSync(FILE)) return []
     const raw = JSON.parse(readFileSync(FILE, 'utf8'))
-    if (!Array.isArray(raw)) return []
+    if (!Array.isArray(raw)) throw new Error('不是数组')
     return raw.filter((x) => x && typeof x.text === 'string') as Learning[]
   } catch {
+    try {
+      copyFileSync(FILE, FILE + '.bad-' + Date.now())
+    } catch {
+      /* 备份不了就算了 */
+    }
     return []
   }
 }
@@ -46,7 +51,7 @@ function saveAll(list: Learning[]): void {
 export function addLearning(text: string, kind: LearningKind, source: 'itself' | 'user'): Learning {
   const list = loadLearnings()
   const item: Learning = {
-    id: 'l' + Date.now().toString(36),
+    id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     text: text.trim().slice(0, 500),
     kind: KINDS.includes(kind) ? kind : '知识',
     source,

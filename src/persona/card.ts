@@ -11,6 +11,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
+import { warnAt } from '../core/log.ts'
 
 const DIR = 'persona/cards'
 const CURRENT = join(DIR, 'current.txt')
@@ -202,7 +203,15 @@ function cardPath(id: string): string {
  * 切一次多一张，越滚越多。所以 id 里不允许出现 .self，也不允许路径分隔符。
  */
 function validCardId(id: string): boolean {
-  return !!id && !id.endsWith('.self') && !id.includes('/') && !id.includes('\\\\')
+  const v = String(id || '').trim()
+  if (!v || v.length > 64) return false
+  // .self 后缀（Windows 大小写不敏感，x.SELF 和 x.self 是同一个文件）
+  if (v.toLowerCase().endsWith('.self')) return false
+  // 路径分隔符和 .. 一律拒绝：否则 join 归一化后会写到 cards 目录外面
+  if (/[\\/]/.test(v) || v.includes('..') || v.includes(':')) return false
+  // Windows 保留设备名
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(v)) return false
+  return true
 }
 
 /** 当前卡片 id（没有就返回空串） */
@@ -223,7 +232,7 @@ export function listCards(): Array<{ id: string; name: string }> {
   ensureDir()
   try {
     return readdirSync(DIR)
-      .filter((f) => f.endsWith('.md') && !f.endsWith('.self.md'))
+      .filter((f) => /\.md$/i.test(f) && !/\.self\.md$/i.test(f))
       .map((f) => {
         const id = f.slice(0, -3)
         let name = id
@@ -252,8 +261,8 @@ export function loadCard(id?: string): CharCard | null {
 
 export function saveCard(card: CharCard): void {
   ensureDir()
+  if (!validCardId(card.id)) throw new Error('角色卡 id 不合法：' + card.id)
   writeAtomic(cardPath(card.id), renderCard(card))
-  if (currentCardId() !== card.id) writeAtomic(CURRENT, card.id)
 }
 
 /**
@@ -313,45 +322,65 @@ export function cardPromptBlock(card: CharCard | null): string {
  *
  * 这样每张卡有自己的名字和自述，互不覆盖。
  */
+/** self.md 里有没有实质内容（空模板不算，免得覆盖掉旧归档） */
+function selfHasContent(text: string): boolean {
+  if (/我·[^:]+:\s*\S/.test(text)) return true
+  const body = text.replace(/^---[\s\S]*?---\s*/, '')
+  return body.split(/\r?\n/).some((l) => l.trim() && !l.trim().startsWith('#'))
+}
+
 export function switchCard(id: string): { ok: boolean; error?: string } {
-  const cur = currentCardId()
-  if (!validCardId(id)) return { ok: false, error: '卡片 id 不合法' }
-  const target = loadCard(id)
+  const clean = String(id || '').trim()
+  if (!validCardId(clean)) return { ok: false, error: '卡片 id 不合法' }
+  const target = loadCard(clean)
   if (!target) return { ok: false, error: '没有这张卡' }
-  if (cur === id) return { ok: true }
+
+  const cur = currentCardId()
+  if (cur === clean) return { ok: true }
 
   const SELF = 'persona/self.md'
   ensureDir()
+
+  // 1) 归档当前 self.md —— 短自述也要归档（之前用长度启发式，短的自述会丢）
   try {
-    // 只归档"有内容"的 self.md。
-    // 踩过的坑：切到新卡时 self.md 会被清成空模板，再切回来时
-    // 这个空文件把之前好的归档覆盖掉，用户的特征和自述就没了。
-    if (cur && existsSync(SELF)) {
+    if (existsSync(SELF)) {
       const text = readFileSync(SELF, 'utf8')
-      const meaningful = /我·[^:]+:/.test(text) || /^#\s+\S/m.test(text) || text.length > 120
-      if (meaningful) copyFileSync(SELF, join(DIR, cur + '.self.md'))
+      if (cur) {
+        const saved = join(DIR, cur + '.self.md')
+        // 有内容就覆盖；没内容且已有归档时，保留旧归档（别用空模板砸掉）
+        if (selfHasContent(text) || !existsSync(saved)) copyFileSync(SELF, saved)
+      } else {
+        // current 指针脏/缺失：不知道该归给哪张卡，单独存一份，绝不丢
+        copyFileSync(SELF, join(DIR, '_orphan.self.md'))
+      }
     }
-  } catch {
-    /* 归档失败不阻断切换 */
+  } catch (e) {
+    warnAt('切换角色卡：归档 self.md 失败', { err: String(e) })
   }
+
+  // 2) 恢复目标卡的 self.md
   try {
-    const saved = join(DIR, id + '.self.md')
-    if (existsSync(saved)) {
-      copyFileSync(saved, SELF)
-    } else {
-      // 新卡：从零开始，名字用卡上的名字
-      writeAtomic(SELF, '---\n名字: ' + (target.name || '') + '\n---\n\n# 我是谁\n\n')
-    }
-  } catch {
-    /* 恢复失败也不阻断 */
+    const saved = join(DIR, clean + '.self.md')
+    if (existsSync(saved)) copyFileSync(saved, SELF)
+    else writeAtomic(SELF, '---\n名字: ' + (target.name || '') + '\n---\n\n# 我是谁\n\n')
+  } catch (e) {
+    // 恢复失败就别改指针了，否则卡和 self.md 会错位
+    warnAt('切换角色卡：恢复 self.md 失败', { err: String(e) })
+    return { ok: false, error: '恢复 self.md 失败：' + String(e) }
   }
-  writeAtomic(CURRENT, id)
+
+  // 3) 指针放最后
+  try {
+    writeAtomic(CURRENT, clean)
+  } catch (e) {
+    return { ok: false, error: '写 current 指针失败：' + String(e) }
+  }
   return { ok: true }
 }
 
 /** 新建一张空卡（名字可给），并切成当前卡 */
 export function createCard(name: string): CharCard {
-  const id = 'card' + Date.now().toString(36)
+  const id = 'card' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   const card: CharCard = { ...EMPTY_CARD(id), name: name.trim() }
   saveCard(card)
   return card

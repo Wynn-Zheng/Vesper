@@ -139,7 +139,7 @@ export function parseCardText(text: string): ParsedCard {
 
   const pushValue = (target: string, value: string): void => {
     if (!value) return
-    if (target === 'name') out.name = (out.name ? out.name + ' ' : '') + value
+    if (target === 'name') { if (!out.name) out.name = value }
     else if (target === 'appearance') out.appearance = out.appearance ? out.appearance + '\n' + value : value
     else if (target === 'identity') out.identity = out.identity ? out.identity + '\n' + value : value
     else if (target === 'core') out.traits.core = out.traits.core ? out.traits.core + '，' + value : value
@@ -151,7 +151,8 @@ export function parseCardText(text: string): ParsedCard {
     else if (target === 'likes') out.likes.push(value)
     else if (target === 'dislikes') out.dislikes.push(value)
     else if (target === 'reactions') {
-      /* 组标题，本身没内容 */
+      // 组标题下没写场景名的裸文本：别丢，留给用户手动放
+      rest.push(value)
     } else if (target.startsWith('r:')) {
       const k = target.slice(2)
       out.reactions[k] = out.reactions[k] ? out.reactions[k] + '，' + value : value
@@ -200,6 +201,8 @@ export function parseCardText(text: string): ParsedCard {
         cur = 'r:' + rk
         continue
       }
+      // 认不出这个键：当成普通行处理，并且不要让它继承上一个字段
+      cur = null
     }
 
     // 3) 列表项 / 普通行：归到当前字段

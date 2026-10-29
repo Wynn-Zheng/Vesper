@@ -75,6 +75,25 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
+/**
+ * 读 JSON body。
+ *
+ * 空 body 当 {}；非 JSON 抛一个带"请求体不是合法 JSON"的错误，
+ * 外层 catch 会把它当输入错误返 400 —— 之前是直接 500 加原始 SyntaxError 文案。
+ */
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const text = (await readBody(req)) || ''
+  if (!text.trim()) return {}
+  let v: unknown
+  try {
+    v = JSON.parse(text)
+  } catch {
+    throw new Error('请求体不是合法 JSON')
+  }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return v as Record<string, unknown>
+}
+
 function status(opts: ConsoleOptions, personId: string): unknown {
   const rules = opts.getRules()
   const relation = loadRelation(personId)
@@ -865,7 +884,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           let body: unknown
           if (req.method === 'POST') {
             try {
-              body = JSON.parse((await readBody(req)) || '{}')
+              body = await readJson(req)
             } catch {
               json(res, 400, { ok: false, error: 'invalid body: 不是合法 JSON' })
               return
@@ -884,7 +903,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 它准备做的事：读 / 加 / 完成 / 删
       /* ============ 当前活动 ============ */
       if (req.method === 'PUT' && path === '/api/activity') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string }
+        const body = await readJson(req) as { text?: string }
         const text = String(body.text ?? '').trim().slice(0, 200)
         const { writeAtomic } = await import('../store/fs.ts')
         writeAtomic('persona/activity.json', JSON.stringify({ text, at: Date.now() }, null, 2))
@@ -902,7 +921,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'PUT' && path === '/api/card') {
-        const body = JSON.parse((await readBody(req)) || '{}') as Record<string, unknown>
+        const body = await readJson(req) as Record<string, unknown>
         const { loadCard, saveCard } = await import('../persona/card.ts')
         const id = String(body['id'] ?? '') || undefined
         const cur = loadCard(id)
@@ -932,7 +951,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'POST' && path === '/api/learnings') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string; kind?: string }
+        const body = await readJson(req) as { text?: string; kind?: string }
         const text = String(body.text ?? '').trim()
         if (!text) {
           json(res, 400, { error: '学什么？写一句' })
@@ -946,7 +965,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'POST' && path === '/api/learnings/drop') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const body = await readJson(req) as { id?: string }
         const { dropLearning } = await import('../persona/learnings.ts')
         if (!dropLearning(String(body.id ?? ''))) {
           json(res, 404, { error: '没有这条' })
@@ -957,14 +976,14 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'POST' && path === '/api/card/switch') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const body = await readJson(req) as { id?: string }
         const { switchCard } = await import('../persona/card.ts')
         const r = switchCard(String(body.id ?? ''))
         json(res, r.ok ? 200 : 400, r)
         return
       }
       if (req.method === 'POST' && path === '/api/card/parse') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string }
+        const body = await readJson(req) as { text?: string }
         const text = String(body.text ?? '')
         if (!text.trim()) {
           json(res, 400, { error: '粘贴一段角色卡文本' })
@@ -976,7 +995,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'POST' && path === '/api/card/new') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { name?: string }
+        const body = await readJson(req) as { name?: string }
         const { createCard } = await import('../persona/card.ts')
         const card = createCard(String(body.name ?? '').trim() || '新角色')
         const { switchCard } = await import('../persona/card.ts')
@@ -999,7 +1018,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'POST' && path === '/api/secrets/peek') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const body = await readJson(req) as { id?: string }
         const { peekSecret } = await import('../persona/secrets.ts')
         const s = peekSecret(String(body.id ?? ''))
         if (!s) {
@@ -1041,7 +1060,12 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 而这几项都是「它自己」的设定。用户要的是在自我页一眼看到、随手改，
       // 而不是被踢去设置页找。
       if (req.method === 'PUT' && path === '/api/self/name') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { name?: string }
+        const body = await readJson(req) as { name?: string }
+        // 换行会破坏 self.md 的 frontmatter（能注入 traits 甚至提前闭合 ---）
+        if (/[\r\n]/.test(String(body.name ?? ""))) {
+          json(res, 400, { error: '名字不能换行' })
+          return
+        }
         const name = String(body.name ?? '').trim().slice(0, 32)
         const { loadSelf, saveSelf } = await import('../self/store.ts')
         const self = loadSelf()
@@ -1052,9 +1076,15 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'PUT' && path === '/api/self/traits') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { traits?: Record<string, string> }
+        const body = await readJson(req) as { traits?: unknown }
+        const src = body.traits
+        // 必须是普通对象：字符串/数组/null 会被 Object.entries 拆成垃圾再全量覆盖
+        if (!src || typeof src !== 'object' || Array.isArray(src)) {
+          json(res, 400, { error: '规矩格式不对' })
+          return
+        }
         const traits: Record<string, string> = {}
-        for (const [k, v] of Object.entries(body.traits ?? {})) {
+        for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
           const kk = String(k ?? '').trim().slice(0, 40)
           const vv = String(v ?? '').trim().slice(0, 300)
           if (kk && vv) traits[kk] = vv
@@ -1067,10 +1097,12 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
       // 它怎么称呼你：写 rules.yaml 的 关系.昵称（空 = 按阶段自动决定）
       if (req.method === 'PUT' && path === '/api/self/callyou') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { 昵称?: string }
+        const body = await readJson(req) as { 昵称?: string }
         const v = String(body.昵称 ?? '').trim().slice(0, 20)
-        const { readFileSync, writeFileSync } = await import('node:fs')
+        const { readFileSync } = await import('node:fs')
         const { setConfigPath } = await import('./config-write.ts')
+        const { writeAtomic } = await import('../store/fs.ts')
+        const YAML = (await import('yaml')).default
         try {
           const raw = readFileSync('persona/rules.yaml', 'utf8')
           const r = setConfigPath(raw, '关系.昵称', v)
@@ -1078,7 +1110,15 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             json(res, 400, { error: r.error ?? '改不了' })
             return
           }
-          writeFileSync('persona/rules.yaml', r.text, 'utf8')
+          // 写之前先解析一遍：@ * ! 开头会让 YAML 非法，
+          // 写完不校验的话下次启动 loadRules() 直接抛错，机器人起不来
+          try {
+            YAML.parse(r.text)
+          } catch {
+            json(res, 400, { error: '这个称呼会让配置变成非法 YAML，换个写法' })
+            return
+          }
+          writeAtomic('persona/rules.yaml', r.text)
           json(res, 200, { ok: true, 昵称: v })
         } catch (e) {
           json(res, 500, { error: String(e) })
@@ -1088,15 +1128,18 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
       // 说话方式：写 rules.yaml 的 行为.回复（延迟用秒收，存毫秒）
       if (req.method === 'PUT' && path === '/api/talk-style') {
-        const body = JSON.parse((await readBody(req)) || '{}') as Record<string, unknown>
-        const { readFileSync, writeFileSync } = await import('node:fs')
+        const body = await readJson(req) as Record<string, unknown>
+        const { readFileSync } = await import('node:fs')
         const { setConfigPath } = await import('./config-write.ts')
         try {
           let raw = readFileSync('persona/rules.yaml', 'utf8')
           const applied: Record<string, unknown> = {}
 
           const num = (key: string, min: number, max: number): void => {
-            const n = Number(body[key])
+            const rawVal = body[key]
+            // Number(null) === 0 会通过 isFinite，把条数改成 1 —— 显式挡掉空值
+            if (rawVal === null || rawVal === undefined || rawVal === '') return
+            const n = Number(rawVal)
             if (!Number.isFinite(n)) return
             const v = Math.min(max, Math.max(min, Math.round(n)))
             const r = setConfigPath(raw, '说话.' + key, v)
@@ -1138,7 +1181,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             json(res, 400, { error: '没有有效的值' })
             return
           }
-          writeFileSync('persona/rules.yaml', raw, 'utf8')
+          const { writeAtomic: wr } = await import('../store/fs.ts')
+          wr('persona/rules.yaml', raw)
           json(res, 200, { ok: true, applied })
         } catch (e) {
           json(res, 500, { error: String(e) })
@@ -1327,7 +1371,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
       // 改自述（角色卡里那一大段）
       if (req.method === 'PUT' && path === '/api/self/text') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { text?: string }
+        const body = await readJson(req) as { text?: string }
         const text = String(body.text ?? '')
         if (!text.trim()) {
           json(res, 400, { error: '自述不能空' })
@@ -1352,7 +1396,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
     }
 
     if (req.method === 'POST' && path === '/api/self/requests/approve') {
-      const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; grant?: boolean }
+      const body = await readJson(req) as { id?: string; grant?: boolean }
       const { takeRequest } = await import('../self/requests.ts')
       const { applyRequest, recordApproval } = await import('../self/apply.ts')
       const one = takeRequest(String(body.id ?? ''))
@@ -1367,7 +1411,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
     }
 
     if (req.method === 'POST' && path === '/api/self/requests/reject') {
-      const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+      const body = await readJson(req) as { id?: string }
       const { takeRequest, markRejected } = await import('../self/requests.ts')
       const one = takeRequest(String(body.id ?? ''))
       if (!one) {
@@ -1417,7 +1461,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
     }
 
     if (req.method === 'PUT' && path === '/api/self/owner') {
-      const body = JSON.parse((await readBody(req)) || '{}') as { owner?: string }
+      const body = await readJson(req) as { owner?: string }
       const owner = body.owner === 'me' ? 'me' : 'it'
       const { loadSelf, saveSelf } = await import('../self/store.ts')
       try {
@@ -1442,7 +1486,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'POST' && path === '/api/intent') {
-        const body = JSON.parse((await readBody(req)) || '{}') as {
+        const body = await readJson(req) as {
           action?: 'add' | 'complete' | 'drop'
           text?: string
           source?: string
@@ -1478,7 +1522,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
       // 开/关一个能力：只改 rules.yaml 里对应的那一行
       if (req.method === 'PUT' && path === '/api/ability/toggle') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; on?: boolean }
+        const body = await readJson(req) as { id?: string; on?: boolean }
         const { abilityCards } = await import('./ability.ts')
         const card = abilityCards(opts.getRules()).find((c) => c.id === body.id)
         if (!card) {
@@ -1503,7 +1547,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
       // 改一个参数
       if (req.method === 'PUT' && path === '/api/ability/param') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { key?: string; value?: unknown }
+        const body = await readJson(req) as { key?: string; value?: unknown }
         const key = String(body.key ?? '')
         if (!key) {
           json(res, 400, { error: '缺少 key' })
@@ -1524,7 +1568,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 能力卡片的「测试」按钮。
       // 这个接口之前压根不存在，前端一直在调 → 11 个卡片全是 not found。
       if (req.method === 'POST' && path === '/api/ability/test') {
-        const body = JSON.parse((await readBody(req)) || '{}') as { id?: string }
+        const body = await readJson(req) as { id?: string }
         const id = String(body.id ?? '')
         if (!id) {
           json(res, 400, { ok: false, detail: '缺少 id', ms: 0 })
@@ -1786,7 +1830,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       // 用户输入类错误给 400，真出问题才给 500——否则前端分不清"我填错了"和"它坏了"
-      const isInput = /说点什么|缺少|不存在|没有模型|非法的|未知操作/.test(msg)
+      const isInput = /说点什么|缺少|不存在|没有模型|非法的|未知操作|请求体不是合法 JSON/.test(msg)
       if (!isInput) warnAt('控制台请求出错', { path, err: msg })
       json(res, isInput ? 400 : 500, { error: msg })
     }

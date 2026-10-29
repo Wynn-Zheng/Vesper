@@ -25,7 +25,21 @@ export function writeAtomic(file: string, content: string): void {
   const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2, 10)}.tmp`
   try {
     writeFileSync(tmp, content, 'utf8')
-    renameSync(tmp, file)
+    // Windows 上目标被占用（杀毒/编辑器/索引器）时 rename 会 EPERM。
+    // 重试几次；还不行就直接覆盖写，别让一次短暂占用把整次写盘搞崩。
+    let renamed = false
+    for (let i = 0; i < 3 && !renamed; i++) {
+      try {
+        renameSync(tmp, file)
+        renamed = true
+      } catch {
+        const until = Date.now() + 30
+        while (Date.now() < until) {
+          /* 给占用者让路 */
+        }
+      }
+    }
+    if (!renamed) writeFileSync(file, content, 'utf8')
   } catch (err) {
     // 写一半失败、或者 rename 失败（目标被占用 / 是目录），
     // 都要把临时文件收掉，别在数据目录里越积越多。
@@ -35,6 +49,12 @@ export function writeAtomic(file: string, content: string): void {
       /* 临时文件可能根本没建出来 */
     }
     throw err
+  } finally {
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp)
+    } catch {
+      /* ignore */
+    }
   }
 }
 
