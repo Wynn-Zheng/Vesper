@@ -1231,7 +1231,6 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         const { loadLife } = await import('../self/store.ts')
         const { loadIntent } = await import('../memory/intent.ts')
         const { decayedMood, loadMood } = await import('../persona/mood.ts')
-        const { parseCore } = await import('../memory/core.ts')
         const { loadPlays } = await import('../learn/plays.ts')
         const { existsSync, readFileSync } = await import('node:fs')
 
@@ -1272,8 +1271,10 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         // 页面要能删单条，得带扁平下标（dropCore 用的是 loadCore 的数组下标）
         const coreList: Array<{ index: number; kind: string; text: string }> = []
         try {
-          const raw = readFileSync('persona/core.md', 'utf8')
-          const parsed = parseCore(raw)
+          // 核心记忆按角色卡存（cards/<id>/core.md），不能写死全局路径 ——
+          // 否则页面显示的是旧文件，增删写的是新文件，两边不同步。
+          const { loadCore: loadCoreItems } = await import('../memory/core.ts')
+          const parsed = loadCoreItems()
           const out: Record<string, string[]> = {}
           parsed.forEach((item, i) => {
             const k = (item as unknown as { kind?: string }).kind ?? '身份'

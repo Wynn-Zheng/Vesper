@@ -40,9 +40,8 @@ export async function handleMemberApi(
     const { knownGroups, groupMembers } = await import('../people/group.ts')
     const { loadFacts } = await import('../memory/facts.ts')
     const { recentRaw, loadEpisodes, loadInsights } = await import('../memory/store.ts')
-    const { parseCore } = await import('../memory/core.ts')
+    const { loadCore: loadCoreItems } = await import('../memory/core.ts')
     const { loadRules, stageOf } = await import('../core/config.ts')
-    const { readFileSync, existsSync } = await import('node:fs')
 
     const rules = loadRules().rules
     const people = listPeople()
@@ -74,9 +73,10 @@ export async function handleMemberApi(
     /* --- 核心记忆：按人分组（core.md 里带 @人的条目） --- */
     let coreItems: Array<{ text: string; kind: string; personId?: string }> = []
     try {
-      if (existsSync('persona/core.md')) {
-        const raw = readFileSync('persona/core.md', 'utf8')
-        const parsed = parseCore(raw) as unknown as Array<{
+      // 按角色卡存（cards/<id>/core.md），不能写死全局路径
+      const items = loadCoreItems()
+      {
+        const parsed = items as unknown as Array<{
           text?: string
           kind?: string
           personId?: string

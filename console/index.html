@@ -2031,7 +2031,7 @@ async function coreAdd() {
   const kind = $('core-kind').value
   if (!el || !el.value.trim()) return
   try {
-    await api('/api/action', { action: 'addCore', payload: { text: el.value.trim(), kind } })
+    await sendJson('/api/action', { action: 'addCore', payload: { text: el.value.trim(), kind } })
     el.value = ''
     loadCore()
   } catch (e) {
@@ -2042,7 +2042,7 @@ async function coreAdd() {
 async function coreDrop(i) {
   if (!confirm('删掉这条核心记忆？')) return
   try {
-    await api('/api/action', { action: 'dropCore', payload: { index: i } })
+    await sendJson('/api/action', { action: 'dropCore', payload: { index: i } })
     loadCore()
   } catch (e) {
     alert('失败：' + e.message)
@@ -2051,7 +2051,7 @@ async function coreDrop(i) {
 
 async function coreApprove(i) {
   try {
-    await api('/api/action', { action: 'approveCoreRequest', payload: { index: i } })
+    await sendJson('/api/action', { action: 'approveCoreRequest', payload: { index: i } })
     loadCore()
   } catch (e) {
     alert('失败：' + e.message)
@@ -2060,7 +2060,7 @@ async function coreApprove(i) {
 
 async function coreReject(i) {
   try {
-    await api('/api/action', { action: 'rejectCoreRequest', payload: { index: i } })
+    await sendJson('/api/action', { action: 'rejectCoreRequest', payload: { index: i } })
     loadCore()
   } catch (e) {
     alert('失败：' + e.message)
@@ -2558,7 +2558,7 @@ async function selfCoreAdd() {
   const sel = $('self-core-kind')
   if (!inp || !inp.value.trim()) return
   try {
-    await api('/api/action', {
+    await sendJson('/api/action', {
       action: 'addCore',
       payload: { text: inp.value.trim(), kind: sel ? sel.value : '边界' },
     })
@@ -2573,7 +2573,7 @@ async function selfCoreAdd() {
 async function selfCoreDrop(index) {
   if (!confirm('删掉这条？')) return
   try {
-    await api('/api/action', { action: 'dropCore', payload: { index } })
+    await sendJson('/api/action', { action: 'dropCore', payload: { index } })
     loadSelfV2()
   } catch (e) {
     alert('失败：' + e.message)
@@ -4807,7 +4807,7 @@ async function createPersonFromGroup(accountId, name) {
 // ---------- 从快照恢复群名单 ----------
 async function restoreGroups() {
   try {
-    const r = await api('/api/action', { action: 'restoreGroups', payload: {} })
+    const r = await sendJson('/api/action', { action: 'restoreGroups', payload: {} })
     const detail = (r['详情'] || []).join('\n')
     const skipped = (r['跳过详情'] || []).join('\n')
     const head = `恢复了 ${r['恢复了']} 个群，跳过 ${r['跳过']} 个（扫了 ${r['扫了快照']} 个快照）`
@@ -4882,7 +4882,7 @@ async function loadQzone() {
 async function qzonePublish(i) {
   if (!confirm('确定发出去？发完就收不回了（虽然能删，但看到的人已经看到了）。')) return
   try {
-    const r = await api('/api/action', { action: 'publishQzone', payload: { index: i } })
+    const r = await sendJson('/api/action', { action: 'publishQzone', payload: { index: i } })
     toast('发出去了：' + (r.tid || ''))
     loadQzone()
   } catch (e) {
@@ -4894,7 +4894,7 @@ async function qzoneSave(i) {
   const el = $('qz-' + i)
   if (!el) return
   try {
-    await api('/api/action', { action: 'editDraft', payload: { index: i, content: el.value } })
+    await sendJson('/api/action', { action: 'editDraft', payload: { index: i, content: el.value } })
     toast('改好了')
     loadQzone()
   } catch (e) {
@@ -4905,7 +4905,7 @@ async function qzoneSave(i) {
 async function qzoneDrop(i) {
   if (!confirm('删掉这条草稿？')) return
   try {
-    await api('/api/action', { action: 'dropDraft', payload: { index: i } })
+    await sendJson('/api/action', { action: 'dropDraft', payload: { index: i } })
     loadQzone()
   } catch (e) {
     alert('失败：' + e.message)
@@ -4915,7 +4915,7 @@ async function qzoneDrop(i) {
 async function qzoneUnpublish(tid) {
   if (!confirm('把这条说说从空间删掉？')) return
   try {
-    await api('/api/action', { action: 'unpublishQzone', payload: { tid } })
+    await sendJson('/api/action', { action: 'unpublishQzone', payload: { tid } })
     toast('删了')
     loadQzone()
   } catch (e) {
@@ -5078,14 +5078,14 @@ async function refreshGroupMembers() {
       alert('先在右上角选一个群，再点这个')
       return
     }
-    const r = await api('/api/action', { action: 'groupMembers', payload: { groupId: gid } })
+    const r = await sendJson('/api/action', { action: 'groupMembers', payload: { groupId: gid } })
     alert(`刷好了：${r.count ?? r.members?.length ?? 0} 个人`)
   } catch (e) { alert('失败：' + e.message) }
 }
 
 async function togglePlay(scene, checked) {
   try {
-    await api('/api/action', { action: 'togglePlay', payload: { scene, checked } })
+    await sendJson('/api/action', { action: 'togglePlay', payload: { scene, checked } })
     loadFeatures()
   } catch (e) { alert('失败：' + e.message) }
 }
@@ -5146,7 +5146,7 @@ async function loadHistory() {
 async function rollback(id) {
   if (!confirm(`回滚到 ${id}？\n当前状态会先被快照一份，可以再滚回来。`)) return
   try {
-    await api('/api/action', {
+    await sendJson('/api/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'restore', payload: { id } }),
@@ -5310,7 +5310,7 @@ async function saveRules() {
 async function act(action) {
   try {
     toast('执行中…')
-    const r = await api('/api/action', {
+    const r = await sendJson('/api/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action }),
