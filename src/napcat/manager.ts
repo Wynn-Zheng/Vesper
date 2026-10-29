@@ -15,6 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSy
 import { loadRules } from '../core/config.ts'
 import { autoLocate, resolvePaths, type NapcatPaths } from './locate.ts'
 import { hideQqConsole } from './win.ts'
+import { warnAt } from '../core/log.ts'
 
 /* ============================================================
  * 定位
@@ -110,6 +111,8 @@ export function start(): { ok: boolean; detail: string } {
         // 关键：不弹任何窗口
         windowsHide: true,
       })
+      // spawn 失败是异步的（ENOENT 等），没有 error 监听会被当成未捕获异常把进程崩掉。
+      child.on('error', (err) => warnAt('NapCat 启动进程出错', { err: String(err) }))
 
       if (wantLog) {
         const w = (d: Buffer): void => {
@@ -166,6 +169,9 @@ export function start(): { ok: boolean; detail: string } {
       stdio: wantLog ? ['ignore', 'pipe', 'pipe'] : 'ignore',
       windowsHide: true,
     })
+    // Shell 型靠 PATH 里的 node：打包后常常不存在，ENOENT 必须有监听，
+    // 否则未捕获异常直接崩进程。
+    child.on('error', (err) => warnAt('NapCat Shell 启动失败', { err: String(err) }))
 
     if (wantLog) {
       const w = (d: Buffer): void => {

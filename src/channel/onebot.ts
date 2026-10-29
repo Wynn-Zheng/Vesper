@@ -420,11 +420,19 @@ export class OnebotTransport implements Transport {
     this.handler = fn
   }
 
+  /** 服务端监听失败的原因（端口被占用等），控制台能读到 */
+  startError: string | null = null
+
   async start(): Promise<void> {
     const { host, port, path } = this.opts
     this.wss = new WebSocketServer({ host, port, path })
     this.wss.on('connection', (ws, req) => this.onConnection(ws, req))
-    this.wss.on('error', (err) => errorAt('WS 服务端错误', { err: String(err) }))
+    // 监听失败（端口被占用）不能只记一行日志：start() 已经 resolve，
+    // 进程会一直显示"在线"但永远收不到消息，之后每次发送都报"NapCat 未连接"。
+    this.wss.on('error', (err) => {
+      this.startError = String(err)
+      errorAt('WS 服务端启动失败（端口被占用？）', { err: String(err) })
+    })
     info(`等待 NapCat 连接 ws://${host}:${port}${path}`)
   }
 
@@ -459,6 +467,11 @@ export class OnebotTransport implements Transport {
       return
     }
     info('NapCat 已连接')
+    // 旧连接还没断开时先把旧的关掉：不然两个 ws 并存，事件重复、socket 泄漏
+    const prev = this.socket
+    if (prev && prev !== ws) {
+      try { prev.close(4000, 'replaced') } catch { /* ignore */ }
+    }
     this.socket = ws
     void this.loadSelfInfo()
 

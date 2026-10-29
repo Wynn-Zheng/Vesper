@@ -461,18 +461,31 @@ export function boot(transport: Transport, opts: BootOptions): void {
     }
   }
 
+  /** 每个会话一条发送链：上一轮还没发完时，下一轮排队，避免分句交错 */
+  const sending = new Map<string, Promise<void>>()
+
   async function flush(key: string): Promise<void> {
     const buf = buffers.get(key)
     if (!buf) return
     buffers.delete(key)
     clearTimeout(buf.timer)
-    await handle(buf.last, buf.texts.join('\n'), buf.passive, opts.getRules(), {
-      textsCount: buf.texts.length,
-      sendersCount: new Set(buf.senders).size,
-      spanMs: buf.lastAt - buf.firstAt,
-    })
+    // 关键：同一会话的两轮不能并发处理。之前是这里 delete 完就 await，
+    // 对方在上一轮没回完时再发一条，会另起一次 handle，两轮分句互相插、后一轮可能先发完。
+    const prev = sending.get(key) ?? Promise.resolve()
+    const run = prev
+      .catch(() => undefined)
+      .then(() =>
+        handle(buf.last, buf.texts.join('\n'), buf.passive, opts.getRules(), {
+          textsCount: buf.texts.length,
+          sendersCount: new Set(buf.senders).size,
+          spanMs: buf.lastAt - buf.firstAt,
+        }),
+      )
+    sending.set(key, run.finally(() => {
+      if (sending.get(key) === run) sending.delete(key)
+    }))
+    await run
   }
-
   // 名单为空时让渲染那层能踢一脚刷新
   setGroupMembersMissingHook((gid) => refreshGroupMembers(transport, gid))
 

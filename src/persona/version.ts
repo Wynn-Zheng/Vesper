@@ -8,6 +8,8 @@ const DIR = 'data/versions'
 
 /** 保留多少天 */
 const KEEP_DAYS = 30
+/** 快照总数上限：只按天数留挡不住手动/导入/测试的高频快照 */
+const MAX_SNAPSHOTS = 60
 
 export interface SnapshotMeta {
   id: string
@@ -98,11 +100,15 @@ export function restore(id: string): boolean {
   return true
 }
 
-/** 只留最近 KEEP_DAYS 天的快照 */
+/** 只留最近 KEEP_DAYS 天的快照，并且总数不超过 MAX_SNAPSHOTS 张 */
 function prune(): void {
   const cutoff = Date.now() - KEEP_DAYS * 86_400_000
-  for (const s of listSnapshots()) {
-    if (s.at && s.at < cutoff) {
+  const all = listSnapshots().sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+  // 只按天数留不够：手动/导入/测试会一天拍几十张，磁盘会被撑爆（实测 4 天 395 张 50MB）。
+  const keep = new Set(all.slice(0, MAX_SNAPSHOTS).map((s) => s.id))
+  for (const s of all) {
+    const tooOld = !!s.at && s.at < cutoff
+    if (tooOld || !keep.has(s.id)) {
       try {
         rmSync(join(DIR, s.id), { recursive: true, force: true })
       } catch {
