@@ -2625,6 +2625,47 @@ const SELF_TABS = [
   ['talk', '对话规则'],
 ]
 
+/**
+ * 防抖自动保存。
+ *
+ * schedule() 排一次保存（delay 内多次改动合并成一次）；
+ * flush() 立刻执行挂起的保存（切 tab / 切卡 / 离开页面时调）。
+ */
+function makeAutoSave(fn, delay = 900) {
+  let timer = null
+  let pending = false
+  const run = () => {
+    if (!pending) return
+    pending = false
+    try {
+      const r = fn()
+      if (r && typeof r.catch === 'function') r.catch(() => {})
+    } catch {
+      /* 自动保存失败不弹窗，下一轮输入会重试 */
+    }
+  }
+  return {
+    schedule() {
+      pending = true
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        run()
+      }, delay)
+    },
+    flush() {
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      run()
+    },
+  }
+}
+
+/** 角色卡页的自动保存（切 tab 时要 flush） */
+let SELF_CARD_AUTO = null
+
 let SELF_TAB = 'card'
 let SELF_MORE = {}
 
@@ -2657,6 +2698,8 @@ async function loadSelfCard() {
 }
 
 async function switchSelfCard(id) {
+  // 切卡前把当前卡的改动存掉
+  if (SELF_CARD_AUTO) SELF_CARD_AUTO.flush()
   try {
     await sendJson('/api/card/switch', { id }, 'POST')
     SELF_CARD = null
@@ -2831,16 +2874,20 @@ async function loadSelfRelation() {
 }
 
 /** 保存角色卡（整张覆盖，字段以 SELF_CARD 为底） */
-async function saveSelfCard(patch) {
-  if (!SELF_CARD) return
+async function saveSelfCard(patch, silent = false) {
+  if (!SELF_CARD) return null
   const card = { ...SELF_CARD, ...patch }
   try {
     const r = await sendJson('/api/card', card, 'PUT')
     SELF_CARD = r.card
-    toast('角色卡已保存')
-    renderSelfV2()
+    if (!silent) {
+      toast('角色卡已保存')
+      renderSelfV2()
+    }
+    return r.card
   } catch (e) {
-    alert('失败：' + e.message)
+    if (!silent) alert('失败：' + e.message)
+    return null
   }
 }
 
@@ -2931,6 +2978,8 @@ function renderSelfTabs() {
   for (const [k, label] of SELF_TABS) {
     const b = el('button', 'gtab' + (k === SELF_TAB ? ' on' : ''), label)
     b.onclick = () => {
+      // 切走前把没保存的角色卡改动落盘，别让输入丢
+      if (SELF_CARD_AUTO) SELF_CARD_AUTO.flush()
       SELF_TAB = k
       renderSelfV2()
     }
@@ -3040,6 +3089,10 @@ function renderSelfCardPage(body, d) {
   }
 
   const form = el('div', 'self-card-form')
+  // 所有字段（外貌/身份/性格/语言/小动作/喜好/讨厌/反应）都是直接改 card 对象，
+  // 这里统一在容器上监听：任何输入都排一次自动保存，不用逐个绑。
+  form.addEventListener('input', () => SELF_CARD_AUTO?.schedule())
+  form.addEventListener('change', () => SELF_CARD_AUTO?.schedule())
 
   /* ---- 名字 / 生日 ---- */
   {
@@ -3049,6 +3102,7 @@ function renderSelfCardPage(body, d) {
     const nameI = el('input', 'self-input')
     nameI.value = card.name || ''
     nameI.placeholder = '它叫什么'
+    nameI.oninput = () => { card.name = nameI.value.trim(); SELF_CARD_AUTO?.schedule() }
     row1.appendChild(nameI)
     form.appendChild(row1)
 
@@ -3073,6 +3127,16 @@ function renderSelfCardPage(body, d) {
     row2.appendChild(el('span', 'self-unit', '月'))
     row2.appendChild(dI)
     row2.appendChild(el('span', 'self-unit', '日'))
+    const syncBirthday = () => {
+      const y = yI.value.trim()
+      const mm = mI.value.trim()
+      const dd = dI.value.trim()
+      card.birthday = y ? y + '-' + String(mm || '1').padStart(2, '0') + '-' + String(dd || '1').padStart(2, '0') : ''
+      SELF_CARD_AUTO?.schedule()
+    }
+    yI.oninput = syncBirthday
+    mI.oninput = syncBirthday
+    dI.oninput = syncBirthday
     form.appendChild(row2)
 
     c.appendChild(row1)
@@ -3203,6 +3267,24 @@ function renderSelfCardPage(body, d) {
   /* ---- 保存 ---- */
   {
     const bar = el('div', 'self-savebar')
+    // 自动保存：任何字段改动后 900ms 落盘；点按钮是立刻存
+    SELF_CARD_AUTO = makeAutoSave(() => {
+      if (!SELF_CARD) return null
+      const c = SELF_CARD
+      const patch = {
+        name: SELF_CARD_FORM ? SELF_CARD_FORM.nameI.value.trim() : c.name,
+        birthday: c.birthday || '',
+        appearance: c.appearance,
+        identity: c.identity,
+        traits: c.traits,
+        speech: c.speech,
+        actions: c.actions.filter((x) => String(x).trim()),
+        likes: c.likes.filter((x) => String(x).trim()),
+        dislikes: c.dislikes.filter((x) => String(x).trim()),
+        reactions: c.reactions,
+      }
+      return saveSelfCard(patch, true)
+    }, 900)
     const save = el('button', 'btn pri', '保存角色卡')
     save.onclick = () => {
       const y = SELF_CARD_FORM.yI.value.trim()
@@ -3227,7 +3309,7 @@ function renderSelfCardPage(body, d) {
       saveSelfCard(p)
     }
     bar.appendChild(save)
-    const hint = el('span', 'hint', '改完点这里保存')
+    const hint = el('span', 'hint', '改动会自动保存；点按钮是立刻存')
     bar.appendChild(hint)
     body.appendChild(bar)
   }
