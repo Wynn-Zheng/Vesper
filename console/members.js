@@ -361,11 +361,24 @@
     if (DRAW.tab === 'timeline') {
       const d = DRAW.detail
       const events = []
-      if (d?.首次见到) events.push({ at: d.首次见到, text: '第一次见到' })
-      for (const e of d?.经历 || []) {
-        if (e.date) events.push({ at: new Date(e.date).getTime(), text: e.title || e.date })
+      /** 纯日期（YYYY-MM-DD）按本地零点算，别直接 new Date(date)（那会按 UTC，显示成 08:00） */
+      const parseDay = (v) => {
+        const s = String(v || '')
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + 'T00:00:00').getTime()
+        const t = new Date(s).getTime()
+        return Number.isFinite(t) ? t : 0
       }
-      events.sort((a, b) => a.at - b.at)
+      // 同一天里排最前（-1），否则和当天的事件撞在同一个零点、顺序随机
+      if (d?.首次见到) events.push({ at: (Number(d.首次见到) || parseDay(d.首次见到)) - 1, text: '第一次见到' })
+      for (const e of d?.经历 || []) {
+        if (e.date) events.push({ at: parseDay(e.date), text: e.title || e.date })
+      }
+      // 「第一次见到」永远排最前（它是时间线的起点，不该被当天的其它事件挤到中间）
+      events.sort((a, b) => {
+        if (a.text === '第一次见到') return -1
+        if (b.text === '第一次见到') return 1
+        return a.at - b.at
+      })
       if (!events.length) {
         box.innerHTML = '<div class="empty">还没有时间线</div>'
         return
@@ -377,7 +390,7 @@
         const t = document.createElement('div')
         t.className = 'hint'
         t.style.fontSize = '10.5px'
-        t.textContent = new Date(e.at).toLocaleString()
+        t.textContent = e.at ? new Date(e.at).toLocaleDateString('zh-CN') : '时间未知'
         row.appendChild(t)
         const x = document.createElement('div')
         x.textContent = e.text
