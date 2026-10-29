@@ -399,8 +399,12 @@ function merge<T>(base: T, override: unknown, path: string, unknown: string[]): 
     return out as T
   }
 
-  if (typeof override !== typeof base) {
-    throw new Error(`配置类型不对：${path} 期望 ${typeof base}，实际 ${typeof override}`)
+  // 少数字段故意允许两种类型：每日上限 0 = 关闭，也可以写 '由阶段决定'。
+  // 默认值是字符串、用户按类型声明写数字时，严格比对会直接抛错让启动失败。
+  if (path.endsWith('.每日上限') || path === '行为.主动消息.每日上限') {
+    if (typeof override === 'number' && Number.isFinite(override as number)) return override as T
+    if (typeof override === 'string') return override as T
+    throw new Error('配置类型不对：' + path + ' 期望 数字 或 "由阶段决定"，实际 ' + typeof override)
   }
   return override as T
 }

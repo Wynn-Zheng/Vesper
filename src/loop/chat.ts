@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { Incoming } from '../core/types.ts'
-import { sendImage } from '../channel/send.ts'
+import { sendImage, splitBySentence } from '../channel/send.ts'
 import { pickEmoji } from '../emoji/pick.ts'
 import { createEmojiStore, type EmojiStore } from '../emoji/store.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -318,6 +318,17 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     }
     if (doomed) {
       warnAt('同一个工具调用重复太多次，停止', { 工具: res.toolCalls.map((c) => c.name).join(',') })
+      // 和轮数上限一样：直接 break 会拿到空正文，用户什么都收不到。
+      // 这里撤掉工具再调一次，逼它用已经翻到的信息回答。
+      try {
+        const forced = await chat(
+          [...messages, { role: 'user', content: '（别再重复查了，就用你刚才翻到的东西回答。）' }],
+          opts.llm,
+        )
+        if (forced.text.trim()) res = forced
+      } catch {
+        /* 强制作答也失败：保留空正文，调用方会判空沉默 */
+      }
       break
     }
 
@@ -349,9 +360,17 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   }
 
   // 历史保留上限跟着压缩阈值走：必须比阈值大，否则摘要永远不触发（见 pushTurn 注释）
+  // 超过「每轮最多条数」的尾巴实际不会发出去（splitBySentence 会截掉），
+  // 但之前历史/原文/自评都记了完整 res.text —— 它会以为说过用户没看到的话，
+  // 下一轮还会引用。这里先算出发得出去的部分，历史只记这部分。
+  const sendable = splitBySentence(
+    sanitize(res.text),
+    Math.max(1, Number(opts.rules.说话.每条最多字数) || 40),
+    Math.max(1, Number(opts.rules.说话.每轮最多条数) || 3),
+  ).join('\n')
   const keepTurns = Math.max(60, opts.rules.上下文压缩.摘要阈值 + 20)
   pushTurn(key, { role: 'user', content: userContent, at: m.at }, keepTurns)
-  pushTurn(key, { role: 'assistant', content: res.text, at: Date.now() }, keepTurns)
+  pushTurn(key, { role: 'assistant', content: sendable, at: Date.now() }, keepTurns)
 
   // 历史压成滚动摘要，避免 session 无限增长；失败不挡这一轮
   await compressIfNeeded(key, opts)
@@ -368,7 +387,7 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     })
   }
 
-  const out = sanitize(res.text)
+  const out = sendable
   // 这轮把"待提的问题"注入过 prompt 了，标记一下，别让它每轮都挂在那儿
   if (pendingIssueKeys.length) markMentioned(pendingIssueKeys)
   return out

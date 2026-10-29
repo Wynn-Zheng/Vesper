@@ -9,6 +9,7 @@ import { loadRelation, saveRelation } from '../relation/store.ts'
 import { loadProfile, profilePath, saveProfile } from '../persona/profile.ts'
 import { clearSessions, loadSession, saveSession, sessionRoot } from '../loop/session.ts'
 import { snapshot } from '../persona/version.ts'
+import { similarity } from '../core/text.ts'
 import type { Insight, RawTurn, Scope } from '../memory/types.ts'
 import type { RelationState } from '../relation/types.ts'
 
@@ -325,10 +326,22 @@ export function importBackup(data: BackupV2, opts: ImportOptions = {}): ImportSt
   }
 
   /* ---------- 洞察 ---------- */
+  // appendInsights 内部会按相似度去重，但这里要先自己算一遍，
+  // 否则 dryRun 和"导入成功"的统计会把被去重掉的也报成新增（用户会以为重复导入了）。
   const validInsights = data.insights.filter((i) => i && typeof i.text === 'string' && i.text.trim().length > 1)
   if (validInsights.length) {
-    if (!dryRun) appendInsights(validInsights)
-    stats.insights += validInsights.length
+    const existingInsights = loadInsights()
+    const kept: Insight[] = []
+    for (const i of validInsights) {
+      const dup =
+        existingInsights.some((old) => similarity(old.text, i.text) >= 0.75) ||
+        kept.some((old) => similarity(old.text, i.text) >= 0.75)
+      if (!dup) kept.push(i)
+    }
+    if (kept.length) {
+      if (!dryRun) appendInsights(kept)
+      stats.insights += kept.length
+    }
   }
 
   /* ---------- 原始对话 ---------- */

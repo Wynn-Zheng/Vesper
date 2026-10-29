@@ -71,7 +71,10 @@ export function decayRelation(rules: Rules, personId: string, now = Date.now(), 
   if (state.closeness <= 0) return { changed: false, days: 0, delta: 0 }
 
   const accounts = accountIds(personId)
-  const raw = rawIn ?? recentRaw(30)
+  // 窗口必须覆盖最长的 grace：陌生阶段 grace = 720h×1.3/24 ≈ 39 天，
+  // 用 30 天窗口时 39 天前的消息读不到 → lastTalkAt=0 → 直接 return 0，关系永远不衰减。
+  // 取 120 天：比所有阶段的 grace 都长，读 4 个月的文件开销也还好。
+  const raw = rawIn ?? recentRaw(120)
 
   // 他在任何地方说话都算"还联系着"：
   // 有人只加群、不私聊，只看私聊 scope 会让他的关系永远不降温。
