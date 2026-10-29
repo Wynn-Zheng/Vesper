@@ -283,8 +283,28 @@ try {
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     info(`收到 ${sig}，正在退出`)
-    void transport.stop().finally(() => process.exit(0))
+    // 先把待落盘的写入冲掉再退出：之前直接 process.exit(0)，
+    // 正在生成的回复、后台评估、排队的写入会丢。
+    void (async () => {
+      try {
+        await Promise.race([transport.stop(), new Promise((r) => setTimeout(r, 3000))])
+      } catch {
+        /* 关不掉也要退 */
+      }
+      try {
+        const { drainWrites } = await import('./store/serialize.ts')
+        await drainWrites()
+      } catch {
+        /* ignore */
+      }
+      process.exit(0)
+    })()
   })
 }
 
 process.on('unhandledRejection', (err) => errorAt('未处理的拒绝', { err: String(err) }))
+// 同步异常也要兜住：boot 的 onMessage 里任何一句抛错（磁盘满/权限/半截文件）
+// 之前会直接结束进程，Electron 那边只看到"静默掉线"。
+process.on('uncaughtException', (err) => {
+  errorAt('未捕获异常（进程继续运行）', { err: String(err), stack: err?.stack?.slice(0, 500) })
+})

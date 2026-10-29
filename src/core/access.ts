@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import YAML from 'yaml'
 import { writeAtomic } from '../store/fs.ts'
-
+import { warnAt } from './log.ts'
 export interface AccessPolicy {
   /** 群白名单：为空表示不限制 */
   groupAllow: string[]
@@ -71,8 +71,13 @@ export function loadAccess(): AccessPolicy {
       memberDeny: list(member['黑名单']),
       requireAt: member['必须at'] !== false,
     }
-  } catch {
-    return { ...EMPTY }
+  } catch (err) {
+    // 解析失败不能当"没有策略"：那等于黑名单/白名单全部失效，
+    // 群里任何人 @ 它都会回。保守做法是拒绝所有群响应，并喊一声。
+    warnAt('access.yaml 解析失败，暂时拒绝所有群消息（请检查/修好这个文件）', {
+      err: String(err).slice(0, 200),
+    })
+    return { ...EMPTY, groupDeny: ['*'] }
   }
 }
 
