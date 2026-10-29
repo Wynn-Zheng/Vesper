@@ -76,7 +76,14 @@
   .panel .body{padding:14px 16px}
   .bar{height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin:8px 0 6px}
   .bar i{display:block;height:100%;background:var(--blue)}
-  /* ===== 仪表盘 ===== */
+  /* 经历页：每段之间用发丝线分开，避免一坨文字连在一起 */
+.self-ep{padding:12px 0;border-bottom:1px solid var(--line)}
+.self-ep:last-child{border-bottom:none;padding-bottom:0}
+/* 「今天干了什么」的每条生活记录也按行分开 */
+.self-day-row{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:var(--fs-md);line-height:1.65;color:var(--text)}
+.self-day-row:last-child{border-bottom:none;padding-bottom:0}
+
+/* ===== 仪表盘 ===== */
 .dash-hero{display:grid;grid-template-columns:minmax(260px,1.35fr) 1fr;gap:12px;margin-bottom:14px}
 @media (max-width:840px){.dash-hero{grid-template-columns:1fr}}
 
@@ -382,9 +389,9 @@
   color:var(--dim);letter-spacing:.05em;text-transform:uppercase}
 .self-card h3 .r{margin-left:auto;font-weight:400;font-size:10.5px;color:var(--dim2);letter-spacing:0;text-transform:none}
 .self-kv{display:flex;flex-direction:column;gap:4px}
-.self-kv-k{font-size:10.5px;color:var(--dim2);letter-spacing:.04em;display:inline-block;margin-right:6px}
+.self-kv-k{font-size:var(--fs-xs);color:var(--dim2);letter-spacing:.04em;display:inline-block;margin-right:8px}
 .self-list{display:flex;flex-direction:column;gap:4px}
-.self-item{font-size:12.5px;line-height:1.65;color:var(--text);word-break:break-word}
+.self-item{font-size:var(--fs-md);line-height:1.65;color:var(--text);word-break:break-word}
 .self-item.muted{color:var(--dim)}
 .self-empty{font-size:12px;line-height:1.7;color:var(--dim2);padding:2px 0}
 .self-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -439,9 +446,9 @@
 .self-eplist{display:flex;flex-direction:column;gap:4px}
 .self-ep{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)}
 .self-ep:last-child{border-bottom:0;padding-bottom:0}
-.self-ep-head{display:flex;gap:6px;font-size:10.5px;color:var(--dim2);margin-bottom:2px}
-.self-ep-body{font-size:12px;line-height:1.6;color:var(--dim)}
-.self-core-row{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.self-ep-head{display:flex;gap:6px;font-size:var(--fs-xs);color:var(--dim2);margin-bottom:6px}
+.self-ep-body{font-size:var(--fs-md);line-height:1.65;color:var(--dim)}
+.self-core-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
 .self-core-row:last-child{border-bottom:0}
 .self-core-row .self-item{flex:1;min-width:0}
 .self-mini-x{font-size:11px;color:var(--dim2);background:none;border:0;cursor:pointer;padding:0 2px;font-family:inherit}
@@ -3536,7 +3543,7 @@ function renderSelfExpPage(body, d) {
     if (!todayLines.length) {
       c.appendChild(selfEmpty('今天还没记录生活。'))
     } else {
-      for (const l of todayLines) c.appendChild(el('div', 'self-item', l))
+      for (const l of todayLines) c.appendChild(el('div', 'self-day-row', l))
     }
     body.appendChild(c)
   }
@@ -3732,37 +3739,11 @@ function renderSelfTalkPage(body, d) {
       return s
     }
 
-    const row = el('div', 'self-field')
-    row.style.flexWrap = 'wrap'
-    row.appendChild(el('label', '', '说话'))
-    row.appendChild(piece(['每轮 ', mkNum('talk-max', speech.每轮最多条数, '1', 1, 10), ' 条']))
-    row.appendChild(piece(['每条 ', mkNum('talk-chars', speech.每条最多字数, '5', 1, 500), ' 字']))
-
-    const gap = Array.isArray(speech.条间延迟) ? speech.条间延迟 : [400, 1500]
-    row.appendChild(
-      piece([
-        '间隔 ',
-        mkNum('talk-gap0', (Number(gap[0]) / 1000).toFixed(1), '0.1', 0, 60),
-        '~',
-        mkNum('talk-gap1', (Number(gap[1]) / 1000).toFixed(1), '0.1', 0, 60),
-        ' 秒',
-      ]),
-    )
-
-    const before = Array.isArray(speech.回复前延迟) ? speech.回复前延迟 : [1000, 4000]
-    row.appendChild(
-      piece([
-        '前等 ',
-        mkNum('talk-before0', (Number(before[0]) / 1000).toFixed(1), '0.1', 0, 60),
-        '~',
-        mkNum('talk-before1', (Number(before[1]) / 1000).toFixed(1), '0.1', 0, 60),
-        ' 秒',
-      ]),
-    )
-
+    // 每行一个语义组。之前 5 组（每轮/每条/间隔/前等/引用）全挤在一行，
+    // 数字框和单位贴在一起，分不清哪个数属于哪一项。
     const sel = el('select', 'self-select')
     sel.id = 'talk-quote'
-    sel.style.width = '86px'
+    sel.style.width = '110px'
     sel.style.flex = 'none'
     for (const [v, label] of [
       ['never', '从不引用'],
@@ -3775,8 +3756,39 @@ function renderSelfTalkPage(body, d) {
       sel.appendChild(o)
     }
     sel.value = speech.引用频率 || 'occasionally'
-    row.appendChild(sel)
-    form.appendChild(row)
+
+    const gapMs = Array.isArray(speech.条间延迟) ? speech.条间延迟 : [400, 1500]
+    const beforeMs = Array.isArray(speech.回复前延迟) ? speech.回复前延迟 : [1000, 4000]
+    const mkRow = (label, nodes) => {
+      const r = el('div', 'self-field')
+      r.appendChild(el('label', '', label))
+      for (const n of nodes) r.appendChild(n)
+      return r
+    }
+
+    form.appendChild(mkRow('每轮', [piece([mkNum('talk-max', speech.每轮最多条数, '1', 1, 10), ' 条'])]))
+    form.appendChild(mkRow('每条', [piece([mkNum('talk-chars', speech.每条最多字数, '5', 1, 500), ' 字'])]))
+    form.appendChild(
+      mkRow('间隔', [
+        piece([
+          mkNum('talk-gap0', (Number(gapMs[0]) / 1000).toFixed(1), '0.1', 0, 60),
+          ' ~ ',
+          mkNum('talk-gap1', (Number(gapMs[1]) / 1000).toFixed(1), '0.1', 0, 60),
+          ' 秒',
+        ]),
+      ]),
+    )
+    form.appendChild(
+      mkRow('前等', [
+        piece([
+          mkNum('talk-before0', (Number(beforeMs[0]) / 1000).toFixed(1), '0.1', 0, 60),
+          ' ~ ',
+          mkNum('talk-before1', (Number(beforeMs[1]) / 1000).toFixed(1), '0.1', 0, 60),
+          ' 秒',
+        ]),
+      ]),
+    )
+    form.appendChild(mkRow('引用', [sel]))
     c.appendChild(form)
 
     const acts = el('div', 'self-acts')
