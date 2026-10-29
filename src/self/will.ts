@@ -81,7 +81,10 @@ export function saveWill(w: WillState): void {
 /** 这份盘点了多久（小时）；超过 30 小时算过期，别拿昨天的意愿当今天的 */
 export function willAgeHours(w: WillState = loadWill()): number {
   if (!w.at || !Number.isFinite(w.at)) return Number.POSITIVE_INFINITY
-  return (Date.now() - w.at) / 3_600_000
+  const age = (Date.now() - w.at) / 3_600_000
+  // 时间戳在未来（时钟回拨/手改 will.json）时按"已过期"处理：
+  // 否则负年龄永远 <= 30，它会一直切不动"今天想不想说话"，直到真实时间追上去。
+  return age < 0 ? Number.POSITIVE_INFINITY : age
 }
 
 /** 拿到一个能用的意愿：过期就当没盘过 */

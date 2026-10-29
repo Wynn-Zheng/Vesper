@@ -409,6 +409,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
 
   const out = sendable
   // 这轮把"待提的问题"注入过 prompt 了，标记一下，别让它每轮都挂在那儿
-  if (pendingIssueKeys.length) markMentioned(pendingIssueKeys)
+  // 只有真说出话（非空回复）才算"提过了"：模型选择沉默/空回复时
+  // 之前也会标已提，之后这个问题永远不会再被问起。
+  if (pendingIssueKeys.length && out.trim()) markMentioned(pendingIssueKeys)
   return out
 }

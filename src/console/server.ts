@@ -1402,15 +1402,21 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
     if (req.method === 'POST' && path === '/api/self/requests/approve') {
       const body = await readJson(req) as { id?: string; grant?: boolean }
-      const { takeRequest } = await import('../self/requests.ts')
+      const { loadRequests, takeRequest } = await import('../self/requests.ts')
       const { applyRequest, recordApproval } = await import('../self/apply.ts')
-      const one = takeRequest(String(body.id ?? ''))
+      const id = String(body.id ?? '')
+      const one = loadRequests().find((r) => r.id === id) ?? null
       if (!one) {
         json(res, 404, { error: '没有这条申请' })
         return
       }
+      // 先应用、成功了再从队列里拿掉。原来是先 take 再 apply：
+      // 应用失败（比如目标不支持/写盘错）时申请已经没了，用户两头空。
       const r = applyRequest(one, Boolean(body.grant))
-      if (r.ok) recordApproval(one, r.detail)
+      if (r.ok) {
+        recordApproval(one, r.detail)
+        takeRequest(one.id)
+      }
       json(res, r.ok ? 200 : 400, r)
       return
     }
