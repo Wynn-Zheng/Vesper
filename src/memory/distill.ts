@@ -278,7 +278,8 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
   // 让模型知道已经记了什么，否则它每次从零提炼，必然重复
   const isPrivateScope = opts.scope.startsWith('private:')
   const isGroupScope = opts.scope.startsWith('group:')
-  const knownFacts = isPrivateScope ? loadFacts(opts.personId).map((f) => f.text) : []
+  // 失效事实不喂给模型：否则会告诉它「我已经记得」一句被推翻的话，还叫它别重复记
+  const knownFacts = isPrivateScope ? loadFacts(opts.personId).filter((f) => !f.supersededAt).map((f) => f.text) : []
   // 定时任务里不能把异常抛出去：一次模型抖动不该让整轮整理变成 unhandled rejection，
   // 更不该让调用方把"出错了"和"没东西可整理"混为一谈。
   let res: { text: string }
@@ -354,11 +355,14 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
   const isPrivate = isPrivateScope
   let accepted: FactRow[] = []
   let conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
+  // 待失效的旧事实：等新事实真的写进档案再执行（顺序反了会丢事实）
+  const pendingSupersede: Array<{ oldText: string; newText: string }> = []
 
   if (isPrivate) {
     const r = await mergeFactsInto(opts.personId, data.facts ?? [], date, opts.llm)
     accepted = r.accepted
     conflicts = r.conflicts
+    pendingSupersede.push(...r.supersedes)
   } else if (isGroupScope && (data.facts ?? []).length) {
     const index = speakerIndex(opts.turns)
     const byPerson = new Map<string, RawFact[]>()
@@ -381,6 +385,10 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
       const keptGroup = r.accepted.filter((f) => !isDeleted(pid, f.text))
       if (!keptGroup.length) continue
       appendFacts(pid, keptGroup)
+      for (const s of r.supersedes) {
+        if (!keptGroup.some((f) => f.text === s.newText)) continue
+        supersedeFact(pid, s.oldText, date)
+      }
       total += keptGroup.length
     }
     result.facts = total
@@ -394,6 +402,12 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
   if (kept.length) {
     appendFacts(opts.personId, kept)
     result.facts = kept.length
+  }
+  // 新事实确认写进去了，才让旧说法失效
+  for (const s of pendingSupersede) {
+    if (!kept.some((f) => f.text === s.newText)) continue
+    supersedeFact(opts.personId, s.oldText, date)
+    conflicts.push({ text: '我记得「' + s.oldText + '」，这次听到「' + s.newText + '」，先按新的记了', date, kind: 'pending' })
   }
 
   const opens = (data.open ?? [])
@@ -531,10 +545,17 @@ async function mergeFactsInto(
   raws: RawFact[],
   date: string,
   llm: LlmOptions,
-): Promise<{ accepted: FactRow[]; conflicts: Array<{ text: string; date: string; kind: 'pending' }> }> {
+): Promise<{
+  accepted: FactRow[]
+  conflicts: Array<{ text: string; date: string; kind: 'pending' }>
+  /** 需要失效的旧事实：调用方确认新事实写进去了再执行 */
+  supersedes: Array<{ oldText: string; newText: string }>
+}> {
   const accepted: FactRow[] = []
   const conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
-  const existing = loadFacts(personId)
+  const supersedes: Array<{ oldText: string; newText: string }> = []
+  // 只和「在世」的事实比：失效的还参与判定的话，会判成 same 去 touch 一条死事实
+  const existing = loadFacts(personId).filter((f) => !f.supersededAt)
 
   for (const raw of raws) {
     const text = (raw.text ?? '').trim()
@@ -572,15 +593,11 @@ async function mergeFactsInto(
         continue
       }
       if (rel === 'contradict') {
-        // 矛盾：旧说法失效、新说法写入。
-        // 旧的不删（模型可能判错，人还能手改回来），只是不再注入 prompt。
-        supersedeFact(personId, best.old.text, date)
+        // 矛盾：先记下要失效谁，等调用方确认新事实确实写进档案了再失效。
+        // 之前这里直接 supersedeFact —— 新事实随后被「删过的」过滤掉时，
+        // 旧事实已经永久失效、又没有替代，一句话就这么没了。
+        supersedes.push({ oldText: best.old.text, newText: text })
         accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
-        conflicts.push({
-          text: `我记得「${best.old.text}」，这次听到「${text}」，先按新的记了`,
-          date,
-          kind: 'pending',
-        })
         continue
       }
       // different：两件不同的事，可以同时成立——直接记，别去打扰用户
@@ -590,7 +607,7 @@ async function mergeFactsInto(
     accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
   }
 
-  return { accepted, conflicts }
+  return { accepted, conflicts, supersedes }
 }
 
 /**

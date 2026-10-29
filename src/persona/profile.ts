@@ -43,7 +43,8 @@ export function profilePath(personId: string): string {
 export async function refreshProfile(llm: LlmOptions, personId: string): Promise<boolean> {
   // 画像是它自己的印象，可以基于全部事实；
   // 但 prompt 里已经要求"不写私事细节"，所以产物本身是安全的。
-  const facts = loadFacts(personId)
+  // 失效事实（被纠正过的说法）不能再喂给模型，否则画像会一直记着错的
+  const facts = loadFacts(personId).filter((f) => !f.supersededAt)
   if (facts.length < 3) return false
 
   const accounts = accountIdsOf(personId)
