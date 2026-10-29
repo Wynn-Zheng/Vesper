@@ -3,6 +3,7 @@ import type { Rules } from '../core/config.ts'
 import type { SendResult, Transport } from '../core/transport.ts'
 import type { Target } from '../core/types.ts'
 import { MAX_EMOJI_BYTES } from '../emoji/store.ts'
+import { warnAt } from '../core/log.ts'
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
@@ -151,8 +152,14 @@ export async function say(t: Transport, to: Target, text: string, rules: Rules):
     if (i > 0) await sleep(rand(rules.说话.条间延迟))
     // 只有第一条引用：不然分句发 3 条会引用同一条三次，像刷屏
     const here = i === 0 ? to : { ...to, replyTo: undefined }
-    const res = await t.send(here, parts[i]!)
-    if (res && typeof res === 'object' && res.messageId) ids.push(res.messageId)
+    try {
+      const res = await t.send(here, parts[i]!)
+      if (res && typeof res === 'object' && res.messageId) ids.push(res.messageId)
+    } catch (err) {
+      // 某一句失败不能把后面几句一起丢：之前 throw 出去后，
+      // 用户只收到前半句，剩下的全没了，界面上也没有任何提示。
+      warnAt('这一句发送失败，跳过继续', { 第几句: i + 1, err: String(err).slice(0, 120) })
+    }
   }
   return ids
 }
