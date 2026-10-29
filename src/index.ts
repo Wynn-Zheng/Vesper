@@ -22,7 +22,7 @@ import { startRateLimitSweeper } from './core/ratelimit.ts'
 import { startSelfReflect } from './self/reflect.ts'
 import { startObserving } from './self/observe.ts'
 import { startWatching } from './outward/watch.ts'
-import { watch } from 'node:fs'
+import { watchFile } from 'node:fs'
 
 initLog()
 
@@ -48,7 +48,10 @@ if (!startConfigBroken) info('规则已加载：persona/rules.yaml')
 
 // rules.yaml 改动后自动重载
 try {
-  watch('persona/rules.yaml', { persistent: false }, () => {
+  // 用 watchFile（轮询）而不是 watch：编辑器原子保存会 rename 换 inode，
+  // 单文件 watch 之后就静默失效、再也不重载，而且没有任何日志提示。
+  watchFile('persona/rules.yaml', { interval: 1500 }, (cur, prev) => {
+    if (cur.mtimeMs === prev.mtimeMs && cur.size === prev.size) return
     try {
       rules = loadRules().rules
       info('rules.yaml 已重载')
