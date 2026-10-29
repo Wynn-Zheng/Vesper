@@ -1319,7 +1319,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         }
 
         json(res, 200, {
-          name: self.name || '',
+          // 名字和 prompt 同一个优先级：self.md → 当前角色卡（之前漏了卡名，页面会显示"还没取名字"）
+          name: self.name || (await import('../persona/card.ts')).loadCard()?.name || '',
           // 自我页就地编辑要显示"现在是什么"，不然输入框全是空的
           称呼: (() => {
             try {

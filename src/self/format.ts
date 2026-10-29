@@ -1,4 +1,5 @@
 import type { Rules } from '../core/config.ts'
+import { loadCard } from '../persona/card.ts'
 import { loadSelf, recentLife } from './store.ts'
 import { impressionOf } from './will.ts'
 import { unmentionedIssues } from './observe.ts'
@@ -40,7 +41,15 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
   const life = recentLife(3)
   const lines: string[] = []
 
-  const name = self.name || (rules.人格.名字 !== '未定' ? rules.人格.名字 : '')
+  // 名字有三个来源：self.md（它自己取的）→ 当前角色卡（你设定的人）→ rules.yaml 里的旧配置。
+  // 之前漏了卡名，新建卡后 prompt 会同时出现"你还没有名字"和"你的名字是「新卡名」"，自相矛盾。
+  let cardName = ''
+  try {
+    cardName = loadCard()?.name || ''
+  } catch {
+    cardName = ''
+  }
+  const name = self.name || cardName || (rules.人格.名字 !== '未定' ? rules.人格.名字 : '')
   if (name) {
     lines.push(`- 你叫「${name}」${self.nameReason ? `，是你自己取的（${self.nameReason}）` : ''}`)
   } else {
