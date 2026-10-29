@@ -26,10 +26,19 @@
 <title>QQ Bot 控制台</title>
 <style>
   :root{
-    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --line:#2a3040;
-    --text:#e6edf3; --dim:#8b949e; --dim2:#6e7681;
-    --green:#3fb950; --red:#f85149; --blue:#58a6ff; --purple:#bc8cff;
-    --yellow:#d29922; --pink:#f778ba;
+    /* 设计令牌：近黑暖底 + 发丝边框 + 单一低饱和强调色（参考 Linear 系） */
+    --bg:#0a0b0d; --panel:#121316; --panel2:#17181c; --line:rgba(255,255,255,.07);
+    --text:#f2f3f5; --dim:#9aa0a8; --dim2:#6b7079;
+    --green:#5c9c74; --red:#c46a63; --blue:#5e6ad2; --purple:#8a86c4;
+    --yellow:#b3924a; --pink:#b57a94;
+    /* 间距只走 4 的倍数：4/8/12/16/24/32/40 */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px;
+    /* 圆角：6 小控件 / 10 卡片 / 12 大面板，上限 12（超过就"软糖感"） */
+    --r-sm:6px; --r-md:10px; --r-lg:12px;
+    /* 字号：11 辅助 / 12 次级 / 13 正文 / 14 强调 / 20 大数 / 28 主数 */
+    --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:14px; --fs-xl:20px; --fs-2xl:28px;
+    /* 阴影几乎不可见：靠边框分层，不靠投影 */
+    --shadow:0 1px 2px rgba(0,0,0,.35);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;display:flex;height:100vh;overflow:hidden}
@@ -66,23 +75,22 @@
   .panel h3 .r{margin-left:auto;font-weight:400;font-size:11px;color:var(--dim2)}
   .panel .body{padding:14px 16px}
   .bar{height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin:8px 0 6px}
-  .bar i{display:block;height:100%;background:linear-gradient(90deg,#a0325f,#f778ba)}
+  .bar i{display:block;height:100%;background:var(--blue)}
   /* ===== 仪表盘 ===== */
 .dash-hero{display:grid;grid-template-columns:minmax(260px,1.35fr) 1fr;gap:12px;margin-bottom:14px}
 @media (max-width:840px){.dash-hero{grid-template-columns:1fr}}
-.dash-main::after{content:'';position:absolute;right:-50px;top:-60px;width:210px;height:210px;pointer-events:none;
-  background:radial-gradient(circle,rgba(56,139,253,.16),rgba(56,139,253,0) 68%)}
+
 .dash-main>*{position:relative;z-index:1}
 .dash-main{position:relative;overflow:hidden;border-radius:12px;padding:16px 18px 14px;display:flex;flex-direction:column;
-  background:linear-gradient(155deg,rgba(56,139,253,.13),rgba(56,139,253,.035) 52%,rgba(56,139,253,0));
-  border:1px solid rgba(56,139,253,.20)}
+  background:var(--panel);
+  border:1px solid var(--line)}
 .dash-label{font-size:11.5px;color:var(--dim);letter-spacing:.05em}
 .dash-value{font-size:46px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1.05;margin-top:4px}
 .dash-delta{font-size:11.5px;color:var(--dim2);margin-top:2px}
 .dash-spark{display:block;margin-top:6px}
 .dash-foot{margin-top:auto;padding-top:10px;border-top:1px solid rgba(56,139,253,.14);font-size:11px;color:var(--dim2);display:flex;gap:14px;flex-wrap:wrap}
 .dash-foot b{color:var(--dim);font-weight:600;font-variant-numeric:tabular-nums}
-.dash-side{display:grid;grid-template-rows:repeat(2,1fr);gap:12px}
+.dash-side{display:grid;grid-template-rows:repeat(2,1fr);gap:16px}
 .dash-mini{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;min-height:0}
 .dash-mini .k{font-size:11px;color:var(--dim);letter-spacing:.04em}
 .dash-mini .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px;line-height:1.2}
@@ -161,17 +169,17 @@
   /* ---- 状态页 ---- */
   .state-top{display:grid;grid-template-columns:auto 1fr 1fr;gap:16px;align-items:stretch;margin-bottom:12px}
   @media(max-width:900px){.state-top{grid-template-columns:1fr}}
-  .state-face{background:linear-gradient(145deg,#1a2130,#151a24);border:1px solid var(--line);border-radius:14px;padding:20px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:170px}
+  .state-face{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:170px}
   .state-avatar{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:#0d1117;margin-bottom:10px}
   .state-name{font-size:15px;font-weight:600;color:var(--text)}
   .state-phase{font-size:11.5px;color:var(--dim2);margin-top:4px}
-  .state-mood,.state-rel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;justify-content:center}
+  .state-mood,.state-rel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 20px;display:flex;flex-direction:column;justify-content:center}
   .sm-k{font-size:11px;color:var(--dim2);margin-bottom:8px}
   .sm-k b{color:var(--text);font-weight:600}
   .sm-v{font-size:24px;font-weight:600;color:var(--text);line-height:1.1;font-variant-numeric:tabular-nums}
   .sm-v small{font-size:12px;color:var(--dim);font-weight:400;margin-left:2px}
   .sm-bar{height:4px;background:#232a38;border-radius:2px;margin:10px 0 8px;overflow:hidden}
-  .sm-bar i{display:block;height:100%;background:linear-gradient(90deg,#58a6ff,#bc8cff);border-radius:2px;transition:width .5s ease}
+  .sm-bar i{display:block;height:100%;background:var(--blue);border-radius:2px;transition:width .5s ease}
   .sm-s{font-size:11px;color:var(--dim2)}
   .state-think{font-size:13.5px;line-height:1.9;color:var(--text);white-space:pre-wrap}
   /* ---- 移动端预留：后续要完整适配时从这里改 ---- */
@@ -259,7 +267,7 @@
   .bubble-text{white-space:pre-wrap}
   .bubble-time{font-size:10px;opacity:.55;margin-top:3px;text-align:right;font-variant-numeric:tabular-nums}
   /* ---- 关系页 ---- */
-  .rel-hero{display:flex;gap:28px;align-items:center;background:linear-gradient(145deg,#1a2130,#151a24);border:1px solid var(--line);border-radius:14px;padding:24px 28px;flex-wrap:wrap}
+  .rel-hero{display:flex;gap:28px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:24px 28px;flex-wrap:wrap}
   .rel-ring-wrap{position:relative;width:160px;height:160px;flex:none}
   .ring.big{width:160px;height:160px}
   .ring.big .ring-track{stroke-width:11}
@@ -284,7 +292,7 @@
   /* ---- 总览 hero ---- */
   .hero{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:stretch;margin-bottom:14px}
   @media(max-width:900px){.hero{grid-template-columns:1fr}}
-  .hero-left{background:linear-gradient(145deg,#1a2130,#151a24);border:1px solid var(--line);border-radius:14px;padding:18px 22px;display:flex;flex-direction:column;justify-content:center;min-width:250px}
+  .hero-left{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 22px;display:flex;flex-direction:column;justify-content:center;min-width:250px}
   .hero-label{font-size:11px;color:var(--dim2);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
   .hero-row{display:flex;align-items:center;gap:16px}
   .ring{width:104px;height:104px;flex:none}
@@ -336,7 +344,7 @@
 
 /* 顶部身份卡 */
 .self-hero{display:flex;align-items:flex-start;gap:20px;padding:18px 20px;border:1px solid var(--line);border-radius:12px;
-  background:linear-gradient(135deg,rgba(88,166,255,.07),rgba(188,140,255,.04) 45%,transparent 80%);min-width:0}
+  background:var(--panel);min-width:0}
 .self-hero-main{flex:1;min-width:0}
 .self-hero h1{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:0 0 3px}
 .self-hero-why{font-size:11.5px;color:var(--dim2);margin-bottom:9px}
@@ -366,7 +374,7 @@
 .self-grid.cols2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .self-grid.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (max-width: 1100px){.self-grid.cols2,.self-grid.cols3{grid-template-columns:1fr}}
-.self-card{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px 14px;
+.self-card{display:flex;flex-direction:column;gap:10px;min-width:0;padding:14px 16px;height:100%;
   background:var(--panel);border:1px solid var(--line);border-radius:10px}
 .self-card.wide{grid-column:span 2}
 @media (max-width: 1100px){.self-card.wide{grid-column:span 1}}
@@ -441,7 +449,7 @@
 .self-more{font-size:11px;color:var(--blue);background:none;border:0;cursor:pointer;padding:2px 0;font-family:inherit;align-self:flex-start}
 .self-more:hover{text-decoration:underline}
 /* ===== 自我页：角色卡 / 状态页专用 ===== */
-.self-status-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:12px;align-items:start}
+.self-status-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:stretch}
 @media (max-width:1100px){.self-status-grid{grid-template-columns:1fr}}
 .self-status-right{display:flex;flex-direction:column;gap:10px}
 .self-card-birth{text-align:right;flex-shrink:0}
@@ -725,7 +733,7 @@
       <!-- 首次启动的引导条：没有 API Key 时才显示，由 renderFirstRunGuide 控制 -->
       <div
         id="dash-guide"
-        style="display:none;margin-bottom:14px;padding:16px 18px;background:linear-gradient(135deg,rgba(88,166,255,.10),rgba(63,185,80,.06));border:1px solid rgba(88,166,255,.28);border-radius:10px"
+        style="display:none;margin-bottom:14px;padding:16px 18px;background:var(--panel2);border:1px solid rgba(88,166,255,.28);border-radius:10px"
       ></div>
       <!-- 主指标 + 三个陪衬。刻意做成不同大小 —— 八个一样大的卡片会让
            眼睛不知道先看哪，视觉上就是"没设计"。 -->
@@ -5765,12 +5773,12 @@ setInterval(loadStatus, 15000)
 <svg width="0" height="0" style="position:absolute">
   <defs>
     <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="0%" stop-color="#5e6ad2"/>
       <stop offset="100%" stop-color="#bc8cff"/>
     </linearGradient>
     <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.28"/>
-      <stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#5e6ad2" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#5e6ad2" stop-opacity="0"/>
     </linearGradient>
   </defs>
 </svg>
