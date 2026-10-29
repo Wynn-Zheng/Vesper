@@ -476,11 +476,35 @@ export class OnebotTransport implements Transport {
     void this.loadSelfInfo()
 
     ws.on('message', (data) => this.onFrame(data))
+    // 心跳：NapCat 掉线但 TCP 半开时 readyState 仍是 OPEN，
+    // 没有 ping/pong 就永远"显示已连接"，每次发送等满 10s 超时、回复全丢。
+    let alive = true
+    ws.on('pong', () => {
+      alive = true
+    })
+    const hb = setInterval(() => {
+      if (!alive) {
+        warnAt('NapCat 心跳超时（TCP 半开），主动断开等待重连')
+        try {
+          ws.terminate()
+        } catch {
+          /* ignore */
+        }
+        return
+      }
+      alive = false
+      try {
+        ws.ping()
+      } catch {
+        /* ignore */
+      }
+    }, 30_000)
+    hb.unref?.()
     ws.on('close', () => {
+      clearInterval(hb)
       info('NapCat 断开')
       if (this.socket === ws) this.socket = null
     })
-    ws.on('error', (err) => errorAt('WS 连接错误', { err: String(err) }))
   }
 
   /** 拉自己的 QQ 昵称：群里直接叫这个名字也算叫它 */
@@ -630,9 +654,19 @@ export class OnebotTransport implements Transport {
     const replyId = to.replyTo && /^\d+$/.test(to.replyTo) ? to.replyTo : ''
     const message = replyId ? `[CQ:reply,id=${replyId}]${plain}` : plain
     const params = to.kind === 'private' ? { user_id: Number(to.id), message } : { group_id: Number(to.id), message }
-    const data = (await this.callAction(action, params)) as { message_id?: number | string } | null
-    const id = data?.message_id
-    return id !== undefined && id !== null ? { messageId: String(id) } : {}
+    try {
+      const data = (await this.callAction(action, params)) as { message_id?: number | string } | null
+      const id = data?.message_id
+      return id !== undefined && id !== null ? { messageId: String(id) } : {}
+    } catch (err) {
+      // 引用失败（被引用那条已撤回/删除，retcode≠0）时去掉引用重发一次：
+      // 不然第一条就失败，say() 抛错，整轮回复全丢。
+      if (!replyId) throw err
+      warnAt('引用发送失败，去掉引用重发', { err: String(err).slice(0, 120) })
+      const data = (await this.callAction(action, { ...params, message: plain })) as { message_id?: number | string } | null
+      const id = data?.message_id
+      return id !== undefined && id !== null ? { messageId: String(id) } : {}
+    }
   }
 
   /** 发任意消息段（图片用 base64:// 的 image 段），供 sendImage 复用。 */
