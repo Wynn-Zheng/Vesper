@@ -406,6 +406,19 @@ function merge<T>(base: T, override: unknown, path: string, unknown: string[]): 
     if (typeof override === 'string') return override as T
     throw new Error('配置类型不对：' + path + ' 期望 数字 或 "由阶段决定"，实际 ' + typeof override)
   }
+  // 数字字段：允许数字，也允许能解析成数字的字符串（"40" 行，"40字" 报错）。
+  // 之前这里直接 return，什么都不校验 —— 写成 "40字" 时 Number() 变 NaN，
+  // 发送层兜底成 limit=1，整段回复被切成一个字一条。
+  if (typeof base === 'number') {
+    const n = typeof override === 'number' ? override : typeof override === 'string' ? Number(override.trim()) : NaN
+    if (!Number.isFinite(n)) {
+      throw new Error('配置类型不对：' + path + ' 期望数字，实际 ' + JSON.stringify(override))
+    }
+    return n as T
+  }
+  if (typeof override !== typeof base) {
+    throw new Error('配置类型不对：' + path + ' 期望 ' + typeof base + '，实际 ' + typeof override)
+  }
   return override as T
 }
 

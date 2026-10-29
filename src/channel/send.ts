@@ -84,8 +84,10 @@ export function splitBySentence(text: string, maxLen: number, maxParts: number):
   const clean = text.replace(/\r/g, '').trim()
   if (!clean) return []
 
-  // 上限非法（0 / 负数 / NaN）时退回 1：以前 maxLen=0 会在硬切里死循环
-  const limit = Number.isFinite(maxLen) ? Math.max(1, Math.floor(maxLen)) : 1
+  // 上限非法时不能退回 1：rules.yaml 写 "40字"（字符串）时 Number.isFinite 失败，
+  // limit 变 1 → 整段回复被切成单个字，只发前几条（实测过）。
+  const rawLimit = Number(maxLen)
+  const limit = Number.isFinite(rawLimit) && rawLimit >= 4 ? Math.floor(rawLimit) : 40
 
   const sentences: string[] = []
   let buf = ''
@@ -108,7 +110,13 @@ export function splitBySentence(text: string, maxLen: number, maxParts: number):
     // 只有标点的尾巴并回上一条，宁可多一个标点也别单独发一条 "，"
     // 上一条本身也只有标点时就不合并了，否则会长到超过上限
     if (PUNCT_ONLY.test(p) && sized.length && !PUNCT_ONLY.test(sized[sized.length - 1]!)) {
-      sized[sized.length - 1] += p
+      const merged = sized[sized.length - 1]! + p
+      // 只并回还能装下的部分：模型爱发长省略号/句号串，
+      // 无限并回会把单条撑到 60 多个字、远超「每条最多字数」。
+      if (merged.length <= limit) {
+        sized[sized.length - 1] = merged
+      }
+      // 装不下就丢掉这截纯标点（它本来也没有信息量）
       return
     }
     sized.push(p)
@@ -125,12 +133,14 @@ export function splitBySentence(text: string, maxLen: number, maxParts: number):
     }
   }
 
-  if (sized.length <= maxParts) return sized
+  // 条数上限也要兜底：NaN/0/负数会让 slice(0,0) 返回空数组，整轮回复静默丢失。
+  const partsMax = Number.isFinite(Number(maxParts)) && Number(maxParts) >= 1 ? Math.floor(Number(maxParts)) : 3
+  if (sized.length <= partsMax) return sized
 
   // 超了条数上限：只发前 maxParts 条。
   // 以前是"剩下全拼进最后一条"，结果最后一条能有几百字，违背每条不超过 maxLen 的约束。
   // 模型本来就不该说这么多，截掉比发一坨更像人。
-  return sized.slice(0, Math.max(0, Math.floor(maxParts)))
+  return sized.slice(0, partsMax)
 }
 
 /** 分句 + 间隔发送。返回实际发出的每条消息 id（平台支持时）。 */
