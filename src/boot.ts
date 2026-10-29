@@ -548,10 +548,12 @@ export function boot(transport: Transport, opts: BootOptions): void {
     m.text = displayText
 
     // 聚合按"谁在哪个会话里说"分桶：群里两个人先后说话不能合并成一轮
-    const key = `${scopeOf(m.from)}:${m.senderId ?? m.from.id}`
+    // 按「会话」合并，不按「会话+发送者」：同一群两个人同时说话时，
+    // 之前是两个 buffer 各跑一次 generateReply —— 两边读同一份历史、
+    // 互相看不到对方的 user 消息，还可能同时压缩、后写覆盖前写。
+    const key = scopeOf(m.from)
     const now = Date.now()
     const addressed = !(m.passive ?? false)
-
     const schedule = (buf: Buffer): void => {
       clearTimeout(buf.timer)
       const d = rules.行为.防抖

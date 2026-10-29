@@ -124,14 +124,14 @@ test('限流：max<=0 一律拒绝', () => {
 
 /* ---------------- 会话 ---------------- */
 
-test('会话：单会话最多留 60 轮（要大于压缩阈值 40，否则摘要永远不触发）', () => {
+test('会话：单会话最多留 maxTurns*2 轮（给压缩留余量）', () => {
   clearSessions()
-  for (let i = 0; i < 70; i++) pushTurn('private:1', { role: 'user', content: `m${i}`, at: Date.now() })
+  // pushTurn 留一倍余量：压缩要先看完整历史再裁，提前裁到阈值以下会让每个压缩周期先丢一轮
+  for (let i = 0; i < 130; i++) pushTurn('private:1', { role: 'user', content: `m${i}`, at: Date.now() })
   const turns = getTurns('private:1')
-  assert.equal(turns.length, 60)
+  assert.equal(turns.length, 120)
   assert.equal(turns[0]!.content, 'm10', '最旧的应被挤掉')
 })
-
 test('会话：历史消息按字数预算截取', () => {
   clearSessions()
   for (let i = 0; i < 10; i++) pushTurn('private:2', { role: 'user', content: 'x'.repeat(500), at: Date.now() })

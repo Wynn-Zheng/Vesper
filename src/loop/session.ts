@@ -192,7 +192,9 @@ export function pushTurn(key: string, turn: Turn, maxTurns = 60): void {
   // ⚠️ 这个上限必须**大于**上下文压缩的摘要阈值（默认 40），
   // 否则 shouldCompress（history.length > 阈值）永远不成立：
   // 历史被窗口直接丢掉，滚动摘要一次都不会更新，等于把老对话静默删除。
-  const keep = Number.isFinite(maxTurns) ? Math.max(2, Math.floor(maxTurns)) : 60
+  // 留一倍余量：压缩是先看完整历史再裁，这里提前裁到阈值以下的话，
+  // 每次压缩周期都会先丢掉一轮、永远进不了摘要。
+  const keep = Number.isFinite(maxTurns) ? Math.max(4, Math.floor(maxTurns) * 2) : 120
   while (session.turns.length > keep) session.turns.shift()
 }
 

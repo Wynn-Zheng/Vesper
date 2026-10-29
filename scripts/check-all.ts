@@ -73,7 +73,7 @@ const STEPS: Step[] = [
   { name: '类型检查（严格）', cmd: 'node node_modules/typescript/bin/tsc --noEmit --noUnusedLocals', expect: /^$/ },
   {
     name: '单元测试',
-    cmd: 'node --test test/*.test.ts',
+    cmd: 'node --test --test-isolation=none test/*.test.ts',
     expect: /ℹ fail 0/,
     // 沙箱里测试运行器 spawn 子进程会 EPERM，退回单进程模式重跑
     fallback: 'node --test --test-isolation=none test/*.test.ts',

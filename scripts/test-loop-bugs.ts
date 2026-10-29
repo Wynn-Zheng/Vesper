@@ -247,45 +247,47 @@ console.log('\n=== 5. pushTurn 上限 ===')
 // 默认 60：必须大于上下文压缩阈值（默认 40），否则摘要永远不触发
 const MAX = 60
 
-check(`超过 ${MAX} 条后最早的被丢掉，其余顺序不乱`, () => {
+check(`超过 ${MAX * 2} 条后最早的被丢掉，其余顺序不乱`, () => {
+  // pushTurn 现在留一倍余量（maxTurns*2）：压缩要先看到完整历史再裁，
+  // 提前裁到阈值以下会让每个压缩周期都先丢一轮、永远进不了摘要。
+  const KEEP = MAX * 2
   clearSessions()
   const key = 'private:max'
-  for (let i = 0; i < MAX; i++) {
+  for (let i = 0; i < KEEP; i++) {
     pushTurn(key, turn('user', `m${i}`, 1_700_000_000_000 + i))
   }
   let turns = getTurns(key)
-  assert.equal(turns.length, MAX, `刚满 ${MAX} 条不该丢`)
+  assert.equal(turns.length, KEEP, `刚满 ${KEEP} 条不该丢`)
   assert.equal(turns[0]!.content, 'm0')
-  assert.equal(turns[turns.length - 1]!.content, `m${MAX - 1}`)
+  assert.equal(turns[turns.length - 1]!.content, `m${KEEP - 1}`)
 
-  pushTurn(key, turn('assistant', `m${MAX}`, 1_700_000_000_000 + MAX))
+  pushTurn(key, turn('assistant', `m${KEEP}`, 1_700_000_000_000 + KEEP))
   turns = getTurns(key)
-  assert.equal(turns.length, MAX, `超过 ${MAX} 条后仍应只有 ${MAX} 条`)
+  assert.equal(turns.length, KEEP, `超过 ${KEEP} 条后仍应只有 ${KEEP} 条`)
   assert.equal(turns[0]!.content, 'm1', '最早的一条应被丢掉')
-  assert.equal(turns[turns.length - 1]!.content, `m${MAX}`, '最新的一条应在末尾')
+  assert.equal(turns[turns.length - 1]!.content, `m${KEEP}`, '最新的一条应在末尾')
   assert.deepEqual(
     turns.map((t) => t.content),
-    Array.from({ length: MAX }, (_, i) => `m${i + 1}`),
+    Array.from({ length: KEEP }, (_, i) => `m${i + 1}`),
     '丢头之后顺序不能乱',
   )
   assert.deepEqual(
     turns.map((t) => t.at),
-    Array.from({ length: MAX }, (_, i) => 1_700_000_000_001 + i),
+    Array.from({ length: KEEP }, (_, i) => 1_700_000_000_001 + i),
     '时间戳顺序也不能乱',
   )
 })
 
-check('自定义上限生效（chat 会按压缩阈值动态传）', () => {
+check('自定义上限生效（留一倍余量）', () => {
   clearSessions()
   const key = 'private:max2'
-  for (let i = 0; i < 10; i++) pushTurn(key, turn('user', `n${i}`, 1_700_000_000_000 + i), 5)
+  for (let i = 0; i < 12; i++) pushTurn(key, turn('user', `n${i}`, 1_700_000_000_000 + i), 5)
   const turns = getTurns(key)
-  assert.equal(turns.length, 5, `应只剩 5 条，实际 ${turns.length}`)
-  assert.equal(turns[0]!.content, 'n5')
-  assert.equal(turns[turns.length - 1]!.content, 'n9')
+  // maxTurns=5 → 保留 10 条
+  assert.equal(turns.length, 10, `应只剩 10 条，实际 ${turns.length}`)
+  assert.equal(turns[0]!.content, 'n2')
+  assert.equal(turns[turns.length - 1]!.content, 'n11')
 })
-
-/* ---------- 6. summary 字段与 historyMessages ---------- */
 console.log('\n=== 6. summary 字段 ===')
 
 check('没设置 summary 时 historyMessages 只返回原文', () => {
