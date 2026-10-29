@@ -27,3 +27,6 @@ build/
 
 # 临时测试目录
 .tmp-*
+
+design-*.png
+audit-ui-*.png
