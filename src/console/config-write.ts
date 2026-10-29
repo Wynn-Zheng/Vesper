@@ -10,7 +10,10 @@ export function setConfigPath(raw: string, key: string, value: unknown): { text:
   const leaf = parts[parts.length - 1]!
   const parents = parts.slice(0, -1)
 
-  const lines = raw.split('\n')
+  // Windows 上的 rules.yaml 是 CRLF：行尾的 \r 会让 /(.*)$/ 匹配失败，
+  // 所有带 \r 的键都改不了（表现为「找不到键 xxx」）。先规范化成 LF。
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '')
+  const lines = normalized.split('\n')
 
   // 找父级的行（可能有多层，只取最内层）
   let parentLine = -1
