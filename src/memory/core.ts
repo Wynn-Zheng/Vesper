@@ -15,10 +15,18 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { info, warnAt } from '../core/log.ts'
 import { writeAtomic } from '../store/fs.ts'
+import { cardScopedPath } from '../persona/card.ts'
 import { sharedBigrams, similarity } from '../core/text.ts'
 
-const CORE_FILE = 'persona/core.md'
-const REQ_FILE = 'persona/core-requests.md'
+// 「不能越的线」和它的申请都按角色卡隔离
+const CORE_LEGACY = 'persona/core.md'
+const REQ_LEGACY = 'persona/core-requests.md'
+function CORE_FILE(): string {
+  return cardScopedPath('core.md', CORE_LEGACY)
+}
+function REQ_FILE(): string {
+  return cardScopedPath('core-requests.md', REQ_LEGACY)
+}
 
 /** 核心条目上限。到顶了就拒绝，逼人删一条。 */
 const MAX_CORE = 30
@@ -98,11 +106,11 @@ export function parseCore(text: string): CoreItem[] {
 
 /** 读核心记忆。文件不存在返回空。 */
 export function loadCore(): CoreItem[] {
-  if (!existsSync(CORE_FILE)) return []
+  if (!existsSync(CORE_FILE())) return []
   try {
-    return parseCore(readFileSync(CORE_FILE, 'utf8'))
+    return parseCore(readFileSync(CORE_FILE(), 'utf8'))
   } catch {
-    warnAt('核心记忆读不出来，按空的处理', { file: CORE_FILE })
+    warnAt('核心记忆读不出来，按空的处理', { file: CORE_FILE() })
     return []
   }
 }
@@ -145,7 +153,7 @@ export function saveCore(items: CoreItem[]): boolean {
     info('核心记忆超过上限，没写', { 数量: items.length, 上限: MAX_CORE })
     return false
   }
-  writeAtomic(CORE_FILE, renderCore(items))
+  writeAtomic(CORE_FILE(), renderCore(items))
   return true
 }
 
@@ -193,11 +201,11 @@ export function parseRequests(text: string): CoreRequest[] {
 }
 
 export function loadRequests(): CoreRequest[] {
-  if (!existsSync(REQ_FILE)) return []
+  if (!existsSync(REQ_FILE())) return []
   try {
-    return parseRequests(readFileSync(REQ_FILE, 'utf8'))
+    return parseRequests(readFileSync(REQ_FILE(), 'utf8'))
   } catch {
-    warnAt('核心记忆申请读不出来，按空的处理', { file: REQ_FILE })
+    warnAt('核心记忆申请读不出来，按空的处理', { file: REQ_FILE() })
     return []
   }
 }
@@ -258,7 +266,7 @@ export function requestCore(text: string, kind: CoreKind, reason: string): { ok:
   }
 
   reqs.push({ text: body, kind, reason: reason.trim().slice(0, 120), at: Date.now() })
-  writeAtomic(REQ_FILE, renderRequests(reqs))
+  writeAtomic(REQ_FILE(), renderRequests(reqs))
   info('它提了一条核心记忆申请', { 类别: kind, 内容: body.slice(0, 30) })
   return { ok: true, why: '已提交，等人批' }
 }
@@ -279,8 +287,8 @@ export function approveRequest(index: number): { ok: boolean; item?: CoreItem } 
   core.push(item)
   reqs.splice(index, 1)
 
-  writeAtomic(CORE_FILE, renderCore(core))
-  writeAtomic(REQ_FILE, renderRequests(reqs))
+  writeAtomic(CORE_FILE(), renderCore(core))
+  writeAtomic(REQ_FILE(), renderRequests(reqs))
   info('批准了一条核心记忆', { 内容: r.text.slice(0, 30) })
   return { ok: true, item }
 }
@@ -290,7 +298,7 @@ export function rejectRequest(index: number): boolean {
   const reqs = loadRequests()
   if (!reqs[index]) return false
   reqs.splice(index, 1)
-  writeAtomic(REQ_FILE, renderRequests(reqs))
+  writeAtomic(REQ_FILE(), renderRequests(reqs))
   return true
 }
 
@@ -303,7 +311,7 @@ export function addCore(text: string, kind: CoreKind): { ok: boolean; why: strin
   if (core.some((c) => c.text === body)) return { ok: false, why: '已经有了' }
 
   core.push({ text: body, kind, at: new Date().toISOString().slice(0, 10) })
-  writeAtomic(CORE_FILE, renderCore(core))
+  writeAtomic(CORE_FILE(), renderCore(core))
   return { ok: true, why: '加了' }
 }
 
@@ -312,7 +320,7 @@ export function dropCore(index: number): boolean {
   const core = loadCore()
   if (!core[index]) return false
   core.splice(index, 1)
-  writeAtomic(CORE_FILE, renderCore(core))
+  writeAtomic(CORE_FILE(), renderCore(core))
   return true
 }
 

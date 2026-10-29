@@ -61,6 +61,16 @@ function staticRoot(): string {
   return resolve('console')
 }
 
+/** 同步版的按卡路径解析（在非 async 的闭包里用） */
+function cardScopedSync(name: string, fallback: string): string {
+  try {
+    const id = readFileSync('persona/cards/current.txt', 'utf8').trim()
+    if (!id) return fallback
+    return `persona/cards/${id}/${name}`
+  } catch {
+    return fallback
+  }
+}
 function json(res: ServerResponse, code: number, data: unknown): void {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
   res.end(JSON.stringify(data))
@@ -924,7 +934,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         const body = await readJson(req) as { text?: string }
         const text = String(body.text ?? '').trim().slice(0, 200)
         const { writeAtomic } = await import('../store/fs.ts')
-        writeAtomic('persona/activity.json', JSON.stringify({ text, at: Date.now() }, null, 2))
+        const { cardScopedPath } = await import('../persona/card.ts')
+        writeAtomic(cardScopedPath('activity.json', 'persona/activity.json'), JSON.stringify({ text, at: Date.now() }, null, 2))
         json(res, 200, { ok: true, text, at: Date.now() })
         return
       }
@@ -1368,7 +1379,9 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           // 它现在在干什么（模型更新，也可以在状态页手动改）
           activity: (() => {
             try {
-              return JSON.parse(readFileSync('persona/activity.json', 'utf8'))
+              // 正在干什么也按角色卡隔离（这里不能 await，用同步版本）
+              const path = cardScopedSync('activity.json', 'persona/activity.json')
+              return JSON.parse(readFileSync(path, 'utf8'))
             } catch {
               return null
             }

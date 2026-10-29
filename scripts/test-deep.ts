@@ -78,7 +78,7 @@ const will = await import('../src/self/will.ts')
     Promise.resolve().then(() => saveWill({ ...snapshot, talkReason: '并发B' })),
   ])
   const w = will.loadWill()
-  check('并发 saveWill 文件仍完整', Boolean(w.at) && typeof w.talk === 'boolean', JSON.stringify(w).slice(0, 80))
+  check('并发 saveWill 文件仍完整', typeof w.at === 'number' && typeof w.talk === 'boolean', JSON.stringify(w).slice(0, 80))
   // 恢复
   saveWill(snapshot)
 }

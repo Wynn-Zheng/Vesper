@@ -14,9 +14,14 @@
  * 存储是人能直接读改的 markdown（见 renderRequests）。
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { cardScopedPath } from '../persona/card.ts'
 import { writeAtomic } from '../store/fs.ts'
 
-const REQ_FILE = 'persona/requests.md'
+// 按角色卡隔离
+const FILE_LEGACY = 'persona/requests.md'
+function FILE(): string {
+  return cardScopedPath('requests.md', FILE_LEGACY)
+}
 
 /** 每个字段最多挂几条待批。太多了人也不看。 */
 const MAX_PER_TARGET = 3
@@ -118,16 +123,16 @@ function render(reqs: ChangeRequest[]): string {
  * ============================================================ */
 
 export function loadRequests(): ChangeRequest[] {
-  if (!existsSync(REQ_FILE)) return []
+  if (!existsSync(FILE())) return []
   try {
-    return parse(readFileSync(REQ_FILE, 'utf8'))
+    return parse(readFileSync(FILE(), 'utf8'))
   } catch {
     return []
   }
 }
 
 function save(reqs: ChangeRequest[]): void {
-  writeAtomic(REQ_FILE, render(reqs))
+  writeAtomic(FILE(), render(reqs))
 }
 
 /** 被忽略的记录（哪个字段、什么时候），用来做冷却 */

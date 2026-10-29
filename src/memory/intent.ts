@@ -16,10 +16,15 @@
  *   - 它写你审（走 pending，你批了才进"待办"）
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { cardScopedPath } from '../persona/card.ts'
+import { dirname } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
 
-const FILE = join('persona', 'intent.md')
+// 按角色卡隔离
+const FILE_LEGACY = 'persona/intent.md'
+function FILE(): string {
+  return cardScopedPath('intent.md', FILE_LEGACY)
+}
 
 export type IntentSource = '他说的' | '我自己想到的' | '你加的'
 
@@ -69,11 +74,11 @@ function parseLine(line: string): IntentItem | null {
 }
 
 export function loadIntent(): IntentDoc {
-  if (!existsSync(FILE)) return { ...EMPTY, todo: [], done: [] }
+  if (!existsSync(FILE())) return { ...EMPTY, todo: [], done: [] }
 
   let raw = ''
   try {
-    raw = readFileSync(FILE, 'utf8')
+    raw = readFileSync(FILE(), 'utf8')
   } catch {
     return { ...EMPTY, todo: [], done: [] }
   }
@@ -135,8 +140,8 @@ function render(doc: IntentDoc): string {
 }
 
 export function saveIntent(doc: IntentDoc): void {
-  mkdirSync(dirname(FILE), { recursive: true })
-  writeAtomic(FILE, render(doc))
+  mkdirSync(dirname(FILE()), { recursive: true })
+  writeAtomic(FILE(), render(doc))
 }
 
 /** 加一条待办（直接进 todo） */

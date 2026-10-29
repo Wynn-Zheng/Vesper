@@ -13,11 +13,16 @@
  * 不该在触发的那一秒现想。
  */
 import { existsSync, mkdirSync } from 'node:fs'
+import { cardScopedPath } from '../persona/card.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
 
-const FILE = 'persona/will.json'
+// 按角色卡隔离
+const FILE_LEGACY = 'persona/will.json'
+function FILE(): string {
+  return cardScopedPath('will.json', FILE_LEGACY)
+}
 
 export interface WillState {
   /** 什么时候盘的 */
@@ -47,9 +52,9 @@ function emptyWill(): WillState {
 }
 
 export function loadWill(): WillState {
-  if (!existsSync(FILE)) return emptyWill()
+  if (!existsSync(FILE())) return emptyWill()
   try {
-    const parsed = JSON.parse(readFileSync(FILE, 'utf8')) as unknown
+    const parsed = JSON.parse(readFileSync(FILE(), 'utf8')) as unknown
     // 能解析成 null / 数组 / 字符串的"坏 JSON"也会走到这里，先挡掉
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return emptyWill()
     const data = parsed as Partial<WillState>
@@ -75,7 +80,7 @@ export function loadWill(): WillState {
 }
 
 export function saveWill(w: WillState): void {
-  writeAtomic(FILE, JSON.stringify(w, null, 2))
+  writeAtomic(FILE(), JSON.stringify(w, null, 2))
 }
 
 /** 这份盘点了多久（小时）；超过 30 小时算过期，别拿昨天的意愿当今天的 */
@@ -141,7 +146,7 @@ export function impressionFromFile(personId: string): string {
 
 /** 印象文件路径（给控制台显示用） */
 export function willFile(): string {
-  return FILE
+  return FILE()
 }
 
 export function impressionFileOf(personId: string): string {

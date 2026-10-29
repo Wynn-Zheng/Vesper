@@ -22,8 +22,10 @@ const core = await import('../src/memory/core.ts')
 const temp = await import('../src/memory/temp.ts')
 
 /* ---------- 备份真实数据 ---------- */
-const CORE = 'persona/core.md'
-const REQ = 'persona/core-requests.md'
+// core / core-requests 现在按角色卡隔离：测试用当前卡的真实路径
+import { cardScopedPath as scopedPath } from '../src/persona/card.ts'
+const CORE = scopedPath('core.md', 'persona/core.md')
+const REQ = scopedPath('core-requests.md', 'persona/core-requests.md')
 const TEMP_DIR = 'persona/memory/temp'
 const backup = new Map<string, string | null>()
 for (const f of [CORE, REQ]) backup.set(f, existsSync(f) ? readFileSync(f, 'utf8') : null)

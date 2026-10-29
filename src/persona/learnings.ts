@@ -9,9 +9,14 @@
  * learnings 是它主动记下的知识/道理/方法，更接近笔记。
  */
 import { copyFileSync, existsSync, readFileSync } from 'node:fs'
+import { cardScopedPath } from './card.ts'
 import { writeAtomic } from '../store/fs.ts'
 
-const FILE = 'persona/learnings.json'
+// 学到的内容按角色卡隔离
+const LEGACY = 'persona/learnings.json'
+function FILE(): string {
+  return cardScopedPath('learnings.json', LEGACY)
+}
 
 export const KINDS = ['说话方式', '道理', '知识', '用户指派'] as const
 export type LearningKind = (typeof KINDS)[number]
@@ -29,14 +34,14 @@ export interface Learning {
 }
 
 export function loadLearnings(): Learning[] {
-  if (!existsSync(FILE)) return []
+  if (!existsSync(FILE())) return []
   try {
-    const raw = JSON.parse(readFileSync(FILE, 'utf8'))
+    const raw = JSON.parse(readFileSync(FILE(), 'utf8'))
     if (!Array.isArray(raw)) throw new Error('不是数组')
     return raw.filter((x) => x && typeof x.text === 'string') as Learning[]
   } catch {
     try {
-      copyFileSync(FILE, FILE + '.bad-' + Date.now())
+      copyFileSync(FILE(), FILE + '.bad-' + Date.now())
     } catch {
       /* 备份不了就算了 */
     }
@@ -45,7 +50,7 @@ export function loadLearnings(): Learning[] {
 }
 
 function saveAll(list: Learning[]): void {
-  writeAtomic(FILE, JSON.stringify(list, null, 2))
+  writeAtomic(FILE(), JSON.stringify(list, null, 2))
 }
 
 export function addLearning(text: string, kind: LearningKind, source: 'itself' | 'user'): Learning | null {
