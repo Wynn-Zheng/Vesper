@@ -362,11 +362,20 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     })
 
     const ctx = { personId, scope, now: new Date() }
+    // 本机类工具（截图/剪贴板/发本地图片/鼠标键盘/窗口）只允许「主人 + 私聊」。
+    // 之前只在注册时按 rules 判断有没有这类工具，没判断是谁在调用：
+    // 群里任何成员说一句「截屏发我」就能把主人的整屏发到群里。
+    const LOCAL_TOOL = /^(screenshot|clipboard_|send_image|desktop_|mouse_|keyboard_|window_|open_)/
+    const isOwner = loadPerson(personId)?.role === '主人'
+    const inPrivate = !scope.startsWith('group:')
     for (const c of res.toolCalls) {
       let content: string
       try {
         const tool = opts.tools?.get(c.name)
-        if (!tool) throw new Error(`没有这个工具：${c.name}`)
+        if (!tool) throw new Error('没有这个工具：' + c.name)
+        if (LOCAL_TOOL.test(c.name) && !(isOwner && inPrivate)) {
+          throw new Error('这个操作只能由主人私聊发起，在群里/别人那里不能做')
+        }
         content = await tool.run(c.args ?? {}, ctx)
       } catch (err) {
         // 工具失败要作为结果返回给模型，让它自己换方式或解释清楚，
