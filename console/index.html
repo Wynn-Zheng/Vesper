@@ -25,6 +25,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>QQ Bot 控制台</title>
 <style>
+/* ===== 成员页 ===== */
+  .mt-input{
+    flex:1;min-width:160px;
+    background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);
+    padding:6px 10px;color:var(--text);font:12.5px inherit;
+    transition:border-color .16s var(--ease);
+  }
+  .mt-input:focus{outline:none;border-color:var(--blue)}
+  .mt-select{
+    background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);
+    padding:6px 8px;color:var(--text);font-size:12.5px;font-family:inherit;
+    transition:border-color .16s var(--ease);
+  }
+  .mt-select:focus{outline:none;border-color:var(--blue)}
+  .mt-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+  .mt-check input[type="checkbox"]{
+    appearance:none;-webkit-appearance:none;
+    width:14px;height:14px;flex:none;margin:0;
+    border:1px solid var(--line-2);border-radius:4px;background:var(--panel2);
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:background .16s var(--ease),border-color .16s var(--ease);
+  }
+  .mt-check input[type="checkbox"]:checked{background:var(--blue);border-color:var(--blue)}
+  .mt-check input[type="checkbox"]:checked::after{
+    content:"";width:7px;height:4px;border-left:1.6px solid #fff;border-bottom:1.6px solid #fff;
+    transform:rotate(-45deg) translateY(-0.5px);
+  }
+  .mt-check input[type="checkbox"]:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+  .mt-th{padding:9px 8px;font-size:11px;font-weight:700;color:var(--dim2);letter-spacing:.04em;text-align:left}
+
   /* 隐藏所有可见滚动条（规范见 docs/DESIGN.md §7「滚动」）：
      内容照样能滚，只是不显示系统滑块。 */
   * {
@@ -134,21 +164,21 @@
 .dash-act:last-child{border-bottom:0}
 .dash-act-t{font-size:11px;color:var(--dim2);flex-shrink:0;font-variant-numeric:tabular-nums;padding-top:1px}
 .dash-act-m{font-size:12px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;padding-top:1px}
-.log{font:12.5px/1.85 ui-monospace,Consolas,monospace}
+.log{font:12px/1.62 ui-monospace,"JetBrains Mono",Consolas,monospace}
   .log div{display:flex;gap:10px;padding:1px 0}
   .log .ts{color:var(--dim2);flex-shrink:0}
   .log .lvl{flex-shrink:0;width:44px}
   .log .lvl.info{color:var(--blue)} .log .lvl.warn{color:var(--yellow)} .log .lvl.error{color:var(--red)}
-.log .line{padding:2px 0 2px 7px;border-left:2px solid transparent;align-items:baseline}
+.log .line{padding:3px 0 3px 8px;border-left:2px solid transparent;align-items:baseline}
 .log .line .t{color:var(--dim2);flex-shrink:0;font-size:11px;opacity:.75}
 .log .line .lv{flex-shrink:0;width:44px;font-size:10.5px;font-weight:600}
 .log .line.info .lv{color:var(--blue)}
 .log .line.warn .lv{color:var(--yellow)}
 .log .line.error .lv{color:var(--red)}
-.log .line.error{border-left-color:var(--red);background:#f851490d}
-.log .line.warn{border-left-color:var(--yellow);background:var(--yellow)0a}
+.log .line.error{border-left-color:var(--red)}
+.log .line.warn{border-left-color:var(--yellow)}
 .log .line .m{color:var(--fg);flex-shrink:0}
-.log .line .ex{color:var(--dim);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;padding-left:4px;border-left:1px solid var(--line);margin-left:2px;line-height:1.5}
+.log .line .ex{color:var(--dim2);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding-left:6px;border-left:1px solid var(--line);margin-left:2px;line-height:1.5;opacity:.85}
 .log .line .wh{color:var(--dim2);flex-shrink:0;margin-left:auto;font-size:10.5px;opacity:.55;padding-left:10px}
   .item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:var(--fs-md);line-height:1.65;color:var(--text)}
   .item:last-child{border-bottom:0}
@@ -269,14 +299,14 @@
   .op-d{font-size:11.5px;color:var(--dim2);line-height:1.6}
   /* ---- 日志行（过滤版） ---- */
   .log.tall{}
-  .log .line{display:flex;gap:10px;padding:3px 0;font-size:12px;line-height:1.6;font-family:ui-monospace,Consolas,monospace}
+  .log .line{padding:3px 0 3px 8px;border-left:2px solid transparent;align-items:baseline}
   .log .line .t{color:var(--dim2);flex:none;font-variant-numeric:tabular-nums}
   .log .line .lv{flex:none;width:38px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}
   .log .line.info .lv{color:var(--dim2)}
   .log .line.warn .lv{color:var(--yellow)}
   .log .line.error .lv{color:var(--red)}
-  .log .line.warn .m{color:#e3c07a}
-  .log .line.error .m{color:#ff9d97}
+  .log .line.warn .m{color:var(--text)}
+  .log .line.error .m{color:var(--text)}
   .log .line .m{color:var(--dim);word-break:break-word}
   /* ---- 日志过滤 ---- */
   .log-filter{display:flex;gap:6px;margin-bottom:10px;align-items:center}
@@ -893,25 +923,25 @@
       <div class="card" style="margin-bottom:12px">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="mt-q" placeholder="搜名字 / QQ 号" oninput="memberSearch(this.value)"
-            style="flex:1;min-width:160px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12.5px">
+            class="mt-input">
           <select id="mt-src" onchange="memberFilter('src', this.value)"
-            style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12.5px">
+            class="mt-select">
             <option value="all">全部来源</option>
             <option value="private">只私聊</option>
             <option value="group">只在群</option>
             <option value="none">只看未建档</option>
           </select>
           <select id="mt-sort" onchange="memberSort(this.value)"
-            style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12.5px">
+            class="mt-select">
             <option value="relation">按关系</option>
             <option value="recent">按最近说话</option>
             <option value="memory">按记忆多少</option>
             <option value="name">按名字</option>
           </select>
-          <label class="hint" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+          <label class="mt-check">
             <input type="checkbox" id="mt-real" onchange="memberOnlyReal(this.checked)"> 只看有记忆的
           </label>
-          <label class="hint" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+          <label class="mt-check">
             <input type="checkbox" id="mt-only" checked onchange="memberOnlyChat(this.checked)"> 只看聊过的
           </label>
           <button class="mini-btn" onclick="loadMembers()">刷新</button>
@@ -923,13 +953,13 @@
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:rgba(255,255,255,.03);text-align:left">
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">人</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">来源</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">关系</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">记忆</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">对话</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">核心</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">首次见到</th>
+              <th class="mt-th">人</th>
+              <th class="mt-th">来源</th>
+              <th class="mt-th">关系</th>
+              <th class="mt-th">记忆</th>
+              <th class="mt-th">对话</th>
+              <th class="mt-th">核心</th>
+              <th class="mt-th">首次见到</th>
             </tr>
           </thead>
           <tbody id="mt-body"></tbody>

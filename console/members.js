@@ -104,7 +104,7 @@
 
       const td = (content, opts) => {
         const c = document.createElement('td')
-        c.style.cssText = 'padding:7px 8px;font-size:12.5px;vertical-align:middle' + (opts?.css || '')
+        c.style.cssText = 'padding:9px 10px;font-size:12.5px;vertical-align:middle' + (opts?.css || '')
         if (typeof content === 'string') c.innerHTML = content
         else c.appendChild(content)
         tr.appendChild(c)
