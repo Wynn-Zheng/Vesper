@@ -77,7 +77,9 @@ const DATA_ROOT = app.isPackaged
 const CONSOLE_PORT = 7788
 const CONSOLE_URL = `http://127.0.0.1:${CONSOLE_PORT}`
 
-let backend = null // 我拉起的后端进程（null = 复用了别人的）
+let backend = null
+/** 后端异常退出的自动重启次数（防崩溃循环） */
+let crashRestarts = 0 // 我拉起的后端进程（null = 复用了别人的）
 let win = null
 let tray = null
 
@@ -305,11 +307,26 @@ async function ensureBackend() {
       return
     }
 
-    // 其它情况：真崩了，要提示，不能静默白屏
-    if (win && !win.isDestroyed()) {
-      win.webContents.executeJavaScript(
-        `document.body.insertAdjacentHTML('afterbegin','<div style="background:#f85149;color:#fff;padding:10px;font:14px system-ui;z-index:99999">后端已退出（code ${code}）。关掉重开试试。</div>')`,
-      )
+// 其它情况：真崩了，自动拉起（最多 3 次），别让窗口继续显示旧数据、用户还以为 bot 在跑
+    if (!app.isQuitting) {
+      crashRestarts += 1
+      if (crashRestarts <= 3) {
+        trace('[main] 后端异常退出 code=' + code + '，第 ' + crashRestarts + ' 次自动重启')
+        setTimeout(() => {
+          ensureBackend()
+            .then((r) => {
+              if (r.ok && win && !win.isDestroyed()) win.webContents.reload()
+              else if (!r.ok) trace('[main] 自动重启失败：' + r.reason)
+            })
+            .catch((e) => trace('[main] 自动重启异常：' + (e && e.stack)))
+        }, 1500)
+        return
+      }
+      if (win && !win.isDestroyed()) {
+        win.webContents.executeJavaScript(
+          `document.body.insertAdjacentHTML('afterbegin','<div style="background:#c46a63;color:#fff;padding:10px;font:14px system-ui;z-index:99999">后端反复异常退出（已重试 3 次）。请查看数据目录下的日志。</div>')`,
+        )
+      }
     }
   })
 
