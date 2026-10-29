@@ -118,6 +118,17 @@ async function main(): Promise<void> {
 
   // 核对
   step('核对服务器上的结果')
+
+  // nginx 用 www 用户跑，scp 上去的文件属主是 root —— 不改的话可能读不到
+  step('修正文件属主')
+  try {
+    run('ssh', [
+      '-p', PORT, '-i', KEY, '-o', 'StrictHostKeyChecking=no', USER + '@' + HOST,
+      `cd ${REMOTE_DIR} && (chown www:www app.tar.gz latest.json 2>/dev/null || true) && ls -l app.tar.gz latest.json`,
+    ])
+  } catch {
+    console.log('  （chown 没做成，不影响上传；如果网页 403 再手动改）')
+  }
   const remoteJson = execFileSync(
     'curl',
     ['-sS', '-m', '20', '-H', `x-update-token: ${envFromFile('UPDATE_TOKEN')}`, `${envFromFile('UPDATE_URL')}/latest.json`],
