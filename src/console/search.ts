@@ -4,10 +4,11 @@ import { loadEpisodes, readRaw } from '../memory/store.ts'
 import { loadOpen } from '../people/open.ts'
 import { accountIdsOf, listPeople } from '../people/store.ts'
 import { similarity } from '../core/text.ts'
+import { loadLearnings } from '../persona/learnings.ts'
 
 /** 一条搜索结果 */
 export interface Hit {
-  kind: 'fact' | 'open' | 'episode' | 'raw' | 'log'
+  kind: 'fact' | 'open' | 'episode' | 'raw' | 'log' | 'learn'
   /** 展示用标题 */
   title: string
   /** 展示用正文 */
@@ -40,7 +41,7 @@ export interface SearchOptions {
 export function search(opts: SearchOptions): Hit[] {
   const q = opts.query.trim()
   if (!q) return []
-  const types = new Set(opts.types?.length ? opts.types : (['fact', 'open', 'episode', 'raw', 'log'] as const))
+  const types = new Set(opts.types?.length ? opts.types : (['fact', 'open', 'episode', 'raw', 'log', 'learn'] as const))
   const limit = opts.limit ?? 60
   const days = Math.min(30, Math.max(1, opts.days ?? 7))
   const hits: Hit[] = []
@@ -83,6 +84,20 @@ export function search(opts: SearchOptions): Hit[] {
     }
   }
 
+  // 它自己学到的东西（知识/道理/说话方式/用户指派）
+  if (types.has('learn')) {
+    for (const l of loadLearnings()) {
+      const s = similarity(q, l.text)
+      if (s > 0.1 || l.text.includes(q)) {
+        hits.push({
+          kind: 'learn',
+          title: l.text,
+          meta: `${l.kind} · ${new Date(l.at).toLocaleDateString('zh-CN')} · ${l.source === 'user' ? '你让它学的' : '它自己记的'}`,
+          score: s,
+        })
+      }
+    }
+  }
   if (types.has('raw') || types.has('log')) {
     for (let i = 0; i < days; i++) {
       const d = new Date()

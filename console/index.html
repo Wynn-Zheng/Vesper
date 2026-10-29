@@ -1283,6 +1283,7 @@
             <button class="fbtn" data-st="episode">经历</button>
             <button class="fbtn" data-st="raw">对话</button>
             <button class="fbtn" data-st="log">日志</button>
+            <button class="fbtn" data-st="learn">知识</button>
             <span class="hint" id="search-count" style="margin-left:auto"></span>
           </div>
           <div id="search-hits" style="margin-top:14px;max-height:calc(100vh - 320px);overflow:auto"></div>
@@ -5515,7 +5516,7 @@ function renderSched(s) {
 
 // ---------- 搜索 ----------
 let searchType = 'all'
-const HIT_LABEL = { fact: '事实', open: '待办', episode: '经历', raw: '对话', log: '日志' }
+const HIT_LABEL = { fact: '事实', open: '待办', episode: '经历', raw: '对话', log: '日志', learn: '知识' }
 document.querySelectorAll('#v-search .fbtn').forEach((b) => {
   b.onclick = () => {
     document.querySelectorAll('#v-search .fbtn').forEach((x) => x.classList.remove('on'))
