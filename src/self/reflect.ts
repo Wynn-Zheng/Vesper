@@ -185,17 +185,6 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
       doc.thinking = out.在想.trim()
       touched = true
     }
-    // 它自己学到的：进学习记录（学习页「它自己记的」）
-    if (Array.isArray(out.学到)) {
-      const { addLearning } = await import('../persona/learnings.ts')
-      for (const t of out.学到) {
-        const learnText = String(t ?? '').trim()
-        if (learnText.length >= 4) {
-          addLearning(learnText.slice(0, 300), '知识', 'itself')
-          touched = true
-        }
-      }
-    }
     // 它自己总结的能力；和原来不一样才更新
     const newAbilities = (out['我能做什么'] ?? '').trim()
     if (newAbilities && newAbilities !== doc.abilities) {
@@ -230,6 +219,21 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     if (touched) {
       const prevAbout = prev.about
       saveSelf(doc)
+      // 它自己学到的：放在 saveSelf 之后 —— 写学习记录失败不该把本轮自述/取名一起回滚
+      if (Array.isArray(out.学到)) {
+        try {
+          const { addLearning } = await import('../persona/learnings.ts')
+          for (const t of out.学到) {
+            if (typeof t !== 'string') continue
+            const learnText = t.trim()
+            if (learnText.length >= 4 && learnText !== '[object Object]') {
+              addLearning(learnText.slice(0, 300), '知识', 'itself')
+            }
+          }
+        } catch (e) {
+          warnAt('写学习记录失败（不影响本轮反思）', { err: String(e) })
+        }
+      }
       // 直接比"旧自述 vs 新自述"，不要绕历史版本：
       // 以前拿磁盘旧内容和更早的历史比，第一次改动永远检不到。
       // 漂移判定交给模型：字符相似度分不清"换了说法"和"真的变了"。

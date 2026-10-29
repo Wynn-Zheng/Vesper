@@ -289,17 +289,23 @@ export function cardPromptBlock(card: CharCard | null): string {
     if (v && v.trim()) lines.push(`- ${label}：${v.trim()}`)
   }
 
-  if (card.name) lines.push(`你的名字是「${card.name}」。`)
-  push('外貌', card.appearance)
-  push('基础身份', card.identity)
-  if (card.traits.core) push('核心特质', card.traits.core)
-  if (card.traits.good) push('优点', card.traits.good)
-  if (card.traits.bad) push('缺点', card.traits.bad)
-  if (card.speech.tone) push('语气', card.speech.tone)
-  if (card.speech.catchphrase) push('口头禅', card.speech.catchphrase)
-  if (card.actions.length) lines.push('- 习惯的小动作：' + card.actions.map((a) => a.trim()).filter(Boolean).join('、'))
-  if (card.likes.length) lines.push('- 喜欢：' + card.likes.map((a) => a.trim()).filter(Boolean).join('、'))
-  if (card.dislikes.length) lines.push('- 讨厌：' + card.dislikes.map((a) => a.trim()).filter(Boolean).join('、'))
+  // 每个字段都截断：粘贴导入的长卡会把 system 撑到几千字，
+  // 挤压硬约束还涨每轮成本。600 字/字段、2000 字总量封顶。
+  const clip = (s: string, n = 600): string => {
+    const t = String(s || '').trim()
+    return t.length > n ? t.slice(0, n) + '…' : t
+  }
+  if (card.name) lines.push(`你的名字是「${clip(card.name, 40)}」。`)
+  push('外貌', clip(card.appearance))
+  push('基础身份', clip(card.identity))
+  if (card.traits.core) push('核心特质', clip(card.traits.core))
+  if (card.traits.good) push('优点', clip(card.traits.good))
+  if (card.traits.bad) push('缺点', clip(card.traits.bad))
+  if (card.speech.tone) push('语气', clip(card.speech.tone))
+  if (card.speech.catchphrase) push('口头禅', clip(card.speech.catchphrase))
+  if (card.actions.length) lines.push('- 习惯的小动作：' + clip(card.actions.map((a) => a.trim()).filter(Boolean).join('、'), 300))
+  if (card.likes.length) lines.push('- 喜欢：' + clip(card.likes.map((a) => a.trim()).filter(Boolean).join('、'), 300))
+  if (card.dislikes.length) lines.push('- 讨厌：' + clip(card.dislikes.map((a) => a.trim()).filter(Boolean).join('、'), 300))
 
   const reactions = REACTIONS.filter((k) => card.reactions[k]?.trim())
   if (reactions.length) {
