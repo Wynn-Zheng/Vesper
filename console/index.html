@@ -16,7 +16,7 @@
     window.addEventListener('unhandledrejection', function (e) {
       window.__bootErrs.push('unhandled: ' + ((e.reason && e.reason.message) || e.reason))
       var d = document.createElement('div')
-      d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#d29922;color:#fff;padding:6px 10px;font:12px monospace;z-index:99999'
+      d.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:var(--yellow);color:#fff;padding:6px 10px;font:12px monospace;z-index:99999'
       d.textContent = '未处理的 Promise 错误：' + ((e.reason && e.reason.message) || e.reason)
       if (document.body) document.body.appendChild(d)
     })
@@ -37,19 +37,22 @@
     display: none;
   }
   :root{
-    /* 设计令牌：近黑暖底 + 发丝边框 + 单一低饱和强调色（参考 Linear 系） */
-    --bg:#0a0b0d; --panel:#121316; --panel2:#17181c; --line:rgba(255,255,255,.07);
-    --text:#f2f3f5; --dim:#9aa0a8; --dim2:#6b7079;
-    --green:#5c9c74; --red:#c46a63; --blue:#5e6ad2; --purple:#8a86c4;
-    --yellow:#b3924a; --pink:#b57a94;
-    /* 间距只走 4 的倍数：4/8/12/16/24/32/40 */
+    /* 设计令牌 · 方向 A+「精确带一点柔」（docs/DESIGN.md） */
+    --bg:#08090A;
+    --panel:#16171C;      /* 卡片 */
+    --panel2:#1E1F25;     /* 卡片内嵌 / 输入框 / hover */
+    --sunk:#0F1013;       /* 侧栏、更暗的底 */
+    --line:rgba(255,255,255,.06);
+    --line-2:rgba(255,255,255,.10);
+    --line-hover:rgba(255,255,255,.15);
+    --text:#F7F8F8; --dim:#9CA3AF; --dim2:#6B7280;
+    --green:#3FB950; --red:#F85149; --blue:#5E6AD2; --purple:#8A86C4;
+    --yellow:#D29922; --pink:#B57A94;
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:40px;
-    /* 圆角：6 小控件 / 10 卡片 / 12 大面板，上限 12（超过就"软糖感"） */
-    --r-sm:6px; --r-md:10px; --r-lg:12px;
-    /* 字号：11 辅助 / 12 次级 / 13 正文 / 14 强调 / 20 大数 / 28 主数 */
+    --r-sm:8px; --r-md:14px; --r-lg:18px;
     --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:14px; --fs-xl:20px; --fs-2xl:28px;
-    /* 阴影几乎不可见：靠边框分层，不靠投影 */
-    --shadow:0 1px 2px rgba(0,0,0,.35);
+    --shadow:none;
+    --ease:cubic-bezier(.22,1,.36,1);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;display:flex;height:100vh;overflow:hidden}
@@ -60,7 +63,7 @@
   nav{padding:10px 8px;flex:1}
   nav button{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;color:var(--dim);text-align:left;padding:9px 10px;border-radius:6px;cursor:pointer;font-size:13.5px;font-family:inherit}
   nav button:hover{background:var(--panel2);color:var(--text)}
-  nav button.on{background:#1f6feb22;color:var(--blue);box-shadow:inset 2px 0 0 var(--blue)}
+  nav button.on{background:var(--blue)22;color:var(--blue);box-shadow:inset 2px 0 0 var(--blue)}
   nav .ico{width:16px;text-align:center;opacity:.9}
   .foot{border-top:1px solid var(--line);padding:10px 14px;font-size:11px;color:var(--dim2)}
   .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:6px}
@@ -85,7 +88,7 @@
   .panel h3{font-size:12.5px;font-weight:600;color:var(--dim);padding:11px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
   .panel h3 .r{margin-left:auto;font-weight:400;font-size:11px;color:var(--dim2)}
   .panel .body{padding:14px 16px}
-  .bar{height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin:8px 0 6px}
+  .bar{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin:8px 0 6px}
   .bar i{display:block;height:100%;background:var(--blue)}
   /* 经历页：每段之间用发丝线分开，避免一坨文字连在一起 */
 .self-ep{padding:12px 0;border-bottom:1px solid var(--line)}
@@ -142,14 +145,14 @@
 .log .line.warn .lv{color:var(--yellow)}
 .log .line.error .lv{color:var(--red)}
 .log .line.error{border-left-color:var(--red);background:#f851490d}
-.log .line.warn{border-left-color:var(--yellow);background:#d299220a}
+.log .line.warn{border-left-color:var(--yellow);background:var(--yellow)0a}
 .log .line .m{color:var(--fg);flex-shrink:0}
 .log .line .ex{color:var(--dim);flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;padding-left:4px;border-left:1px solid var(--line);margin-left:2px;line-height:1.5}
 .log .line .wh{color:var(--dim2);flex-shrink:0;margin-left:auto;font-size:10.5px;opacity:.55;padding-left:10px}
   .item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:var(--fs-md);line-height:1.65;color:var(--text)}
   .item:last-child{border-bottom:0}
-  .item .tag{font-size:10.5px;padding:1px 7px;border-radius:5px;height:fit-content;background:#1f6feb22;color:var(--blue);flex-shrink:0;margin-top:2px}
-  .item .tag.warn{background:#d2992222;color:var(--yellow)}
+  .item .tag{font-size:10.5px;padding:1px 7px;border-radius:5px;height:fit-content;background:var(--blue)22;color:var(--blue);flex-shrink:0;margin-top:2px}
+  .item .tag.warn{background:var(--yellow)22;color:var(--yellow)}
   .item .tag.pink{background:#f778ba22;color:var(--pink)}
   .item .tag.good{background:#3fb95022;color:var(--green)}
   .item .txt{font-size:13px}
@@ -159,10 +162,10 @@
   .big .num{font-size:48px;font-weight:700;letter-spacing:-2px;line-height:1}
   .big .of{font-size:14px;color:var(--dim2)}
   .stages{display:flex;gap:4px;margin:14px 0 8px}
-  .stages .st{flex:1;text-align:center;font-size:10.5px;color:var(--dim2);padding:5px 0;border-radius:5px;background:#21262d}
-  .stages .st.done{background:#1f6feb33;color:var(--blue)}
-  .stages .st.now{background:#1f6feb;color:#fff;font-weight:600}
-  .anchor{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #21262d}
+  .stages .st{flex:1;text-align:center;font-size:10.5px;color:var(--dim2);padding:5px 0;border-radius:5px;background:var(--panel2)}
+  .stages .st.done{background:var(--blue)33;color:var(--blue)}
+  .stages .st.now{background:var(--blue);color:#fff;font-weight:600}
+  .anchor{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--panel2)}
   .anchor:last-child{border-bottom:0}
   .anchor .d{font-size:10.5px;color:var(--dim2);width:62px;flex-shrink:0;padding-top:1px}
   .anchor .e{font-size:12.5px;flex:1}
@@ -171,7 +174,7 @@
   textarea.editor{width:100%;min-height:calc(100vh - 250px);background:#0a0e13;border:1px solid var(--line);border-radius:8px;padding:14px 16px;color:#c9d1d9;font:12.5px/1.7 ui-monospace,Consolas,monospace;resize:vertical}
   button.btn{background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:6px 12px;border-radius:var(--r-sm);cursor:pointer;font-size:var(--fs-sm);font-family:inherit}
   button.btn:hover{background:#2d333b}
-  button.btn.pri{background:#238636;border-color:#2ea043;color:#fff}
+  button.btn.pri{background:var(--green);border-color:#2ea043;color:#fff}
   .row{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
   .hint{font-size:var(--fs-sm);color:var(--dim2);line-height:1.55}
   /* ---- 组内 tab ---- */
@@ -185,7 +188,7 @@
   .gtab:hover{color:var(--text)}
   .gtab.on{color:var(--blue);border-bottom-color:var(--blue)}
 
-  .trait-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #21262d;font-size:12.5px}
+  .trait-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--panel2);font-size:12.5px}
   .trait-row:last-child{border-bottom:none}
   .trait-k{color:var(--dim2);flex:none;min-width:70px}
   .trait-v{color:var(--text)}
@@ -193,7 +196,7 @@
   .state-top{display:grid;grid-template-columns:auto 1fr 1fr;gap:16px;align-items:stretch;margin-bottom:12px}
   @media(max-width:900px){.state-top{grid-template-columns:1fr}}
   .state-face{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:170px}
-  .state-avatar{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:#0d1117;margin-bottom:10px}
+  .state-avatar{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:var(--bg);margin-bottom:10px}
   .state-name{font-size:15px;font-weight:600;color:var(--text)}
   .state-phase{font-size:11.5px;color:var(--dim2);margin-top:4px}
   .state-mood,.state-rel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px 20px;display:flex;flex-direction:column;justify-content:center}
@@ -228,7 +231,7 @@
   .pick{position:relative;display:inline-block}
   .pick-btn{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;font-family:inherit;max-width:220px}
   .pick-btn:hover{border-color:#3a4356}
-  .pick-avatar{width:18px;height:18px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#0d1117}
+  .pick-avatar{width:18px;height:18px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--bg)}
   .pick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .pick-stage{font-size:10px;color:var(--dim2);flex:none}
   .pick-arrow{color:var(--dim2);font-size:9px;flex:none}
@@ -285,7 +288,7 @@
   .bubble-row.right{justify-content:flex-end}
   .bubble-row.left{justify-content:flex-start}
   .bubble{max-width:72%;padding:9px 13px;border-radius:13px;font-size:13px;line-height:1.65;word-break:break-word;position:relative}
-  .bubble.them{background:#1f6feb;color:#fff;border-bottom-right-radius:4px}
+  .bubble.them{background:var(--blue);color:#fff;border-bottom-right-radius:4px}
   .bubble.me{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-bottom-left-radius:4px}
   .bubble-text{white-space:pre-wrap}
   .bubble-time{font-size:10px;opacity:.55;margin-top:3px;text-align:right;font-variant-numeric:tabular-nums}
@@ -320,7 +323,7 @@
   .hero-row{display:flex;align-items:center;gap:16px}
   .ring{width:104px;height:104px;flex:none}
   .ring-track{fill:none;stroke:#232a38;stroke-width:9}
-  .ring-fill{fill:none;stroke:url(#ringGrad);stroke-width:9;stroke-linecap:round;transform:rotate(-90deg);transform-origin:60px 60px;transition:stroke-dasharray .6s ease}
+  .ring-fill{fill:none;stroke:var(--blue);stroke-width:9;stroke-linecap:round;transform:rotate(-90deg);transform-origin:60px 60px;transition:stroke-dasharray .6s ease}
   .hero-num .n{font-size:34px;font-weight:600;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
   .hero-num .d{font-size:12px;color:var(--dim);margin-top:6px}
   .hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -355,7 +358,7 @@
   .switch-row b{color:var(--blue);font-weight:600}
   .ops{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;max-width:640px}
   .op{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:13px 15px;cursor:pointer}
-  .op:hover{border-color:#58a6ff55;background:var(--panel2)}
+  .op:hover{border-color:var(--blue)55;background:var(--panel2)}
   .op .n{font-size:13px;font-weight:500}
   .op .d{font-size:11.5px;color:var(--dim2);margin-top:3px}
   .toast{position:fixed;right:20px;bottom:20px;background:var(--panel2);border:1px solid var(--line);padding:10px 14px;border-radius:8px;font-size:12.5px;opacity:0;transition:.2s}
@@ -417,7 +420,7 @@
 /* 自述编辑 */
 .self-ta{width:100%;box-sizing:border-box;resize:vertical;background:var(--bg);border:1px solid var(--line);
   border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;line-height:1.7;font-family:inherit}
-.self-ta:focus{outline:none;border-color:#1f6feb88;box-shadow:0 0 0 3px #1f6feb22}
+.self-ta:focus{outline:none;border-color:var(--blue)88;box-shadow:0 0 0 3px var(--blue)22}
 .self-extra{padding:10px 12px;border-radius:8px;background:rgba(63,185,80,.06);border:1px solid rgba(63,185,80,.22)}
 .self-extra-h{font-size:10.5px;color:var(--green);letter-spacing:.05em;margin-bottom:4px}
 
@@ -452,7 +455,7 @@
 .self-field{display:flex;align-items:center;gap:8px}
 .self-field > label{font-size:11.5px;color:var(--dim);min-width:72px;flex-shrink:0}
 .self-input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12.5px;font-family:inherit}
-.self-input:focus{outline:none;border-color:#1f6feb88;box-shadow:0 0 0 3px #1f6feb22}
+.self-input:focus{outline:none;border-color:var(--blue)88;box-shadow:0 0 0 3px var(--blue)22}
 .self-input.num{width:68px;flex:none;text-align:right}
 .self-unit{font-size:11px;color:var(--dim2)}
 .self-todo{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)}
@@ -515,19 +518,19 @@
       var d = document.createElement('div')
       d.id = 'file-protocol-warn'
       d.style.cssText =
-        'position:fixed;inset:0;background:#0d1117;color:#e6edf3;z-index:99999;padding:40px;' +
+        'position:fixed;inset:0;background:var(--bg);color:var(--text);z-index:99999;padding:40px;' +
         'display:flex;align-items:center;justify-content:center;font:15px/1.8 system-ui,sans-serif'
       d.innerHTML =
         '<div style="max-width:640px">' +
         '<div style="font-size:22px;font-weight:600;margin-bottom:16px">这个文件要由服务打开，不能双击</div>' +
-        '<div style="color:#8b949e;margin-bottom:16px">你现在用的是 <code>file://</code>，' +
+        '<div style="color:var(--dim);margin-bottom:16px">你现在用的是 <code>file://</code>，' +
         '所有接口请求会变成 <code>file:///E:/api/…</code>，浏览器全部拒绝（控制台里是一堆 CORS 报错）。</div>' +
-        '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 18px;margin-bottom:16px">' +
-        '<div style="color:#8b949e;font-size:12px;margin-bottom:6px">正确地址（复制到地址栏）：</div>' +
-        '<code style="color:#58a6ff;font-size:15px">http://127.0.0.1:7788/?token=…</code>' +
-        '<div style="color:#8b949e;font-size:12px;margin-top:8px">完整 token 见 <code>.env</code> 的 CONSOLE_TOKEN，' +
+        '<div style="background:var(--panel);border:1px solid var(--line-2);border-radius:8px;padding:14px 18px;margin-bottom:16px">' +
+        '<div style="color:var(--dim);font-size:12px;margin-bottom:6px">正确地址（复制到地址栏）：</div>' +
+        '<code style="color:var(--blue);font-size:15px">http://127.0.0.1:7788/?token=…</code>' +
+        '<div style="color:var(--dim);font-size:12px;margin-top:8px">完整 token 见 <code>.env</code> 的 CONSOLE_TOKEN，' +
         '或启动日志里「控制台已启动」那行。</div></div>' +
-        '<div style="color:#8b949e;font-size:13px">如果 7788 也打不开，说明服务没跑：在项目目录执行 <code>npm start</code>。</div>' +
+        '<div style="color:var(--dim);font-size:13px">如果 7788 也打不开，说明服务没跑：在项目目录执行 <code>npm start</code>。</div>' +
         '</div>'
       document.body.appendChild(d)
     })
@@ -824,7 +827,7 @@
 
           <!-- 安装目录：留空就自动探测，探测不到让用户手填 -->
           <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);margin-top:4px;flex-wrap:wrap">
-            <span style="font-size:12.5px;color:#8b949e;flex:none">安装目录</span>
+            <span style="font-size:12.5px;color:var(--dim);flex:none">安装目录</span>
             <span id="nc-shelldir" style="font-size:12px;word-break:break-all;flex:1;min-width:0">检查中…</span>
             <button class="mini-btn" onclick="editNapcatShelldir()">改</button>
           </div>
@@ -922,13 +925,13 @@
         <table style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:rgba(255,255,255,.03);text-align:left">
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">人</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">来源</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">关系</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">记忆</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">对话</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">核心</th>
-              <th style="padding:8px;font-size:11.5px;font-weight:600;color:#8b949e">首次见到</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">人</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">来源</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">关系</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">记忆</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">对话</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">核心</th>
+              <th style="padding:8px;font-size:11.5px;font-weight:600;color:var(--dim)">首次见到</th>
             </tr>
           </thead>
           <tbody id="mt-body"></tbody>
@@ -1220,7 +1223,7 @@
           <div id="core-list"></div>
           <div style="margin-top:12px;display:flex;gap:8px">
             <input id="core-input" class="chip-input" style="flex:1" placeholder="加一条（例：他讨厌被追问感受）" autocomplete="off">
-            <select id="core-kind" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px">
+            <select id="core-kind" style="background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:6px;padding:6px">
               <option>身份</option><option>边界</option><option>诺言</option><option>偏好</option>
             </select>
             <button class="btn" onclick="coreAdd()">加</button>
@@ -1261,7 +1264,7 @@
     <section class="view" id="v-try">
       <div class="try-layout">
         <div class="panel try-panel">
-          <h3>试聊 <span class="r">不写 session、不落盘、不评估关系、<b style="color:#d29922">不带工具</b></span></h3>
+          <h3>试聊 <span class="r">不写 session、不落盘、不评估关系、<b style="color:var(--yellow)">不带工具</b></span></h3>
           <div class="body try-body">
             <div class="try-log" id="try-log">
               <div class="try-empty" id="try-empty">
@@ -1274,8 +1277,8 @@
               <button class="btn pri" onclick="doTry()">发送</button>
             </div>
             <!-- 说清楚为什么这里问「你能看屏幕吗」它会说没有：试聊不带工具。 -->
-            <div class="hint" style="padding:0 16px 12px;font-size:11.5px;line-height:1.7;color:#8b949e">
-              这里只预览 prompt，<b style="color:#d29922">不带工具</b> —— 问它「能不能看屏幕」它会说没有，那是正常的。
+            <div class="hint" style="padding:0 16px 12px;font-size:11.5px;line-height:1.7;color:var(--dim)">
+              这里只预览 prompt，<b style="color:var(--yellow)">不带工具</b> —— 问它「能不能看屏幕」它会说没有，那是正常的。
               想验证工具：走上面的「工具连通性」，或者直接在 QQ 里跟它说。
             </div>
           </div>
@@ -1425,16 +1428,16 @@ function showTokenHelp() {
   mask.innerHTML =
     '<div style="max-width:620px;line-height:1.9">' +
     '<div style="font-size:20px;font-weight:600;margin-bottom:10px">打不开控制台：token 不对</div>' +
-    '<div style="color:#8b949e;font-size:13.5px;margin-bottom:18px">' +
+    '<div style="color:var(--dim);font-size:13.5px;margin-bottom:18px">' +
     '链接里的 <code style="color:#79c0ff">?token=</code> 后面要是完整的一串（16 位）。<br>' +
     '常见原因：从启动日志里复制时只抄了前几位。' +
     '</div>' +
-    '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;font-size:13px">' +
-    '<div style="color:#8b949e;margin-bottom:6px">完整 token 在数据目录的 <code style="color:#79c0ff">.env</code> 里：</div>' +
-    '<div style="font-family:ui-monospace,Consolas,monospace;color:#e6edf3">CONSOLE_TOKEN=&lt;16 位&gt;</div>' +
-    '<div style="color:#8b949e;margin-top:8px">或者看后端启动日志里那句「控制台已启动：http://…?token=…」（现在是完整链接，可以直接复制）</div>' +
+    '<div style="background:var(--panel);border:1px solid var(--line-2);border-radius:8px;padding:14px 16px;font-size:13px">' +
+    '<div style="color:var(--dim);margin-bottom:6px">完整 token 在数据目录的 <code style="color:#79c0ff">.env</code> 里：</div>' +
+    '<div style="font-family:ui-monospace,Consolas,monospace;color:var(--text)">CONSOLE_TOKEN=&lt;16 位&gt;</div>' +
+    '<div style="color:var(--dim);margin-top:8px">或者看后端启动日志里那句「控制台已启动：http://…?token=…」（现在是完整链接，可以直接复制）</div>' +
     '</div>' +
-    '<div style="color:#8b949e;font-size:12.5px;margin-top:16px">' +
+    '<div style="color:var(--dim);font-size:12.5px;margin-top:16px">' +
     '数据目录通常在 <code style="color:#79c0ff">%APPDATA%/qqbot/data-root</code>（桌面版）。' +
     '</div>' +
     '</div>'
@@ -1458,7 +1461,7 @@ function askText(title, defaultValue) {
 
     const card = document.createElement('div')
     card.style.cssText =
-      'background:var(--panel,#161b22);border:1px solid var(--line,#30363d);border-radius:12px;' +
+      'background:var(--panel,var(--panel));border:1px solid var(--line,var(--line-2));border-radius:12px;' +
       'padding:18px 20px;width:min(520px,100%);box-shadow:0 12px 40px rgba(0,0,0,.5)'
 
     const h = document.createElement('div')
@@ -1470,7 +1473,7 @@ function askText(title, defaultValue) {
     inp.type = 'text'
     inp.value = defaultValue == null ? '' : String(defaultValue)
     inp.style.cssText =
-      'width:100%;box-sizing:border-box;background:var(--panel2,#0d1117);border:1px solid var(--line,#30363d);' +
+      'width:100%;box-sizing:border-box;background:var(--panel2,var(--bg));border:1px solid var(--line,var(--line-2));' +
       'border-radius:8px;padding:9px 12px;font-size:13px;color:inherit;font-family:ui-monospace,Consolas,monospace'
     card.appendChild(inp)
 
@@ -1484,7 +1487,7 @@ function askText(title, defaultValue) {
     const ok = document.createElement('button')
     ok.className = 'mini-btn'
     ok.textContent = '确定'
-    ok.style.cssText += ';background:#238636;color:#fff;border-color:#238636'
+    ok.style.cssText += ';background:var(--green);color:#fff;border-color:var(--green)'
 
     row.appendChild(cancel)
     row.appendChild(ok)
@@ -1963,7 +1966,7 @@ async function loadCore() {
       ? core
           .map(
             (x, i) => `<div class="row" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)">
-              <span class="badge" style="background:#1f6feb;color:#fff;width:44px;text-align:center">${esc(x.kind)}</span>
+              <span class="badge" style="background:var(--blue);color:#fff;width:44px;text-align:center">${esc(x.kind)}</span>
               <span style="flex:1;margin-left:8px">${esc(x.text)}</span>
               <span class="hint" style="width:80px">${esc(x.at || '')}</span>
               <button class="btn" onclick="coreDrop(${i})">删</button>
@@ -2913,35 +2916,35 @@ async function saveSelfCard(patch, silent = false) {
 function moodFace(emotion) {
   const e = String(emotion || '')
   const eyes = (a, b, c, d) =>
-    '<path d="' + a + '" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>' +
-    '<path d="' + c + '" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
+    '<path d="' + a + '" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>' +
+    '<path d="' + c + '" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
   let inner = ''
   if (/开心|高兴|兴奋|笑/.test(e)) {
     inner =
       eyes('M10 14 q2 -2.4 4 0', '', 'M18 14 q2 -2.4 4 0') +
-      '<path d="M11 19 q5 4 10 0" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
+      '<path d="M11 19 q5 4 10 0" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
   } else if (/难过|伤心|低落|委屈/.test(e)) {
     inner =
       eyes('M10 13 l4 2', '', 'M22 13 l-4 2') +
-      '<path d="M11 21 q5 -4 10 0" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
+      '<path d="M11 21 q5 -4 10 0" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
   } else if (/生气|冒犯|不爽|怒/.test(e)) {
     inner =
       '<path d="M9 11 l5 2" stroke="#f85149" stroke-width="1.7" stroke-linecap="round" fill="none"/>' +
       '<path d="M23 11 l-5 2" stroke="#f85149" stroke-width="1.7" stroke-linecap="round" fill="none"/>' +
       eyes('M11 15 l2.5 0.4', '', 'M18.5 15.4 l2.5 -0.4') +
-      '<path d="M12 21 l8 0" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
+      '<path d="M12 21 l8 0" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
   } else if (/担心|焦虑|紧张|不安/.test(e)) {
     inner =
       eyes('M10 12 l4 2', '', 'M22 12 l-4 2') +
-      '<circle cx="16" cy="21" r="1.6" fill="#e6edf3"/>'
+      '<circle cx="16" cy="21" r="1.6" fill="var(--text)"/>'
   } else if (/累|疲|困|无聊|平静/.test(e)) {
     inner =
       eyes('M10 15 l4 0', '', 'M18 15 l4 0') +
-      '<path d="M12 21 l8 0" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
+      '<path d="M12 21 l8 0" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
   } else {
     inner =
       eyes('M11 14 l2 0', '', 'M19 14 l2 0') +
-      '<path d="M12 20 q4 2 8 0" stroke="#e6edf3" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
+      '<path d="M12 20 q4 2 8 0" stroke="var(--text)" stroke-width="1.7" stroke-linecap="round" fill="none"/>'
   }
   return (
     '<svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true">' +
@@ -2957,7 +2960,7 @@ function heartMeter(value) {
   return (
     '<svg viewBox="0 0 64 64" width="72" height="72" aria-hidden="true">' +
     '<defs><clipPath id="heartClip"><path d="M32 56 C10 40 6 26 14 16 C20 8 30 10 32 18 C34 10 44 8 50 16 C58 26 54 40 32 56 Z"/></clipPath></defs>' +
-    '<path d="M32 56 C10 40 6 26 14 16 C20 8 30 10 32 18 C34 10 44 8 50 16 C58 26 54 40 32 56 Z" fill="#21262d" stroke="#3a4252" stroke-width="1.5"/>' +
+    '<path d="M32 56 C10 40 6 26 14 16 C20 8 30 10 32 18 C34 10 44 8 50 16 C58 26 54 40 32 56 Z" fill="var(--panel2)" stroke="#3a4252" stroke-width="1.5"/>' +
     '<g clip-path="url(#heartClip)"><rect x="0" y="' +
     (64 - (64 * v) / 100) +
     '" width="64" height="' +
@@ -2973,13 +2976,13 @@ function thermoMeter(value) {
   const h = 40 * (v / 100)
   return (
     '<svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">' +
-    '<rect x="18" y="6" width="12" height="30" rx="6" fill="#21262d" stroke="#3a4252" stroke-width="1.4"/>' +
+    '<rect x="18" y="6" width="12" height="30" rx="6" fill="var(--panel2)" stroke="#3a4252" stroke-width="1.4"/>' +
     '<rect x="21" y="' +
     (34 - h) +
     '" width="6" height="' +
     h +
     '" rx="3" fill="#f778ba"/>' +
-    '<circle cx="24" cy="38" r="7" fill="#21262d" stroke="#3a4252" stroke-width="1.4"/>' +
+    '<circle cx="24" cy="38" r="7" fill="var(--panel2)" stroke="#3a4252" stroke-width="1.4"/>' +
     '<circle cx="24" cy="38" r="4.2" fill="#f778ba"/>' +
     '</svg>'
   )
@@ -3997,7 +4000,7 @@ async function loadDesktopLog() {
 
     for (const x of rows) {
       const color =
-        x.outcome === 'ok' ? '#3fb950' : x.outcome === 'need-confirm' ? '#d29922' : '#f85149'
+        x.outcome === 'ok' ? '#3fb950' : x.outcome === 'need-confirm' ? 'var(--yellow)' : '#f85149'
       const label =
         x.outcome === 'ok' ? '成功' : x.outcome === 'need-confirm' ? '待确认' : '失败'
 
@@ -4034,7 +4037,7 @@ async function loadNapcat() {
   try {
     const r = await api('/api/napcat')
     tag.textContent = r.running ? '在跑' : '没跑'
-    tag.style.background = r.running ? '#238636' : '#f85149'
+    tag.style.background = r.running ? 'var(--green)' : '#f85149'
     tag.style.color = '#fff'
 
     if (hint) {
@@ -4068,7 +4071,7 @@ async function openNapcatWeb() {
 
 const LEVEL_STYLE = {
   ok: { color: '#3fb950', mark: '✓', text: '正常' },
-  warn: { color: '#d29922', mark: '!', text: '注意' },
+  warn: { color: 'var(--yellow)', mark: '!', text: '注意' },
   fail: { color: '#f85149', mark: '✗', text: '有问题' },
 }
 
@@ -4110,7 +4113,7 @@ function renderHealth(r, box) {
 
     if (it.fix) {
       const fix = el('div', 'sub', '→ ' + it.fix)
-      fix.style.cssText = 'color:#d29922;margin-top:3px;font-size:12px;line-height:1.5'
+      fix.style.cssText = 'color:var(--yellow);margin-top:3px;font-size:12px;line-height:1.5'
       row.appendChild(fix)
     }
     box.appendChild(row)
@@ -4158,7 +4161,7 @@ function sparklineEl(vals, w = 200, h = 34) {
   const line = document.createElementNS(svgNS, 'polyline')
   line.setAttribute('points', pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' '))
   line.setAttribute('fill', 'none')
-  line.setAttribute('stroke', '#58a6ff')
+  line.setAttribute('stroke', 'var(--blue)')
   line.setAttribute('stroke-width', '1.6')
   line.setAttribute('stroke-linejoin', 'round')
   line.setAttribute('stroke-linecap', 'round')
@@ -4305,27 +4308,7 @@ function renderDashChart(t) {
     svg.appendChild(ln)
   }
 
-  // 渐变定义
-  const defs = document.createElementNS(svgNS, 'defs')
-  const gid = 'dashGrad'
-  const grad = document.createElementNS(svgNS, 'linearGradient')
-  grad.setAttribute('id', gid)
-  grad.setAttribute('x1', '0')
-  grad.setAttribute('y1', '0')
-  grad.setAttribute('x2', '0')
-  grad.setAttribute('y2', '1')
-  const stop1 = document.createElementNS(svgNS, 'stop')
-  stop1.setAttribute('offset', '0')
-  stop1.setAttribute('stop-color', '#58a6ff')
-  stop1.setAttribute('stop-opacity', '.28')
-  const stop2 = document.createElementNS(svgNS, 'stop')
-  stop2.setAttribute('offset', '1')
-  stop2.setAttribute('stop-color', '#58a6ff')
-  stop2.setAttribute('stop-opacity', '0')
-  grad.appendChild(stop1)
-  grad.appendChild(stop2)
-  defs.appendChild(grad)
-  svg.appendChild(defs)
+  // 面积用纯色低透明（设计规范禁止渐变）
 
   // 面积
   const ptsXY = vals.map((v, i) => [px(i), py(v)])
@@ -4334,14 +4317,15 @@ function renderDashChart(t) {
   d += ` L ${ptsXY[n - 1][0].toFixed(1)} ${H - PADB} Z`
   const area = document.createElementNS(svgNS, 'path')
   area.setAttribute('d', d)
-  area.setAttribute('fill', `url(#${gid})`)
+  area.setAttribute('fill', 'var(--blue)')
+  area.setAttribute('fill-opacity', '.10')
   svg.appendChild(area)
 
   // 折线
   const line = document.createElementNS(svgNS, 'polyline')
   line.setAttribute('points', ptsXY.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '))
   line.setAttribute('fill', 'none')
-  line.setAttribute('stroke', '#58a6ff')
+  line.setAttribute('stroke', 'var(--blue)')
   line.setAttribute('stroke-width', '1.8')
   line.setAttribute('stroke-linejoin', 'round')
   line.setAttribute('stroke-linecap', 'round')
@@ -4549,7 +4533,7 @@ function abilityCard(c) {
   ico.innerHTML = svgIcon(c.icon)
   ico.style.cssText =
     'width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;' +
-    (c.on ? 'background:rgba(88,166,255,.15);color:#58a6ff' : 'background:rgba(255,255,255,.06);color:#8b949e')
+    (c.on ? 'background:rgba(88,166,255,.15);color:var(--blue)' : 'background:rgba(255,255,255,.06);color:var(--dim)')
   head.appendChild(ico)
 
   const nm = el('b', '', c.name)
@@ -4566,7 +4550,7 @@ function abilityCard(c) {
   if (c.builtin) {
     const badge = el('span', '', '内置')
     badge.style.cssText =
-      'font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(139,148,158,.14);color:#8b949e;flex:none'
+      'font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(139,148,158,.14);color:var(--dim);flex:none'
     head.appendChild(badge)
   }
 
@@ -4579,7 +4563,7 @@ function abilityCard(c) {
     const sw = el('button', '', c.on ? '开' : '关')
     sw.style.cssText =
       'width:38px;height:20px;border-radius:10px;border:none;font-size:11px;cursor:pointer;flex:none;transition:background .15s;' +
-      (c.on ? 'background:#238636;color:#fff' : 'background:rgba(255,255,255,.12);color:#8b949e')
+      (c.on ? 'background:var(--green);color:#fff' : 'background:rgba(255,255,255,.12);color:var(--dim)')
     sw.onclick = async () => {
       try {
         await sendJson('/api/ability/toggle', { id: c.id, on: !c.on }, 'PUT')
@@ -4592,13 +4576,13 @@ function abilityCard(c) {
     head.appendChild(sw)
   } else {
     const tag = el('span', 'tag', '恒开')
-    tag.style.cssText = 'font-size:10px;background:rgba(255,255,255,.06);color:#8b949e'
+    tag.style.cssText = 'font-size:10px;background:rgba(255,255,255,.06);color:var(--dim)'
     head.appendChild(tag)
   }
   card.appendChild(head)
 
   // 描述
-  card.appendChild(el('div', 'sub', c.desc)).style.cssText = 'font-size:12px;line-height:1.55;color:#8b949e'
+  card.appendChild(el('div', 'sub', c.desc)).style.cssText = 'font-size:12px;line-height:1.55;color:var(--dim)'
 
   // 参数
   if ((c.params || []).length) {
@@ -4607,7 +4591,7 @@ function abilityCard(c) {
     for (const p of c.params) {
       const row = el('div')
       row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px'
-      row.appendChild(el('span', '', p.label)).style.cssText = 'color:#8b949e;flex:none;min-width:96px'
+      row.appendChild(el('span', '', p.label)).style.cssText = 'color:var(--dim);flex:none;min-width:96px'
       const val = el('span', '', formatParam(p))
       val.style.cssText = 'color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1'
       row.appendChild(val)
@@ -4693,7 +4677,7 @@ async function loadDesktop() {
     const st = $('dk-state')
     if (st) {
       st.textContent = d.可操作 ? '能看 + 能操作' : d.开 ? '只能看' : '关着'
-      st.style.background = d.可操作 ? '#238636' : d.开 ? '#9e6a03' : ''
+      st.style.background = d.可操作 ? 'var(--green)' : d.开 ? '#9e6a03' : ''
       st.style.color = d.可操作 || d.开 ? '#fff' : ''
     }
 
@@ -4756,7 +4740,7 @@ async function loadDesktop() {
       for (const r of d.日志) {
         const row = el('div', 'item')
         row.style.cssText = 'padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)'
-        const color = r.outcome === 'ok' ? '#3fb950' : r.outcome === 'need-confirm' ? '#d29922' : '#f85149'
+        const color = r.outcome === 'ok' ? '#3fb950' : r.outcome === 'need-confirm' ? 'var(--yellow)' : '#f85149'
         row.appendChild(
           el('div', 'txt', `${r.tool} · ${r.outcome === 'ok' ? '成功' : r.outcome === 'need-confirm' ? '待确认' : '失败'}${r.detail ? ' — ' + r.detail : ''}`),
         )
@@ -4835,7 +4819,7 @@ async function loadQzone() {
                 ${new Date(x.at).toLocaleString()}
                 ${x.reason ? ` · ${esc(x.reason)}` : ''}
               </div>
-              <textarea id="qz-${i}" style="width:100%;min-height:60px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:8px;font-family:inherit;font-size:13px">${esc(x.content)}</textarea>
+              <textarea id="qz-${i}" style="width:100%;min-height:60px;background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:6px;padding:8px;font-family:inherit;font-size:13px">${esc(x.content)}</textarea>
               ${x.images && x.images.length ? `<div class="hint" style="margin-top:4px">配图：${esc(x.images.join(', '))}</div>` : ''}
               <div style="margin-top:8px;display:flex;gap:8px">
                 <button class="btn" onclick="qzonePublish(${i})">发出去</button>
@@ -4934,7 +4918,7 @@ async function loadGroups() {
           const rows = (g.members || [])
             .map((m, mi) => {
               const bad = m.认识
-                ? '<span class="badge" style="background:#238636;color:#fff">认识</span>'
+                ? '<span class="badge" style="background:var(--green);color:#fff">认识</span>'
                 : '<span class="hint" style="opacity:.5">—</span>'
               const nick = m.昵称 && m.昵称 !== m.名片 ? `<span class="hint">（昵称 ${esc(m.昵称)}）</span>` : ''
               const files = m.有 && m.有.length ? `<span class="hint">${esc(m.有.join(' '))}</span>` : ''
@@ -4956,7 +4940,7 @@ async function loadGroups() {
               </div>`
             })
             .join('')
-          const stale = g.过期 ? '<span class="hint" style="color:#d29922">（名单旧了）</span>' : ''
+          const stale = g.过期 ? '<span class="hint" style="color:var(--yellow)">（名单旧了）</span>' : ''
           return `<details style="margin-bottom:14px" ${g.认识几个 > 0 ? 'open' : ''}>
             <summary style="cursor:pointer;padding:6px 0;font-weight:600">
               群 ${esc(g.groupId)} · ${g.总数} 人 · 认识 ${g.认识几个} 个 ${stale}
@@ -5849,11 +5833,11 @@ async function loadTrend() {
     const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
     const area = `M${PAD},${H - PAD} L${line.split(' ').join(' L')} L${(W - PAD).toFixed(1)},${H - PAD} Z`
     const dots = coords
-      .map(([x, y], i) => (pts[i].turns > 0 ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="#58a6ff"/>` : ''))
+      .map(([x, y], i) => (pts[i].turns > 0 ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="var(--blue)"/>` : ''))
       .join('')
     svg.innerHTML = `
-      <path d="${area}" fill="url(#areaGrad)"/>
-      <polyline points="${line}" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="${area}" fill="var(--blue)" fill-opacity=".10"/>
+      <polyline points="${line}" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
       ${dots}
     `
     $('trend-axis').innerHTML = pts.map((p) => `<span>${p.label}</span>`).join('')
@@ -5892,14 +5876,6 @@ setInterval(loadStatus, 15000)
 </script>
 <svg width="0" height="0" style="position:absolute">
   <defs>
-    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#5e6ad2"/>
-      <stop offset="100%" stop-color="#bc8cff"/>
-    </linearGradient>
-    <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#5e6ad2" stop-opacity="0.28"/>
-      <stop offset="100%" stop-color="#5e6ad2" stop-opacity="0"/>
-    </linearGradient>
   </defs>
 </svg>
   <script src="/members.js"></script>
