@@ -28,9 +28,20 @@ export function setConfigPath(raw: string, key: string, value: unknown): { text:
     if (parentLine < 0) return { text: raw, ok: false, error: `找不到父级 ${want}` }
   }
 
-  const targetIndent = parentLine >= 0 ? parentIndent + 2 : 0
+// 子键缩进按父键下面「已有子键」的实际缩进来定，不硬编码 +2：
+  // 用户把 rules.yaml 排成 4 空格或 Tab 后，写死 +2 会让所有改配置接口报"找不到键"。
+  let targetIndent = parentLine >= 0 ? parentIndent + 2 : 0
+  if (parentLine >= 0) {
+    for (let i = parentLine + 1; i < lines.length; i++) {
+      const l = lines[i]!
+      if (!l.trim()) continue
+      const ind = /^(\s*)/.exec(l)![1]!.length
+      if (ind <= parentIndent) break
+      targetIndent = ind
+      break
+    }
+  }
   const leafRe = new RegExp('^(\\s*)' + leaf.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:\\s*(.*)$')
-
   for (let i = parentLine + 1; i < lines.length; i++) {
     const l = lines[i]!
     if (!l.trim()) continue

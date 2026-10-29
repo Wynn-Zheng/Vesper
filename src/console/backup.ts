@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { appendJsonl, ensureDir, writeAtomic } from '../store/fs.ts'
 import { appendFacts, loadDeleted, loadFacts, type PersonFact } from '../memory/facts.ts'
-import { appendInsights, appendRawAt, loadEpisodes, loadInsights, readRaw, saveEpisode } from '../memory/store.ts'
+import { appendInsights, recentRaw, appendRawAt, loadEpisodes, loadInsights, readRaw, saveEpisode } from '../memory/store.ts'
 import { appendOpen, loadOpen, type OpenItem } from '../people/open.ts'
 import { isValidPersonId, listPeople, personDir, savePerson, type PersonMeta } from '../people/store.ts'
 import { loadRelation, saveRelation } from '../relation/store.ts'
@@ -349,7 +349,15 @@ export function importBackup(data: BackupV2, opts: ImportOptions = {}): ImportSt
 
   /* ---------- 原始对话 ---------- */
   // 按 ts 落在哪一天写哪个文件（appendRaw 固定写今天，会写错日期）
+  // 已经落过盘的原文也要进去重集合：之前只跟"本次备份"比，
+  // 同一个备份导两次，原文会重复累积，检索和成员统计全都翻倍。
   const seenRaw = new Set<string>()
+  try {
+    // 用 120 天窗口（raw 的保留期）覆盖现有原文
+    for (const t of recentRaw(120)) seenRaw.add(`${t.ts}\\u0000${t.scope}\\u0000${t.text}`)
+  } catch {
+    /* 读不到就用空的 */
+  }
   for (const t of data.raw) {
     if (!t || typeof t.ts !== 'number' || !Number.isFinite(t.ts) || typeof t.text !== 'string') {
       stats.skipped++

@@ -26,6 +26,35 @@ import { watchFile } from 'node:fs'
 
 initLog()
 
+// 清理上次被强杀留下的临时文件（writeAtomic 的 .tmp）
+try {
+  const { readdirSync, rmSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const walk = (dir: string): void => {
+    let entries: Array<{ name: string; isDirectory: () => boolean }> = []
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) {
+        if (e.name !== 'versions') walk(full)
+      } else if (e.name.endsWith('.tmp')) {
+        try {
+          rmSync(full, { force: true })
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  for (const d of ['persona', 'data']) walk(d)
+} catch {
+  /* 清理失败不影响启动 */
+}
+
 // 配置写错不能让进程直接退出：那样控制台永远打不开，用户只能去翻日志。
 // 先用默认配置把控制台起起来，明确告诉他去修 rules.yaml。
 let startConfigBroken = false

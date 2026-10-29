@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname } from 'node:path'
+import { warnAt } from '../core/log.ts'
 
 export function ensureDir(p: string): void {
   mkdirSync(p, { recursive: true })
@@ -39,7 +40,12 @@ export function writeAtomic(file: string, content: string): void {
         }
       }
     }
-    if (!renamed) writeFileSync(file, content, 'utf8')
+    if (!renamed) {
+      // 三次 rename 都失败（目标被长期占用）：退回非原子直写，至少别丢这次修改。
+      // 此时如果进程在写到一半被杀，文件会是半截 —— 用 warn 留个记录。
+      warnAt('原子写失败，已退回非原子写入', { file })
+      writeFileSync(file, content, 'utf8')
+    }
   } catch (err) {
     // 写一半失败、或者 rename 失败（目标被占用 / 是目录），
     // 都要把临时文件收掉，别在数据目录里越积越多。
