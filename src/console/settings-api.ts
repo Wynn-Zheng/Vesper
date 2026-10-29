@@ -6,6 +6,31 @@
  *   这个文件      → 数据目录、磁盘、备份、模型配置、版本（设置页在用）
  */
 import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+
+/**
+ * 读程序自身的版本信息。
+ *
+ * 注意：后端 cwd 是**数据目录**（%APPDATA%/QQBot/data-root），那里没有 package.json。
+ * 程序目录由 Electron 通过 QQBOT_ROOT 传进来 —— 之前直接 readFileSync('package.json')，
+ * 永远读不到，控制台版本号一直是 0.0.0、构建时间空白。
+ */
+function appVersionInfo(): { version: string; buildTime: string; git: string } {
+  const root = process.env['QQBOT_ROOT'] ?? '.'
+  const read = (f: string): Record<string, unknown> | null => {
+    try {
+      return JSON.parse(readFileSync(join(root, f), 'utf8')) as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+  const vj = read('version.json')
+  const pkg = read('package.json')
+  return {
+    version: String(vj?.['version'] ?? pkg?.['version'] ?? '0.0.0'),
+    buildTime: String(vj?.['buildTime'] ?? ''),
+    git: String(vj?.['git'] ?? ''),
+  }
+}
 import { join, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
@@ -272,13 +297,8 @@ export async function handleSettingsApi(
 
   /* ============ 关于：版本 + git ============ */
   if (method === 'GET' && path === '/api/settings/about') {
-    let version = '0.0.0'
-    try {
-      const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version?: string }
-      version = pkg.version ?? '0.0.0'
-    } catch {
-      /* 读不到 */
-    }
+    const vi = appVersionInfo()
+    const version = vi.version
 
     let git = ''
     let dirty = false
@@ -297,15 +317,7 @@ export async function handleSettingsApi(
       platform: process.platform,
       arch: process.arch,
       uptime: Math.round(process.uptime()),
-      // 构建时间：打包时写进 resources/app/version.json；开发模式没有就留空
-      buildTime: (() => {
-        try {
-          const f = 'version.json'
-          return (JSON.parse(readFileSync(f, 'utf8')) as { buildTime?: string }).buildTime ?? ''
-        } catch {
-          return ''
-        }
-      })(),
+      buildTime: vi.buildTime,
     })
     return true
   }
@@ -313,13 +325,7 @@ export async function handleSettingsApi(
   /* ============ 更新：查版本 / 下载 ============ */
   if (method === 'GET' && path === '/api/settings/check-update') {
     const { checkUpdate } = await import('./update.ts')
-    const { readFileSync } = await import('node:fs')
-    let version = ''
-    try {
-      version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version?: string }).version ?? ''
-    } catch {
-      /* 读不到 */
-    }
+    const version = appVersionInfo().version
     const r = await checkUpdate(version)
     json(res, 200, { ...r, current: version, url: process.env['UPDATE_URL'] ?? '' })
     return true
