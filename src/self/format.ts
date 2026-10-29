@@ -73,7 +73,6 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
     lines.push(`- 你最近在想：${self.thinking.replace(/\s+/g, ' ').trim()}`)
   }
 
-  // 对当前这个人的印象（它自己的看法，不是履历）
   if (personId) {
     const imp = impressionOf(personId)
     if (imp) lines.push(`- 你对${personName || '他'}的印象：${imp}`)
