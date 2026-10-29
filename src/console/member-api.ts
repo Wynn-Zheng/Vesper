@@ -222,18 +222,25 @@ export async function handleMemberApi(
       return true
     }
 
-    // 用 access.yaml 的 memberDeny（"永远不理"）实现屏蔽。
-    // memberDeny 原本就存在，语义正好是"这个人说的话不用回"。
+// memberDeny 比对的是原始平台账号（QQ 号），不是内部 personId（qq-123）。
+    // 之前把 personId 写进去，checkAccess 永远匹配不上 → 点"屏蔽"返回 200，bot 照旧回他。
+    const { loadPerson } = await import('../people/store.ts')
+    const person = loadPerson(id)
+    const qq = person?.accounts.find((a) => a.platform === 'qq')?.id ?? ''
+    if (!qq) {
+      json(res, 400, { error: '这个人还没有 QQ 账号，没法屏蔽' })
+      return true
+    }
+    const bodyBlocked = body.blocked === (true as unknown) || (body.blocked as unknown) === 'true' || (body.blocked as unknown) === 1
     const { loadAccess, saveAccess } = await import('../core/access.ts')
     const acc = loadAccess()
     const list = new Set(acc.memberDeny ?? [])
-    if (body.blocked) list.add(id)
-    else list.delete(id)
+    if (bodyBlocked) list.add(qq)
+    else list.delete(qq)
     saveAccess({ ...acc, memberDeny: [...list] })
-    json(res, 200, { ok: true, blocked: list.has(id) })
+    json(res, 200, { ok: true, blocked: list.has(qq) })
     return true
   }
-
   return false
 }
 

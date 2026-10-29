@@ -205,6 +205,9 @@ function emptyStats(): ImportStats {
  *
  * 重复导入是幂等的（facts 按文本、episodes 按 id、insights 按相似度、raw 按 ts 去重）。
  */
+/** 这些是「当前状态」文件：合并导入不写，避免把现在的人格/心情冲掉 */
+const STATE_FILES = new Set(['self', 'life', 'jargon', 'mood', 'plays'])
+
 export function importBackup(data: BackupV2, opts: ImportOptions = {}): ImportStats {
   const stats = emptyStats()
   const overwrite = opts.overwrite === true
@@ -382,8 +385,13 @@ export function importBackup(data: BackupV2, opts: ImportOptions = {}): ImportSt
   if (stats.sessions && !dryRun) clearSessions()
 
   /* ---------- 人格 / 配置文件 ---------- */
+  // 只有「覆盖」模式才写人格/心情/黑话这些"当前状态"文件。
+  // 合并模式的文案是"只补缺"，结果之前无条件整份覆盖：
+  // 为了补回一个人的旧事实而导入旧备份，当前 self.md/心情/黑话会被旧版冲掉。
+  const canWriteState = overwrite
   const fileList = opts.includeConfig ? [...CONTENT_FILES, ...CONFIG_FILES] : CONTENT_FILES
   for (const [name, target] of fileList) {
+    if (!canWriteState && STATE_FILES.has(name)) continue
     const content = data.files[name]
     if (typeof content !== 'string' || !content.trim()) continue
     if (!dryRun) {
