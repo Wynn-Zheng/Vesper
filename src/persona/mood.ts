@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { warnAt } from '../core/log.ts'
 import { writeAtomic } from '../store/fs.ts'
 
@@ -113,7 +113,17 @@ export function loadMood(): Mood | null {
     intensity: Number.isFinite(rawIntensity) ? Math.min(1, Math.max(0, rawIntensity)) : 0.3,
     // 老文件没有效价 → undefined，decayedMood 会按 0（平淡）处理
     ...(Number.isFinite(v) ? { valence: Math.min(1, Math.max(-1, v)) } : {}),
-    at: Date.parse(out['时间'] ?? '') || Date.now(),
+    // 时间缺失/写坏时不能退化成 Date.now()：那样每次 load 都算"刚发生"，心情永不衰减。
+    // 退而用文件的 mtime 当写入时间；实在拿不到才当现在（至少不会显示成"刚刚"）。
+    at: (() => {
+      const parsed = Date.parse(String(out['时间'] ?? ''))
+      if (Number.isFinite(parsed) && parsed > 0) return parsed
+      try {
+        return statSync(FILE).mtimeMs
+      } catch {
+        return Date.now()
+      }
+    })(),
     ...(recent.length ? { recent: recent.slice(-5) } : {}),
   }
 }
@@ -148,7 +158,8 @@ export function decayedMood(m: Mood | null, now = Date.now()): Mood | null {
   // 当成没有心情处理，别把 NaN 传下去污染 prompt。
   if (!Number.isFinite(m.intensity) || m.intensity <= 0) return null
   const hours = (now - m.at) / 3_600_000
-  if (hours < 0) return m
+  // 未来时间戳（时钟回拨/手改）夹到 now，否则会一直拿满强度不衰减
+  if (hours < 0) return { ...m, at: now }
 
   // 按效价分两档衰减。
   //

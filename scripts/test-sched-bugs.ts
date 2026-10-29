@@ -182,7 +182,7 @@ console.log('\n=== 4. proactiveBudget 兜底 ===')
 
   const unknown = proactiveBudget('还没定义的阶段')
   check('未知阶段有两个有限数值', Number.isFinite(unknown.minGapHours) && Number.isFinite(unknown.dailyMax), JSON.stringify(unknown))
-  check('未知阶段兜底为最宽松的额度', unknown.minGapHours === 30 && unknown.dailyMax === 3, JSON.stringify(unknown))
+  check('未知阶段兜底为中性额度（朋友档）', unknown.minGapHours === 120 && unknown.dailyMax === 2, JSON.stringify(unknown))
   check('未知阶段额度不会被 JSON 变成 null', JSON.stringify(unknown).includes('null') === false, JSON.stringify(unknown))
 }
 

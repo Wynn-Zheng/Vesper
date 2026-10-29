@@ -94,9 +94,16 @@ function minutesOf(hhmm: string): number {
 
 /** 静默时段判断，支持跨午夜（23:30 → 08:30） */
 export function inQuietHours(rules: Rules, now = new Date()): boolean {
-  const [startS, endS] = rules.行为.静默时段
+  const span = rules.行为.静默时段
+  // 配错形状（只写一个、写成数字）时当"没有静默时段"，而不是让 split 抛 TypeError ——
+  // 那个异常会被上层 catch 吞掉，结果是主动消息永久失效，日志里只刷 warn。
+  if (!Array.isArray(span) || span.length !== 2 || typeof span[0] !== 'string' || typeof span[1] !== 'string') {
+    return false
+  }
+  const [startS, endS] = span
   const start = minutesOf(startS)
   const end = minutesOf(endS)
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return false
   const cur = now.getHours() * 60 + now.getMinutes()
   return start <= end ? cur >= start && cur < end : cur >= start || cur < end
 }
@@ -130,7 +137,9 @@ const FALLBACK_STAGE_BUDGET: Record<string, StageBudget> = {
   离不开: { minGapHours: 30, dailyMax: 3, minUrge: 1 },
 }
 
-const LAST_RESORT: StageBudget = FALLBACK_STAGE_BUDGET['很亲近']!
+// 名字对不上时用「朋友」兜底：中性、不会静默变成每天 3 条。
+// 之前用的是「很亲近」——用户改个阶段名，主动消息就直接拉到最宽松的档位。
+const LAST_RESORT: StageBudget = FALLBACK_STAGE_BUDGET['朋友']!
 
 function pickNum(v: unknown, fallback: number): number {
   const n = Number(v)
