@@ -46,6 +46,18 @@ function human(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(2) + ' GB'
 }
 
+/** 读 JSON body：空 body 当 {}，非法 JSON 抛一个能映射成 400 的错误 */
+function safeJson(text: string): Record<string, unknown> {
+  if (!text || !text.trim()) return {}
+  let v: unknown
+  try {
+    v = JSON.parse(text)
+  } catch {
+    throw new Error('请求体不是合法 JSON')
+  }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return v as Record<string, unknown>
+}
 export async function handleSettingsApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -70,7 +82,7 @@ export async function handleSettingsApi(
   if (method === 'PUT' && path === '/api/settings/log-retention') {
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { 保留天数?: number }
+    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as { 保留天数?: number }
     const days = Math.round(Number(body.保留天数))
 
     if (!Number.isFinite(days) || days < 1 || days > 3650) {
@@ -185,7 +197,7 @@ export async function handleSettingsApi(
   if (method === 'PUT' && path === '/api/settings/model') {
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as {
+    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as {
       apiKey?: string
       model?: string
       visionModel?: string

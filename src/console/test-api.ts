@@ -20,6 +20,18 @@ const TESTABLE = [
   { id: 'episodes', name: '读经历', group: '记忆' },
 ]
 
+/** 读 JSON body：空 body 当 {}，非法 JSON 抛一个能映射成 400 的错误 */
+function safeJson(text: string): Record<string, unknown> {
+  if (!text || !text.trim()) return {}
+  let v: unknown
+  try {
+    v = JSON.parse(text)
+  } catch {
+    throw new Error('请求体不是合法 JSON')
+  }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return v as Record<string, unknown>
+}
 export async function handleTestApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -54,7 +66,7 @@ export async function handleTestApi(
 
   /* ============ 测一个工具 ============ */
   if (method === 'POST' && path === '/api/test/tool') {
-    const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; args?: Record<string, unknown> }
+    const body = safeJson(await readBody(req)) as { id?: string; args?: Record<string, unknown> }
     const id = String(body.id ?? '')
     const t0 = Date.now()
     let ok = false
@@ -76,7 +88,7 @@ export async function handleTestApi(
 
   /* ============ 记忆检索（只看会回忆起什么，不生成回复） ============ */
   if (method === 'POST' && path === '/api/test/recall') {
-    const body = JSON.parse((await readBody(req)) || '{}') as {
+    const body = safeJson(await readBody(req)) as {
       personId?: string
       scope?: string
       query?: string

@@ -28,6 +28,18 @@ const NAPCAT_WEBUI = 'http://127.0.0.1:6099'
 /** WebUI 页面地址。注意必须带 /webui/，根路径 / 只是个空壳 */
 const NAPCAT_WEBUI_PAGE = 'http://127.0.0.1:6099/webui/'
 
+/** 读 JSON body：空 body 当 {}，非法 JSON 抛一个能映射成 400 的错误 */
+function safeJson(text: string): Record<string, unknown> {
+  if (!text || !text.trim()) return {}
+  let v: unknown
+  try {
+    v = JSON.parse(text)
+  } catch {
+    throw new Error('请求体不是合法 JSON')
+  }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return v as Record<string, unknown>
+}
 export async function handleMiscApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -81,7 +93,7 @@ export async function handleMiscApi(
   if (method === 'PUT' && path === '/api/napcat/shelldir') {
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { shellDir?: string }
+    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as { shellDir?: string }
     const want = String(body.shellDir ?? '').trim()
 
     // 先验证这个目录能不能用（空字符串 = 恢复自动探测）
@@ -152,7 +164,7 @@ export async function handleMiscApi(
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
     const rawBody = Buffer.concat(chunks).toString('utf8')
-    const body = JSON.parse(rawBody || '{}') as { 记录日志?: boolean }
+    const body = safeJson(rawBody) as { 记录日志?: boolean }
     const { setConfigPath } = await import('./config-write.ts')
     const raw = readFileSync('persona/rules.yaml', 'utf8')
     const r = setConfigPath(raw, 'NapCat.记录日志', body.记录日志 === true)
