@@ -16,13 +16,16 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** bot 的 OneBot WS 地址（和 src/index.ts 里的默认值保持一致） */
-const BOT_WS = 'ws://127.0.0.1:8765/onebot/v11/ws'
+/** bot 的 OneBot WS 端口：跟着 ONEBOT_PORT 走（index.ts 里可改），不再写死 8765 */
+const ONEBOT_PORT = (process.env.ONEBOT_PORT ?? '8765').trim() || '8765'
+
+/** bot 的 OneBot WS 地址 */
+const BOT_WS = `ws://127.0.0.1:${ONEBOT_PORT}/onebot/v11/ws`
 
 /** 这条是不是"指向我们"的 */
 function isOurs(client: Record<string, unknown>): boolean {
   const url = client['url']
-  return typeof url === 'string' && url.includes('8765')
+  return typeof url === 'string' && url.includes(':' + ONEBOT_PORT + '/')
 }
 
 type OnebotFile = {
