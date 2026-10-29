@@ -47,11 +47,6 @@ for (const fn of [
 check('有 tab 容器', html.includes('id="self-tabs"'))
 check('默认停在角色卡', /let SELF_TAB = 'card'/.test(html))
 
-console.log('\n=== 2. 人格变化史仍在（角色卡页）===')
-check('有版本对比', html.includes('/api/self/versions'))
-check('有版本 diff', html.includes('/api/self/versions/diff'))
-check('有漂移', html.includes('/api/self/drift'))
-
 console.log('\n=== 3. 保留的功能函数 ===')
 for (const fn of ['saveSelfText', 'switchSelfOwner', 'decideRequest', 'selfSec', 'selfCard', 'selfChip', 'selfEmpty']) {
   check(`有 ${fn}`, html.includes(fn))
@@ -76,10 +71,6 @@ for (const fn of ['saveSelfName', 'saveSelfCallYou', 'saveSelfTraits', 'saveTalk
   check(`有 ${fn}`, html.includes(`function ${fn}(`))
 }
 
-console.log('\n=== 4. 观察区调的新接口 ===')
-check('调 /api/self/versions', html.includes('/api/self/versions'))
-check('调 /api/self/versions/diff', html.includes('/api/self/versions/diff'))
-check('调 /api/self/drift', html.includes('/api/self/drift'))
 
 console.log('\n=== 5. lineDiff ===')
 {

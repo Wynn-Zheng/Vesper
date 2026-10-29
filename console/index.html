@@ -446,7 +446,16 @@
 .self-status-right{display:flex;flex-direction:column;gap:10px}
 .self-card-birth{text-align:right;flex-shrink:0}
 .self-card-switch{display:flex;align-items:center;gap:8px;flex-shrink:0}
-.self-ops{display:flex;gap:8px;padding:10px 0}
+.self-cards{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0}
+.self-card-chip{font-size:12px;padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);cursor:pointer;font-family:inherit}
+.self-card-chip.on{border-color:var(--blue);color:var(--blue);background:rgba(88,166,255,.1)}
+.self-card-chip.add{color:var(--dim2);border-style:dashed}
+.self-card-chip:hover{color:var(--text)}
+.self-drawer-mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60}
+.self-drawer{position:fixed;top:0;right:0;bottom:0;width:min(540px,94vw);background:var(--panel);border-left:1px solid var(--line);z-index:61;padding:18px;overflow:auto;display:flex;flex-direction:column;gap:12px;animation:drawerIn .16s ease-out}
+@keyframes drawerIn{from{transform:translateX(28px);opacity:0}to{transform:none;opacity:1}}
+.self-drawer-head{display:flex;align-items:center;gap:10px}
+.self-drawer-head b{flex:1;font-size:14px}
 .self-birth{font-size:15px;font-weight:600;margin-top:2px}
 .self-activity{font-size:16px;line-height:1.6;padding:6px 0 10px}
 .self-mood-big{display:flex;align-items:center;gap:12px;padding:4px 0 6px}
@@ -2691,6 +2700,94 @@ function applyParsedCard() {
   renderSelfV2()
 }
 
+/** 粘贴导入抽屉（挂在 body 上，脱离页面滚动） */
+function renderPasteDrawer() {
+  document.querySelectorAll('.self-drawer,.self-drawer-mask').forEach((n) => n.remove())
+
+  const close = () => {
+    SELF_PASTE_OPEN = false
+    SELF_PARSE = null
+    document.querySelectorAll('.self-drawer,.self-drawer-mask').forEach((n) => n.remove())
+    renderSelfV2()
+  }
+
+  const mask = el('div', 'self-drawer-mask')
+  mask.onclick = close
+
+  const drawer = el('div', 'self-drawer')
+  drawer.onclick = (e) => e.stopPropagation()
+
+  const head = el('div', 'self-drawer-head')
+  head.appendChild(el('b', '', '粘贴导入角色卡'))
+  const x = el('button', 'self-mini-x', '关闭')
+  x.onclick = close
+  head.appendChild(x)
+  drawer.appendChild(head)
+
+  const ta = el('textarea', 'self-ta')
+  ta.id = 'card-paste'
+  ta.rows = 16
+  ta.placeholder =
+    '把别处复制的角色卡贴进来…\n\n认得这些写法：\n名字：阿澈\n## 外貌\n白衬衫，头发有点乱\n## 性格\n核心特质：慢热、嘴硬\n- 说话时会揉眼睛'
+  drawer.appendChild(ta)
+
+  const acts = el('div', 'self-acts')
+  const pbtn = el('button', 'mini-btn', '识别并预览')
+  pbtn.onclick = () => parseCardPaste()
+  acts.appendChild(pbtn)
+  if (SELF_PARSE) {
+    const ab = el('button', 'mini-btn', '全部填入')
+    ab.style.color = 'var(--green)'
+    ab.onclick = () => {
+      applyParsedCard()
+      close()
+    }
+    acts.appendChild(ab)
+  }
+  drawer.appendChild(acts)
+
+  if (SELF_PARSE) {
+    const pr = SELF_PARSE
+    const preview = el('div', 'self-form')
+    const addRow = (label, val) => {
+      if (!val) return
+      const row = el('div', 'self-field')
+      row.appendChild(el('label', '', label))
+      const t = el('span', 'self-item')
+      t.textContent = val
+      row.appendChild(t)
+      preview.appendChild(row)
+    }
+    addRow('名字', pr.name)
+    addRow('外貌', pr.appearance)
+    addRow('基础身份', pr.identity)
+    addRow('核心特质', pr.traits.core)
+    addRow('优点', pr.traits.good)
+    addRow('缺点', pr.traits.bad)
+    addRow('语气', pr.speech.tone)
+    addRow('口头禅', pr.speech.catchphrase)
+    addRow('小动作', pr.actions.join('、'))
+    addRow('喜欢', pr.likes.join('、'))
+    addRow('讨厌', pr.dislikes.join('、'))
+    addRow(
+      '反应',
+      Object.keys(pr.reactions)
+        .map((k) => k + '：' + pr.reactions[k])
+        .join('；'),
+    )
+    drawer.appendChild(preview)
+    if (pr.rest && pr.rest.trim()) {
+      const rest = el('div', 'self-extra')
+      rest.appendChild(el('div', 'self-extra-h', '没认出来的部分（手动放）'))
+      rest.appendChild(el('div', 'self-item muted', pr.rest))
+      drawer.appendChild(rest)
+    }
+  }
+
+  document.body.appendChild(mask)
+  document.body.appendChild(drawer)
+}
+
 async function loadSelfRelation() {
   try {
     const r = await api('/api/status')
@@ -2862,106 +2959,35 @@ function renderSelfCardPage(body, d) {
     main.appendChild(sub)
 
     const side = el('div', 'self-card-birth')
-    side.innerHTML =
-      '<div class="self-kv-k">生日（第一次对话）</div><div class="self-birth">' +
-      esc(card.birthday || '—') +
-      '</div>'
+    const bdParts = String(card.birthday || '').split('-')
+    const bdText =
+      bdParts.length === 3 && bdParts[0] ? bdParts[0] + ' 年 ' + Number(bdParts[1]) + ' 月 ' + Number(bdParts[2]) + ' 日' : '—'
+    side.innerHTML = '<div class="self-kv-k">生日（第一次对话）</div><div class="self-birth">' + esc(bdText) + '</div>'
     hero.appendChild(main)
-    // 角色卡切换（列表来自 GET /api/card）
-    if (SELF_CARD_LIST.length > 1) {
-      const sw = el('div', 'self-card-switch')
-      sw.appendChild(el('span', 'self-kv-k', '角色卡'))
-      const sel = el('select', 'self-select')
-      sel.style.width = '150px'
-      for (const item of SELF_CARD_LIST) {
-        const o = document.createElement('option')
-        o.value = item.id
-        o.textContent = item.name || item.id
-        sel.appendChild(o)
-      }
-      sel.value = card.id
-      sel.onchange = () => switchSelfCard(sel.value)
-      sw.appendChild(sel)
-      hero.appendChild(sw)
-    }
 
     hero.appendChild(side)
     body.appendChild(hero)
   }
 
-  /* ---- 操作栏：新建 / 粘贴导入 ---- */
+  /* ---- 角色卡列表：一张卡一个，点了就切 ---- */
   {
-    const bar = el('div', 'self-ops')
-    const mk = el('button', 'mini-btn', SELF_PASTE_OPEN ? '收起粘贴导入' : '粘贴导入')
-    mk.onclick = () => {
-      SELF_PASTE_OPEN = !SELF_PASTE_OPEN
-      if (!SELF_PASTE_OPEN) SELF_PARSE = null
+    const bar = el('div', 'self-cards')
+    for (const item of SELF_CARD_LIST) {
+      const on = item.id === card.id
+      const b = el('button', 'self-card-chip' + (on ? ' on' : ''), item.name || item.id)
+      if (!on) b.onclick = () => switchSelfCard(item.id)
+      bar.appendChild(b)
+    }
+    const add = el('button', 'self-card-chip add', '+ 新建角色卡')
+    add.onclick = () => newSelfCard()
+    bar.appendChild(add)
+    const paste = el('button', 'self-card-chip add', '粘贴导入')
+    paste.onclick = () => {
+      SELF_PASTE_OPEN = true
       renderSelfV2()
     }
-    bar.appendChild(mk)
-    const nb = el('button', 'mini-btn', '新建角色卡')
-    nb.onclick = () => newSelfCard()
-    bar.appendChild(nb)
+    bar.appendChild(paste)
     body.appendChild(bar)
-
-    if (SELF_PASTE_OPEN) {
-      const c = selfCard('粘贴导入', '把别处复制的角色卡贴进来，自动认字段')
-      const ta = el('textarea', 'self-ta')
-      ta.id = 'card-paste'
-      ta.rows = 6
-      ta.placeholder = '例如：\n名字：阿澈\n## 外貌\n白衬衫，头发有点乱\n## 性格\n核心特质：慢热、嘴硬'
-      c.appendChild(ta)
-      const acts = el('div', 'self-acts')
-      const pbtn = el('button', 'mini-btn', '识别并预览')
-      pbtn.onclick = () => parseCardPaste()
-      acts.appendChild(pbtn)
-      if (SELF_PARSE) {
-        const ab = el('button', 'mini-btn', '全部填入')
-        ab.style.color = 'var(--green)'
-        ab.onclick = () => applyParsedCard()
-        acts.appendChild(ab)
-      }
-      c.appendChild(acts)
-
-      if (SELF_PARSE) {
-        const p = SELF_PARSE
-        const preview = el('div', 'self-form')
-        const addRow = (label, val) => {
-          if (!val) return
-          const row = el('div', 'self-field')
-          row.appendChild(el('label', '', label))
-          const t = el('span', 'self-item')
-          t.textContent = val
-          row.appendChild(t)
-          preview.appendChild(row)
-        }
-        addRow('名字', p.name)
-        addRow('外貌', p.appearance)
-        addRow('基础身份', p.identity)
-        addRow('核心特质', p.traits.core)
-        addRow('优点', p.traits.good)
-        addRow('缺点', p.traits.bad)
-        addRow('语气', p.speech.tone)
-        addRow('口头禅', p.speech.catchphrase)
-        addRow('小动作', p.actions.join('、'))
-        addRow('喜欢', p.likes.join('、'))
-        addRow('讨厌', p.dislikes.join('、'))
-        addRow(
-          '反应',
-          Object.keys(p.reactions)
-            .map((k) => k + '：' + p.reactions[k])
-            .join('；'),
-        )
-        c.appendChild(preview)
-        if (p.rest && p.rest.trim()) {
-          const rest = el('div', 'self-extra')
-          rest.appendChild(el('div', 'self-extra-h', '没认出来的部分（手动放）'))
-          rest.appendChild(el('div', 'self-item muted', p.rest))
-          c.appendChild(rest)
-        }
-      }
-      body.appendChild(c)
-    }
   }
 
   const form = el('div', 'self-card-form')
@@ -2979,10 +3005,25 @@ function renderSelfCardPage(body, d) {
 
     const row2 = el('div', 'self-field')
     row2.appendChild(el('label', '', '生日'))
-    const bI = el('input', 'self-input')
-    bI.type = 'date'
-    bI.value = card.birthday || ''
-    row2.appendChild(bI)
+    const bp = String(card.birthday || '').split('-')
+    const yI = el('input', 'self-input num')
+    yI.placeholder = 'YYYY'
+    yI.style.width = '64px'
+    yI.value = bp[0] || ''
+    const mI = el('input', 'self-input num')
+    mI.placeholder = 'MM'
+    mI.style.width = '48px'
+    mI.value = bp[1] ? String(Number(bp[1])) : ''
+    const dI = el('input', 'self-input num')
+    dI.placeholder = 'DD'
+    dI.style.width = '48px'
+    dI.value = bp[2] ? String(Number(bp[2])) : ''
+    row2.appendChild(yI)
+    row2.appendChild(el('span', 'self-unit', '年'))
+    row2.appendChild(mI)
+    row2.appendChild(el('span', 'self-unit', '月'))
+    row2.appendChild(dI)
+    row2.appendChild(el('span', 'self-unit', '日'))
     form.appendChild(row2)
 
     c.appendChild(row1)
@@ -2990,7 +3031,7 @@ function renderSelfCardPage(body, d) {
     c.dataset.save = 'name'
     card._el = c
     body.appendChild(c)
-    SELF_CARD_FORM = { nameI, bI }
+    SELF_CARD_FORM = { nameI, yI, mI, dI }
   }
 
   /* ---- 外貌 / 基础身份 ---- */
@@ -3110,123 +3151,17 @@ function renderSelfCardPage(body, d) {
     body.appendChild(c)
   }
 
-  /* ---- 人格变化史（版本对比 + 漂移）---- */
-  {
-    const c = selfCard('人格变化', '选两个版本对比')
-    const acts = el('div', 'self-acts')
-    const mkSelect = () => {
-      const s = el('select')
-      s.className = 'self-select'
-      return s
-    }
-    const selOld = mkSelect()
-    const selNew = mkSelect()
-    acts.appendChild(selOld)
-    acts.appendChild(el('span', 'self-arrow', '→'))
-    acts.appendChild(selNew)
-    const cmp = el('button', 'mini-btn', '对比')
-    acts.appendChild(cmp)
-    c.appendChild(acts)
-    const diffBox = el('div', 'self-diff')
-    c.appendChild(diffBox)
-    body.appendChild(c)
-
-    api('/api/self/versions')
-      .then((r) => {
-        const vs = r.versions || []
-        if (!vs.length) {
-          diffBox.innerHTML = '<div class="self-empty">还没有历史快照。改一次自述就会留一份。</div>'
-          return
-        }
-        const fill = (s, idx) => {
-          s.innerHTML = ''
-          vs.forEach((v) => {
-            const o = document.createElement('option')
-            o.value = v.id
-            o.textContent = v.id
-              .replace(/^(\d{8})-(\d{6})$/, '$1 $2')
-              .replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')
-            s.appendChild(o)
-          })
-          if (vs[idx]) s.value = vs[idx].id
-        }
-        fill(selOld, 1)
-        fill(selNew, 0)
-        const run = async () => {
-          diffBox.innerHTML = '<div class="self-empty">对比中…</div>'
-          try {
-            const r2 = await api(
-              `/api/self/versions/diff?a=${encodeURIComponent(selOld.value)}&b=${encodeURIComponent(selNew.value)}`,
-            )
-            diffBox.innerHTML = ''
-            for (const ln of r2.lines || []) {
-              const div = document.createElement('div')
-              div.className = 'ln'
-              if (ln.type === 'add') {
-                div.classList.add('add')
-                div.textContent = '+ ' + ln.text
-              } else if (ln.type === 'del') {
-                div.classList.add('del')
-                div.textContent = '- ' + ln.text
-              } else {
-                div.classList.add('same')
-                div.textContent = '  ' + ln.text
-              }
-              if (!ln.text.trim()) div.textContent = ''
-              diffBox.appendChild(div)
-            }
-          } catch (e) {
-            diffBox.innerHTML = '<div class="self-empty" style="color:var(--red)">对比失败：' + esc(e.message) + '</div>'
-          }
-        }
-        cmp.onclick = run
-        run()
-      })
-      .catch(() => {
-        diffBox.innerHTML = '<div class="self-empty">版本列表读不到</div>'
-      })
-  }
-
-  {
-    const c = selfCard('它变过几次', '相似度低于 45% 才算明显变了')
-    const box = el('div', 'self-list')
-    box.innerHTML = '<div class="self-empty">读取中…</div>'
-    c.appendChild(box)
-    body.appendChild(c)
-
-    api('/api/self/drift')
-      .then((r) => {
-        const items = r.items || []
-        box.innerHTML = ''
-        if (!items.length) {
-          box.innerHTML = '<div class="self-empty">还没记到明显的变化。</div>'
-          return
-        }
-        const all = SELF_MORE.drift ? items : items.slice(0, 5)
-        for (const it of all) {
-          const row = el('div', 'self-play')
-          row.appendChild(
-            el('div', 'self-play-scene', new Date(it.at).toLocaleString() + ' · 相似度 ' + Math.round((it.sim || 0) * 100) + '%'),
-          )
-          row.appendChild(el('div', 'self-item muted', '旧：' + String(it.from || '').slice(0, 60)))
-          row.appendChild(el('div', 'self-item', '新：' + String(it.to || '').slice(0, 60)))
-          box.appendChild(row)
-        }
-        if (items.length > 5) box.appendChild(selfMoreBtn('drift', items.length))
-      })
-      .catch(() => {
-        box.innerHTML = '<div class="self-empty">漂移记录读不到</div>'
-      })
-  }
-
   /* ---- 保存 ---- */
   {
     const bar = el('div', 'self-savebar')
     const save = el('button', 'btn pri', '保存角色卡')
     save.onclick = () => {
+      const y = SELF_CARD_FORM.yI.value.trim()
+      const m = SELF_CARD_FORM.mI.value.trim()
+      const dd = SELF_CARD_FORM.dI.value.trim()
       const patch = {
         name: SELF_CARD_FORM.nameI.value.trim(),
-        birthday: SELF_CARD_FORM.bI.value,
+        birthday: y && m && dd ? y + '-' + String(m).padStart(2, '0') + '-' + String(dd).padStart(2, '0') : '',
       }
       const p = {
         ...patch,
@@ -3246,6 +3181,8 @@ function renderSelfCardPage(body, d) {
     bar.appendChild(hint)
     body.appendChild(bar)
   }
+  // 粘贴导入抽屉（挂在 body 上，脱离页面滚动区域）
+  if (SELF_PASTE_OPEN) renderPasteDrawer()
 }
 
 let SELF_CARD_FORM = null

@@ -209,7 +209,7 @@ export function listCards(): Array<{ id: string; name: string }> {
   ensureDir()
   try {
     return readdirSync(DIR)
-      .filter((f) => f.endsWith('.md'))
+      .filter((f) => f.endsWith('.md') && !f.endsWith('.self.md'))
       .map((f) => {
         const id = f.slice(0, -3)
         let name = id
