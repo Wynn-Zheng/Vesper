@@ -336,7 +336,8 @@
 
   /** 安装：让用户填本地插件目录，再交给后端复制 */
   async function pluginsInstall() {
-    const input = window.prompt('本地插件目录路径（目录里要有 plugin.json）')
+    // 不用原生 prompt()：Electron 桌面版禁用，点了毫无反应（安装按钮会像坏的）
+    const input = await askText('本地插件目录路径（目录里要有 plugin.json）', '')
     if (input === null) return
 
     const source = input.trim()
