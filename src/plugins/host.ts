@@ -11,6 +11,19 @@ import { getPluginConfig } from './settings.ts'
 
 export type PluginLogger = (level: 'info' | 'warn' | 'error', message: string) => void
 
+/**
+ * 插件注册的工具。
+ *
+ * 和 src/tools/types.ts 的 Tool 形状一致，但 run 不接收 ToolContext ——
+ * 插件不该直接碰宿主的上下文，它需要的东西（数据目录、配置、日志）都在自己的 ctx 里。
+ */
+export type PluginTool = {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  run: (args: Record<string, unknown>) => Promise<string> | string
+}
+
 export type PluginContext = {
   id: string
   dataDir: string
@@ -19,6 +32,8 @@ export type PluginContext = {
   log: (message: string) => void
   on: (event: string, handler: (payload: unknown) => void) => void
   emit: (event: string, payload?: unknown) => void
+  /** 注册成模型能调用的工具（插件声明 type: 'tool' 时才有意义） */
+  registerTool: (tool: PluginTool) => void
 }
 
 type Handler = (payload: unknown) => void
@@ -77,6 +92,8 @@ export function createHost(options: {
   /** 扫描到过的插件及其版本，用于 list() 展示未加载的插件 */
   const known = new Map<string, KnownPlugin>()
   const hostKey = `host-${++hostSerial}`
+  /** 插件注册的工具：key = 工具名，value = 注册它的插件 id + 工具本体 */
+  const pluginTools = new Map<string, { pluginId: string; tool: PluginTool }>()
 
   const eventKey = (id: string, event: string): string => `${hostKey}\u0000${id}\u0000${event}`
 
@@ -142,6 +159,15 @@ export function createHost(options: {
       log: (message: string) => info(message),
       on: (event: string, handler: Handler) => subscribe(id, event, handler),
       emit: (event: string, payload?: unknown) => dispatch(id, event, payload),
+      registerTool: (tool: PluginTool) => {
+        const name = String(tool?.name || '').trim()
+        if (!name) { recordError(id, 'registerTool 少了 name，忽略') ; return }
+        if (pluginTools.has(name)) {
+          recordError(id, `工具重名，已忽略：${name}（已被 ${pluginTools.get(name)!.pluginId} 注册）`)
+          return
+        }
+        pluginTools.set(name, { pluginId: id, tool })
+      },
     }
   }
 
@@ -277,5 +303,30 @@ export function createHost(options: {
     })
   }
 
-  return { load, unload, reload, list, errors }
+  /**
+   * 插件注册的工具，包装成宿主的 Tool 形状，供 index.ts 注册进 ToolRegistry。
+   * 没加载/已卸载的插件，它的工具不会出现在这里。
+   */
+  function tools(): Array<{ name: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }> {
+    const alive = new Set([...loaded.keys()])
+    const out: Array<{ name: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }> = []
+    for (const [name, item] of pluginTools) {
+      if (!alive.has(item.pluginId)) continue
+      out.push({
+        name,
+        description: String(item.tool.description || ''),
+        parameters: item.tool.parameters || { type: 'object', properties: {} },
+        run: async (args: Record<string, unknown>) => {
+          try {
+            return await item.tool.run(args)
+          } catch (err) {
+            return `插件工具执行失败：${String(err).slice(0, 160)}`
+          }
+        },
+      })
+    }
+    return out
+  }
+
+  return { load, unload, reload, list, errors, tools }
 }

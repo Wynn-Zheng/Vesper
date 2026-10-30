@@ -13,6 +13,15 @@ export type PluginManifest = {
   author?: string
   permissions?: string[]
   minHostVersion?: string
+  /**
+   * 插件类型：决定它在插件页哪一组、宿主给它什么能力。
+   *
+   *   tool      → 注册成模型能调用的工具（ctx.registerTool）
+   *   panel     → 提供前端面板（以后）
+   *   transport → 接入平台的一种实现（NapCat 这种，以后）
+   *   event     → 只订阅事件（默认，最弱）
+   */
+  type?: 'tool' | 'panel' | 'transport' | 'event'
   /** 配置项声明。有它 → 控制台按类型渲染表单项；没有 → 退化成键值编辑器 */
   configSchema?: PluginConfigSchema
 }

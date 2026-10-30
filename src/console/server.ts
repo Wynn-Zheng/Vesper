@@ -43,6 +43,13 @@ export interface ConsoleOptions {
   transport: Transport
   /** OneBot 通道的运行状态（连接/监听失败原因），给状态接口用 */
   getChannelStatus?: () => { connected: boolean; startError: string | null }
+  /**
+   * 插件注册的工具往哪挂。
+   *
+   * 插件的加载发生在控制台侧（这里），但工具注册表在 index.ts 建。
+   * 所以这里只做「加载完把工具交出去」，注册由 index.ts 完成。
+   */
+  onPluginTools?: (tools: Array<{ name: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }>) => void
   llm?: LlmOptions
 }
 
@@ -515,6 +522,7 @@ async function runAction(
 }
 
 export async function startConsole(opts: ConsoleOptions): Promise<void> {
+  consoleOpts = opts
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const path = url.pathname
@@ -1899,6 +1907,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
  * 不该为了这个拖慢首屏；而且用户可能压根不碰插件页。
  */
 let pluginService: ReturnType<typeof createPluginService> | null = null
+/** startConsole 传进来的选项：插件加载完要通过它把工具交出去 */
+let consoleOpts: ConsoleOptions | null = null
 /** 首次加载插件的进度；/api/plugins 的请求要等它，否则第一次 /list 会看到 loaded 全是 false */
 let pluginReady: Promise<void> | null = null
 function getPluginService(): ReturnType<typeof createPluginService> {
@@ -1916,6 +1926,13 @@ function getPluginService(): ReturnType<typeof createPluginService> {
       .start()
       .then((r) => {
         if (r.loaded > 0) info(`插件已加载 ${r.loaded} 个`)
+        // 插件注册的工具交给 index.ts 挂进工具注册表（模型才能调用）
+        try {
+          const tools = svc.host.tools()
+          if (tools.length) consoleOpts?.onPluginTools?.(tools)
+        } catch {
+          /* 拿工具失败不影响插件本身 */
+        }
         for (const e of r.errors) warnAt('插件加载失败', { err: e, where: 'src/console/server.ts' })
       })
       .catch(() => {

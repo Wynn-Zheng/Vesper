@@ -137,6 +137,9 @@ let llm: LlmOptions | undefined
 // 之前这里无条件调 ensurePerson(..., '主人')，每次启动都把名字
 // 强制改回"主人" —— 不管群名单里同步到的是什么。
 // 这就是"档案名怎么修都会变回去"的真凶。
+/** 工具注册表：插件加载完要往里挂工具，所以提到模块级（下面 if (apiKey) 里赋值） */
+let toolRegistry: ToolRegistry | null = null
+
 const ownerQQ = process.env['OWNER_QQ'] || undefined
 if (ownerQQ && !loadPerson(personIdOf('qq', ownerQQ))) {
   ensurePerson('qq', ownerQQ, '主人')
@@ -150,6 +153,7 @@ if (apiKey) {
   }
   // 它能读自己的代码了：这 4 个工具只读、只碰 src/ 下的 .ts
   const registry = new ToolRegistry()
+  toolRegistry = registry
   for (const tool of codeTools) registry.register(tool)
 
   // 发图：截图工具只返回本地 path，模型有路径却没手段发出去 ——
@@ -346,6 +350,18 @@ try {
         connected: transport.connected === true,
         startError: (transport as { startError?: string | null }).startError ?? null,
       }),
+      // 插件注册的工具（manifest 里 type: tool 的那些）挂进工具注册表，
+      // 这样模型才能真正调用它们 —— 否则插件只是"装上了但用不上"。
+      onPluginTools: (tools) => {
+        for (const t of tools) {
+          if (toolRegistry?.get(t.name)) {
+            warnAt(`插件工具和已有工具重名，跳过：${t.name}`)
+            continue
+          }
+          toolRegistry?.register(t)
+          info(`插件工具已注册：${t.name}`)
+        }
+      },
       llm,
     })
 } catch (err) {

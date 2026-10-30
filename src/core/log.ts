@@ -71,7 +71,7 @@ export function log(level: Level, msg: string, extra?: Record<string, unknown>):
     } catch {
       /* 文件还不存在时 stat 会抛，忽略 */
     }
-    appendFileSync(file, `${JSON.stringify(record)}\\n`)
+  appendFileSync(file, `${JSON.stringify(record)}\n`)
   } catch {
     /* 落盘失败不该影响主流程 */
   }
