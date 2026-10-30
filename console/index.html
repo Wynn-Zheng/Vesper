@@ -87,6 +87,8 @@
     --ease:cubic-bezier(.22,1,.36,1);
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  /* 表单控件不继承字体，浏览器默认给 Arial —— 界面上会混进第二种字形 */
+  button,input,select,textarea{font-family:inherit}
   body{background:var(--bg);color:var(--text);font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;display:flex;height:100vh;overflow:hidden}
   aside{width:200px;background:var(--sunk);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
   .brand{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
