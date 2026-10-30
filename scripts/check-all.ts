@@ -45,7 +45,8 @@ function runStep(cmd: string, id: number): { out: string; code: number } {
     execSync(cmd, {
       stdio: ['ignore', fd, fd],
       timeout: 300_000,
-      env: { ...process.env, NO_COLOR: '1' },
+      // QQBOT_NO_LOG_FILE：测试不写 data/logs（否则 mock 的错误会污染真实日志和 issues.json）
+      env: { ...process.env, NO_COLOR: '1', QQBOT_NO_LOG_FILE: '1' },
     })
   } catch (e) {
     const status = (e as { status?: unknown }).status

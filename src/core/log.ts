@@ -24,7 +24,17 @@ const DIM = '\x1b[2m'
 const RESET = '\x1b[0m'
 
 let logDir = 'data/logs'
-let toFile = true
+/**
+ * 是否写日志文件。
+ *
+ * 默认 true（主程序要落盘）。但测试脚本跑起来也会走这条路径 ——
+ * 它们 mock 的错误（HTTP 500 boom、假群号）会混进 data/logs，
+ * 再被 observe 扫进 persona/issues.json，最后注入 prompt：
+ * 它会一本正经地跟你说"我这套程序有地方在报错"，其实是测试造的。
+ *
+ * 所以 check-all 给子进程设 QQBOT_NO_LOG_FILE=1，测试不写文件。
+ */
+let toFile = process.env['QQBOT_NO_LOG_FILE'] !== '1'
 
 export function initLog(dir = 'data/logs', file = true): void {
   logDir = dir
