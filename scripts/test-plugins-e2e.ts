@@ -156,6 +156,8 @@ console.log('\n=== 9. 安装一个合法的新插件（再卸掉） ===')
     rmSync(dir, { recursive: true, force: true })
     assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
+    // 插件激活时宿主会建 data/plugins/<id>，测试也要清
+    rmSync(join('data', 'plugins', id), { recursive: true, force: true })
   }
 }
 

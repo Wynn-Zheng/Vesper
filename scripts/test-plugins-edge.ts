@@ -74,6 +74,9 @@ async function installAndCleanup(dir: string, id: string): Promise<void> {
   rmSync(dir, { recursive: true, force: true })
   assertTestPluginId(id)
   rmSync(join('plugins', id), { recursive: true, force: true })
+   rmSync(join('data', 'plugins', id), { recursive: true, force: true })
+  // 插件激活时宿主会建 data/plugins/<id> 数据目录，测试也要清掉
+  rmSync(join('data', 'plugins', id), { recursive: true, force: true })
 }
 
 console.log('=== A. 路径穿越：source 指向项目外 ===')
@@ -130,6 +133,7 @@ const id = testPluginId('edge', 'dup')
     rmSync(d2, { recursive: true, force: true })
   assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
+     rmSync(join('data', 'plugins', id), { recursive: true, force: true })
   }
 }
 
@@ -164,6 +168,7 @@ const id = testPluginId('edge', 'noentry')
     rmSync(dir, { recursive: true, force: true })
   assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
+     rmSync(join('data', 'plugins', id), { recursive: true, force: true })
   }
 }
 
@@ -192,6 +197,7 @@ const id = testPluginId('edge', 'throw')
     rmSync(dir, { recursive: true, force: true })
   assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
+     rmSync(join('data', 'plugins', id), { recursive: true, force: true })
   }
 }
 
@@ -210,6 +216,7 @@ const id = testPluginId('edge', 'minver')
     rmSync(dir, { recursive: true, force: true })
   assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
+     rmSync(join('data', 'plugins', id), { recursive: true, force: true })
   }
 }
 
