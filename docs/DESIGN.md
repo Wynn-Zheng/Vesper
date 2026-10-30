@@ -208,6 +208,27 @@ export function deactivate(ctx) { ... }
 
 **工具重名**：后注册的被忽略（先注册的赢），错误记进 `host.errors`。
 
+### 权限
+
+`plugin.json` 的 `permissions` 声明这个插件要什么：
+
+| 权限 | 给了什么 | 没声明时 |
+|---|---|---|
+| `net` | `ctx.fetch(url, init)` | `ctx.fetch` 不存在（`undefined`） |
+| `memory` | `ctx.readPersona(relPath)` —— 只能读 `persona/` 内，`..` 和绝对路径拒绝 | `ctx.readPersona` 不存在 |
+| `message` | `ctx.send(target, text)` | 还没接（见下方限制） |
+| `files` / `shell` | 还没接 | — |
+
+**装之前会展示**：点「安装」→ 填路径 → 读 `plugin.json` → 弹窗列出名字/版本/类型/权限 → 你点「仍然安装」才复制文件。
+
+**这是提示，不是沙箱。** 跟 VS Code（extension host 同权限）和 DSH/Cordis（vm 只限时，明确"协作式信任"）一样：
+
+- 声明了才有 `ctx.fetch` 这种**便捷入口**
+- 但挡不住插件直接写 `globalThis.fetch(...)` 或 `import('node:fs')`
+- 真正的隔离要把插件丢进 Worker/子进程走 IPC，那会改插件写法 —— 这一版不做
+
+**未接的两项**：`message`（要先把 transport 传进 host）和 `files`/`shell`（有更大风险，先不开）。
+
 ## 13. 不该出现在设置页的东西
 
 判断标准：**"改一次就很少再动"才是设置**。

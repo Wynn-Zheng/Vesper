@@ -4,6 +4,27 @@
  */
 import { isAbsolute } from 'node:path'
 
+/**
+ * 插件能声明的权限。
+ *
+ * 设计取向（跟 VS Code / Cordis 一致的"协作式信任"）：
+ * 声明了才在 ctx 上给对应能力；没声明就不给 —— 这挡的是**误用**，
+ * 挡不住插件直接写 globalThis.fetch。真正的隔离得把插件丢进 Worker，
+ * 那要改插件写法，这一版不做。
+ */
+export const PERMISSIONS = {
+  net: { label: '联网', desc: '访问外部网络（调第三方 API）' },
+  memory: { label: '读记忆', desc: '读 persona/ 下的记忆、档案、聊天记录' },
+  message: { label: '发消息', desc: '主动给你或群里发消息' },
+  files: { label: '读写文件', desc: '读写自己数据目录以外的本机文件' },
+  shell: { label: '执行命令', desc: '在本机运行命令' },
+} as const
+
+export type PluginPermission = keyof typeof PERMISSIONS
+
+/** 合法的权限名（校验和前端都用它） */
+export const PERMISSION_NAMES = Object.keys(PERMISSIONS) as PluginPermission[]
+
 export type PluginManifest = {
   id: string
   name: string
@@ -11,7 +32,8 @@ export type PluginManifest = {
   entry: string
   description?: string
   author?: string
-  permissions?: string[]
+  /** 声明的权限（PERMISSION_NAMES 的子集）。没声明的能力 ctx 上不会给 */
+  permissions?: PluginPermission[]
   minHostVersion?: string
   /**
    * 插件类型：决定它在插件页哪一组、宿主给它什么能力。
@@ -186,6 +208,13 @@ export function parseManifest(
   const rawType = typeof raw['type'] === 'string' ? raw['type'].trim().toLowerCase() : ''
   if (rawType === 'tool' || rawType === 'panel' || rawType === 'transport' || rawType === 'event') {
     manifest.type = rawType as PluginManifest['type']
+  }
+  // 权限：只收已知的名字，未知的忽略（不阻止加载，但加载后 ctx 上不会多出能力）
+  if (Array.isArray(raw['permissions'])) {
+    const known = (raw['permissions'] as unknown[]).filter(
+      (p): p is PluginPermission => typeof p === 'string' && PERMISSION_NAMES.includes(p as PluginPermission),
+    )
+    if (known.length) manifest.permissions = [...new Set(known)]
   }
   // 上面已经逐项校验过，这里直接收窄（校验不过不会走到这）
   if (isPlainObject(configSchema)) manifest.configSchema = configSchema as PluginConfigSchema

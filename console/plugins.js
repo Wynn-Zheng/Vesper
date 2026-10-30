@@ -199,6 +199,17 @@
       card.appendChild(row)
     }
 
+    // 声明的权限：一眼能看出这个插件能碰什么
+    if (Array.isArray(p.permissions) && p.permissions.length) {
+      const permRow = el('div', 'prow')
+      permRow.appendChild(el('span', 'k', '权限'))
+      const pv = el('span', 'v', p.permissions.join(' / '))
+      pv.style.color = 'var(--yellow)'
+      pv.style.fontSize = '11.5px'
+      permRow.appendChild(pv)
+      card.appendChild(permRow)
+    }
+
     // 工具插件：把它注册了哪些工具列出来 —— 这是它和普通插件最大的区别
     if (isTool && Array.isArray(p.tools) && p.tools.length) {
       const params = el('div', 'params')
@@ -335,18 +346,21 @@
   }
 
   /** 安装：让用户填本地插件目录，再交给后端复制 */
+  /** 安装：交给 plugin-install.js（先读清单、展示权限、再确认） */
   async function pluginsInstall() {
-    // 不用原生 prompt()：Electron 桌面版禁用，点了毫无反应（安装按钮会像坏的）
+    if (typeof window.openInstallDialog === 'function') {
+      await window.openInstallDialog()
+      await reloadList()
+      return
+    }
     const input = await askText('本地插件目录路径（目录里要有 plugin.json）', '')
     if (input === null) return
-
     const source = input.trim()
     if (!source) {
       clearError()
       showError('请填写插件目录路径')
       return
     }
-
     await runAction('安装', () => postData('/api/plugins/install', { source }))
   }
 

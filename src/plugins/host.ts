@@ -34,6 +34,18 @@ export type PluginContext = {
   emit: (event: string, payload?: unknown) => void
   /** 注册成模型能调用的工具（插件声明 type: 'tool' 时才有意义） */
   registerTool: (tool: PluginTool) => void
+  /**
+   * 以下能力只有 plugin.json 里声明了对应权限才有。
+   *
+   * 注意这是**协作式信任**：没声明就没有这个便捷入口，
+   * 但挡不住插件直接写 globalThis.fetch —— 挡误用，不挡恶意。
+   */
+  /** permissions 含 net 时存在 */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>
+  /** permissions 含 memory 时存在：读自己数据目录以外的 persona 文件 */
+  readPersona?: (relPath: string) => Promise<string>
+  /** permissions 含 message 时存在：主动发消息 */
+  send?: (target: { kind: 'private' | 'group'; id: string }, text: string) => Promise<void>
 }
 
 type Handler = (payload: unknown) => void
@@ -149,7 +161,7 @@ export function createHost(options: {
   }
 
   /** 只暴露这些字段，插件拿不到 process.env、require 等宿主能力 */
-  function createContext(id: string, dataDir: string): PluginContext {
+  function createContext(id: string, dataDir: string, permissions: string[] = []): PluginContext {
     return {
       id,
       dataDir,
@@ -168,6 +180,23 @@ export function createHost(options: {
         }
         pluginTools.set(name, { pluginId: id, tool })
       },
+      // 按 permissions 挂能力：没声明就不给这个入口
+      ...(permissions.includes('net')
+        ? {
+            fetch: (url: string, init?: RequestInit) => fetch(url, init),
+          }
+        : {}),
+      ...(permissions.includes('memory')
+        ? {
+            // 读 persona/ 下的文件：路径必须在 persona 内，不许用 .. 逃出去
+            readPersona: async (relPath: string) => {
+              const bad = relPath.includes('..') || relPath.startsWith('/') || /^[A-Za-z]:/.test(relPath)
+              if (bad) throw new Error('路径不合法：' + relPath)
+              const { readFileSync } = await import('node:fs')
+              return readFileSync(join('persona', relPath), 'utf8')
+            },
+          }
+        : {}),
     }
   }
 
@@ -245,7 +274,7 @@ export function createHost(options: {
           ? (deactivateCandidate as (ctx: PluginContext) => unknown)
           : undefined
 
-      const ctx = createContext(id, dataDir)
+      const ctx = createContext(id, dataDir, plugin.manifest.permissions ?? [])
       // 激活函数允许是 async，这里统一 await
       await (activate as (ctx: PluginContext) => unknown)(ctx)
 

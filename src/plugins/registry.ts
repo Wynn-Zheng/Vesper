@@ -51,7 +51,8 @@ export async function scanPlugins(
     let raw: unknown
     try {
       const text = await readFile(manifestPath, 'utf8')
-      raw = JSON.parse(text)
+      // 记事本保存的 JSON 带 BOM（\uFEFF），JSON.parse 会直接抛
+      raw = JSON.parse(text.replace(/^\uFEFF/, ''))
     } catch (err) {
       // 文件不存在、读失败、JSON 语法错误都记一条，然后跳过这个目录
       errors.push({ id: entry.name, message: `读取或解析 plugin.json 失败：${errorMessage(err)}` })

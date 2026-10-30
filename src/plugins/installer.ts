@@ -40,6 +40,71 @@ type InstallRecord = {
  * 从本地目录安装插件。
  * source 必须是已解压的插件目录，不能是 .zip 压缩包。
  */
+/**
+ * 安装前先看一眼这个目录里的插件是什么。
+ *
+ * 不复制任何文件，只读 plugin.json 并校验。给「安装」弹窗用：
+ * 用户有权在装之前知道它叫什么、要联网还是要读记忆。
+ */
+export async function inspectPlugin(options: {
+  source: string
+}): Promise<{
+  ok: boolean
+  data?: {
+    id: string
+    name: string
+    version: string
+    description: string
+    author: string
+    type: string
+    permissions: string[]
+    entry: string
+    alreadyExists: boolean
+  }
+  error?: string
+}> {
+  const sourcePath = resolve(options.source)
+  try {
+    const st = await stat(sourcePath).catch(() => null)
+    if (!st) return { ok: false, error: `路径不存在：${sourcePath}` }
+    if (!st.isDirectory()) return { ok: false, error: `不是目录：${sourcePath}` }
+
+    const manifestPath = join(sourcePath, 'plugin.json')
+    const raw = await readFile(manifestPath, 'utf8').catch(() => null)
+    if (raw === null) return { ok: false, error: '这个目录里没有 plugin.json' }
+
+    let json: unknown
+    try {
+      // 记事本保存的 JSON 带 BOM，JSON.parse 会直接抛 —— 先去掉
+      json = JSON.parse(raw.replace(/^\uFEFF/, ''))
+    } catch {
+      return { ok: false, error: 'plugin.json 不是合法 JSON' }
+    }
+
+    const parsed = parseManifest(json)
+    if (!parsed.ok) return { ok: false, error: parsed.errors.join('；') }
+
+    const m = parsed.manifest
+    const dest = join(resolve('plugins'), m.id)
+    return {
+      ok: true,
+      data: {
+        id: m.id,
+        name: m.name,
+        version: m.version,
+        description: m.description ?? '',
+        author: m.author ?? '',
+        type: m.type ?? 'event',
+        permissions: m.permissions ?? [],
+        entry: m.entry,
+        alreadyExists: existsSync(dest),
+      },
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 export async function installPlugin(options: {
   source: string
   pluginsRoot: string
@@ -74,7 +139,8 @@ export async function installPlugin(options: {
     const manifestPath = join(sourcePath, 'plugin.json')
     let raw: unknown
     try {
-      raw = JSON.parse(await readFile(manifestPath, 'utf8'))
+      const text = await readFile(manifestPath, 'utf8')
+      raw = JSON.parse(text.replace(/^\uFEFF/, ''))
     } catch (err) {
       return { ok: false, error: `读取或解析 plugin.json 失败：${errorMessage(err)}` }
     }

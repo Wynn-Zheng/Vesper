@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { errorAt, info as logInfo, warnAt } from '../core/log.ts'
 import { getPluginConfig, removePluginConfig, setPluginConfig } from '../plugins/settings.ts'
 import { createHost } from '../plugins/host.ts'
-import { checkUpdates, installPlugin, setEnabled, uninstallPlugin } from '../plugins/installer.ts'
+import { checkUpdates, inspectPlugin, installPlugin, setEnabled, uninstallPlugin } from '../plugins/installer.ts'
 import { scanPlugins } from '../plugins/registry.ts'
 
 /** 单个插件路由的处理函数：只接收请求体，永远返回结果对象，不向调用方抛异常 */
@@ -45,6 +45,8 @@ type PluginListItem = {
   type: string
   /** 这个插件注册了哪些工具（模型能调用的名字），没有就是空数组 */
   tools: string[]
+  /** 声明的权限（没声明就是空数组 = 只能用最基础的能力） */
+  permissions: string[]
 }
 
 /** 把任意异常转成可读文本 */
@@ -139,6 +141,7 @@ export function createPluginService(options: {
           type: plugin.manifest.type ?? 'event',
           // 这个插件注册的工具名（只算它自己的）
           tools: host.tools().filter((t) => t.pluginId === plugin.manifest.id).map((t) => t.name),
+          permissions: plugin.manifest.permissions ?? [],
           config: getPluginConfig(settingsFile, plugin.manifest.id),
           ...(plugin.manifest.configSchema === undefined
             ? {}
@@ -149,8 +152,24 @@ export function createPluginService(options: {
       }),
     },
     {
+      path: '/inspect',
       method: 'POST',
+      /**
+       * 安装前先看一眼：这个目录里的插件叫什么、要什么权限。
+       *
+       * 不读就不装 —— 用户有权在复制文件之前知道它要联网/读记忆。
+       */
+      handler: safeHandler(async (body) => {
+        if (!isRecord(body)) return invalidBody('body')
+        const source = body['source']
+        if (typeof source !== 'string' || !source.trim()) return invalidBody('source')
+        const r = await inspectPlugin({ source: source.trim() })
+        return r.ok ? { ok: true, data: r.data } : { ok: false, error: r.error }
+      }),
+    },
+    {
       path: '/install',
+      method: 'POST',
       handler: safeHandler(async (body) => {
         if (!isRecord(body)) return invalidBody('body')
 
@@ -172,8 +191,8 @@ export function createPluginService(options: {
       }),
     },
     {
-      method: 'POST',
       path: '/uninstall',
+      method: 'POST',
       handler: safeHandler(async (body) => {
         if (!isRecord(body)) return invalidBody('body')
 
