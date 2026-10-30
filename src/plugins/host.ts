@@ -307,13 +307,14 @@ export function createHost(options: {
    * 插件注册的工具，包装成宿主的 Tool 形状，供 index.ts 注册进 ToolRegistry。
    * 没加载/已卸载的插件，它的工具不会出现在这里。
    */
-  function tools(): Array<{ name: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }> {
+  function tools(): Array<{ name: string; pluginId: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }> {
     const alive = new Set([...loaded.keys()])
-    const out: Array<{ name: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }> = []
+    const out: Array<{ name: string; pluginId: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }> = []
     for (const [name, item] of pluginTools) {
       if (!alive.has(item.pluginId)) continue
       out.push({
         name,
+        pluginId: item.pluginId,
         description: String(item.tool.description || ''),
         parameters: item.tool.parameters || { type: 'object', properties: {} },
         run: async (args: Record<string, unknown>) => {

@@ -180,6 +180,11 @@ export function parseManifest(
   const manifest: PluginManifest = { id, name, version, entry }
   if (typeof raw['description'] === 'string') manifest.description = raw['description']
   if (typeof raw['author'] === 'string') manifest.author = raw['author']
+  // type 之前没被读出来：插件写了 type: tool，宿主一律当 event，
+  // 结果插件页分错组、也不提示它注册了工具。
+  if (raw['type'] === 'tool' || raw['type'] === 'panel' || raw['type'] === 'transport' || raw['type'] === 'event') {
+    manifest.type = raw['type']
+  }
   if (typeof raw['minHostVersion'] === 'string') manifest.minHostVersion = raw['minHostVersion']
   if (isStringArray(permissions)) manifest.permissions = permissions
   // 上面已经逐项校验过，这里直接收窄（校验不过不会走到这）

@@ -41,6 +41,10 @@ type PluginListItem = {
   config: Record<string, unknown>
   /** 插件声明的配置项（有它前端就渲染表单，没有就退化成键值编辑器） */
   configSchema?: Record<string, unknown>
+  /** 插件类型：tool / panel / transport / event（决定它在插件页哪一组） */
+  type: string
+  /** 这个插件注册了哪些工具（模型能调用的名字），没有就是空数组 */
+  tools: string[]
 }
 
 /** 把任意异常转成可读文本 */
@@ -132,6 +136,9 @@ export function createPluginService(options: {
           author: plugin.manifest.author ?? '',
           enabled: plugin.enabled,
           loaded: loadedIds.has(plugin.manifest.id),
+          type: plugin.manifest.type ?? 'event',
+          // 这个插件注册的工具名（只算它自己的）
+          tools: host.tools().filter((t) => t.pluginId === plugin.manifest.id).map((t) => t.name),
           config: getPluginConfig(settingsFile, plugin.manifest.id),
           ...(plugin.manifest.configSchema === undefined
             ? {}

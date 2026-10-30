@@ -112,32 +112,31 @@
       'display:none;margin-top:8px;color:#f85149;font-size:12px;line-height:1.5;word-break:break-all'
     card.appendChild(err)
 
-    // 表格
-    const wrap = el('div')
-    wrap.style.cssText = 'margin-top:12px;overflow-x:auto'
-
-    const table = el('table')
-    table.style.cssText = 'width:100%;border-collapse:collapse;min-width:780px'
-
-    const thead = el('thead')
-    const headRow = el('tr')
-    headRow.style.cssText = 'background:rgba(255,255,255,.03);text-align:left'
-    for (const h of ['名称', 'id', '版本', '描述', '启用状态', '已加载状态', '操作']) {
-      const th = el('th', '', h)
-      th.style.cssText =
-        'padding:8px;font-size:11.5px;font-weight:600;color:#8b949e;white-space:nowrap'
-      headRow.appendChild(th)
-    }
-    thead.appendChild(headRow)
-    table.appendChild(thead)
-
-    const tbody = el('tbody')
-    tbody.id = 'plugins-rows'
-    table.appendChild(tbody)
-
-    wrap.appendChild(table)
-    card.appendChild(wrap)
-    host.appendChild(card)
+  // 两组：工具插件（type=tool）/ 已安装（其余）
+  // 之前是一张表把所有插件平铺，现在按 v2 设计分组
+  const g1 = el('div', 'grp')
+  g1.style.marginTop = 'var(--gap-group)'
+  const g1h = el('div', 'grp-h')
+  g1h.appendChild(el('b', '', '工具插件'))
+  g1h.appendChild(el('span', '', '注册成模型能调用的工具'))
+  g1.appendChild(g1h)
+  const g1grid = el('div', 'grid')
+  g1grid.id = 'plugins-tool-grid'
+  g1.appendChild(g1grid)
+  card.appendChild(g1)
+  
+  const g2 = el('div', 'grp')
+  g2.style.marginTop = 'var(--gap-group)'
+  const g2h = el('div', 'grp-h')
+  g2h.appendChild(el('b', '', '已安装'))
+  g2h.appendChild(el('span', '', '从本地装的，能卸'))
+  g2.appendChild(g2h)
+  const g2grid = el('div', 'grid')
+  g2grid.id = 'plugins-installed-grid'
+  g2.appendChild(g2grid)
+  card.appendChild(g2)
+  
+  host.appendChild(card)
   }
 
   /* ============================================================
@@ -159,91 +158,108 @@
     drawRows()
   }
 
-  function drawRows() {
-    const tbody = document.getElementById('plugins-rows')
-    if (!tbody) return
-    tbody.innerHTML = ''
+/** 一张插件卡（工具插件 / 已安装共用） */
+  function pluginCard(p, isTool) {
+    const card = el('div', 'card' + (p.enabled ? '' : ' off'))
+    const head = el('div', 'card-h')
+    const ico = el('div', 'ico2' + (p.enabled ? '' : ' gray'))
+    ico.innerHTML =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+      (isTool
+        ? '<path d="M4 7h16M4 12h16M4 17h10"/>'
+        : '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6M9 13h4"/>') +
+      '</svg>'
+    head.appendChild(ico)
+    head.appendChild(el('b', '', p.name || p.id || '（未命名）'))
+    head.appendChild(el('span', 'ver', 'v' + (p.version || '?')))
+    if (isTool) head.appendChild(el('span', 'tag blue', '工具'))
+    const sp = el('span', 'spacer')
+    head.appendChild(sp)
 
-    if (ROWS.length === 0) {
-      const tr = el('tr')
-      const td = el('td', 'hint', '还没有装插件。点上面的「安装」填一个本地插件目录。')
-      td.colSpan = 7
-      td.style.cssText = 'padding:16px 8px;font-size:12px'
-      tr.appendChild(td)
-      tbody.appendChild(tr)
-      return
+    // 启停：恒成功的用开关；demo 这种也能关
+    const sw = el('button', 'sw' + (p.enabled ? '' : ' off'), p.enabled ? '开' : '关')
+    sw.onclick = () => window.pluginToggle?.(p.id, p.enabled)
+    head.appendChild(sw)
+    card.appendChild(head)
+
+    card.appendChild(el('div', 'desc', p.description || '（没有说明）'))
+
+    // 工具插件：把它注册了哪些工具列出来 —— 这是它和普通插件最大的区别
+    if (isTool && Array.isArray(p.tools) && p.tools.length) {
+      const params = el('div', 'params')
+      for (const t of p.tools) {
+        const row = el('div', 'prow')
+        row.appendChild(el('span', 'k', '工具'))
+        const v = el('span', 'v', t)
+        v.style.fontFamily = 'ui-monospace,Consolas,monospace'
+        v.style.fontSize = '11.5px'
+        row.appendChild(v)
+        params.appendChild(row)
+      }
+      card.appendChild(params)
     }
 
-    for (const p of ROWS) drawRow(tbody, p)
+    // 配置项（manifest 声明的）
+    if (p.configSchema && typeof p.configSchema === 'object') {
+      const keys = Object.keys(p.configSchema)
+      if (keys.length) {
+        const params = el('div', 'params')
+        for (const k of keys.slice(0, 3)) {
+          const f = p.configSchema[k] || {}
+          const row = el('div', 'prow')
+          row.appendChild(el('span', 'k', f.label || k))
+          const cur = p.config && p.config[k] !== undefined ? p.config[k] : f.default
+          row.appendChild(el('span', 'v', String(cur ?? '—')))
+          const ed = el('button', 'ed', '改')
+          ed.onclick = () => openConfigEditor(p)
+          row.appendChild(ed)
+          params.appendChild(row)
+        }
+        card.appendChild(params)
+      }
+    }
+
+    const foot = el('div', 'foot2')
+    foot.appendChild(el('span', '', p.loaded ? '已加载' : '未加载'))
+    const sp2 = el('span', 'spacer')
+    foot.appendChild(sp2)
+    const cfg = el('button', 't', '配置')
+    cfg.onclick = () => openConfigEditor(p)
+    foot.appendChild(cfg)
+    const reload = el('button', 't', '重载')
+    reload.onclick = () => window.pluginReload?.(p.id)
+    foot.appendChild(reload)
+    const del = el('button', 't', '卸载')
+    del.onclick = () => window.pluginUninstall?.(p.id)
+    foot.appendChild(del)
+    card.appendChild(foot)
+
+    return card
   }
 
-  function drawRow(tbody, p) {
-    const id = String(p.id || '')
-    const up = UPDATES[id]
+  function drawRows() {
+    const gridTool = document.getElementById('plugins-tool-grid')
+    const gridOther = document.getElementById('plugins-installed-grid')
+    if (!gridTool || !gridOther) return
+    gridTool.innerHTML = ''
+    gridOther.innerHTML = ''
 
-    const tr = el('tr')
-    tr.style.cssText = 'border-top:1px solid var(--line)'
-    // 有更新的行加一层很淡的底色，扫一眼就能看到
-    if (up && up.hasUpdate) tr.style.background = 'rgba(210,153,34,.06)'
+    const tools = ROWS.filter((p) => p.type === 'tool')
+    const others = ROWS.filter((p) => p.type !== 'tool')
 
-    const name = el('td', '', p.name || id || '（未命名）')
-    name.style.cssText = 'padding:8px;font-size:12.5px;word-break:break-all'
-
-    const idCell = el('td', '', id || '—')
-    idCell.style.cssText =
-      'padding:8px;font-size:11.5px;color:#8b949e;font-family:ui-monospace,Consolas,monospace;word-break:break-all'
-
-    const verCell = el('td')
-    verCell.style.cssText = 'padding:8px;font-size:12px;white-space:nowrap'
-    if (up && up.hasUpdate) {
-      const verText = el('span', '', (p.version || up.current || '?') + ' → ' + (up.latest || '?'))
-      verText.style.color = '#d29922'
-      verCell.appendChild(verText)
-      const tag = el('span', '', '有更新')
-      tag.style.cssText = 'margin-left:6px;font-size:10.5px;color:#d29922'
-      verCell.appendChild(tag)
+    if (!tools.length) {
+      gridTool.appendChild(
+        el('div', 'empty', '还没有工具插件。装一个 plugin.json 里写 "type": "tool" 的插件，它注册的工具就会出现在这里。'),
+      )
     } else {
-      verCell.textContent = p.version || '—'
+      for (const p of tools) gridTool.appendChild(pluginCard(p, true))
     }
 
-    const desc = el('td', '', p.description || '—')
-    desc.style.cssText =
-      'padding:8px;font-size:12px;color:#8b949e;max-width:280px;word-break:break-word'
-
-    const enabled = el('td', '', p.enabled ? '已启用' : '已停用')
-    enabled.style.cssText = 'padding:8px;font-size:12px;white-space:nowrap;color:' + (p.enabled ? '#3fb950' : '#8b949e')
-
-    const loaded = el('td', '', p.loaded ? '已加载' : '未加载')
-    loaded.style.cssText = 'padding:8px;font-size:12px;white-space:nowrap;color:' + (p.loaded ? '#3fb950' : '#8b949e')
-
-    const ops = el('td')
-    ops.style.cssText = 'padding:8px;white-space:nowrap'
-
-    const btnConfig = el('button', 'mini-btn', '配置')
-    btnConfig.onclick = () => openConfigEditor(p)
-
-    const btnUninstall = el('button', 'mini-btn danger', '卸载')
-    btnUninstall.onclick = () => window.pluginUninstall(id)
-
-    const btnToggle = el('button', 'mini-btn', p.enabled ? '停用' : '启用')
-    btnToggle.onclick = () => window.pluginToggle(id, p.enabled === true)
-
-    const btnReload = el('button', 'mini-btn', '重载')
-    btnReload.onclick = () => window.pluginReload(id)
-
-    for (const b of [btnConfig, btnUninstall, btnToggle, btnReload]) {
-      b.style.marginRight = '4px'
-      ops.appendChild(b)
+    if (!others.length) {
+      gridOther.appendChild(el('div', 'empty', '还没有装外部插件。'))
+    } else {
+      for (const p of others) gridOther.appendChild(pluginCard(p, false))
     }
-
-    tr.appendChild(name)
-    tr.appendChild(idCell)
-    tr.appendChild(verCell)
-    tr.appendChild(desc)
-    tr.appendChild(enabled)
-    tr.appendChild(loaded)
-    tr.appendChild(ops)
-    tbody.appendChild(tr)
   }
 
   /**
