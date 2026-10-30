@@ -182,11 +182,11 @@ export function parseManifest(
   if (typeof raw['author'] === 'string') manifest.author = raw['author']
   // type 之前没被读出来：插件写了 type: tool，宿主一律当 event，
   // 结果插件页分错组、也不提示它注册了工具。
-  if (raw['type'] === 'tool' || raw['type'] === 'panel' || raw['type'] === 'transport' || raw['type'] === 'event') {
-    manifest.type = raw['type']
+  // type 大小写不敏感（写 Tool / TOOL 也认），非法值忽略、按 event 处理
+  const rawType = typeof raw['type'] === 'string' ? raw['type'].trim().toLowerCase() : ''
+  if (rawType === 'tool' || rawType === 'panel' || rawType === 'transport' || rawType === 'event') {
+    manifest.type = rawType as PluginManifest['type']
   }
-  if (typeof raw['minHostVersion'] === 'string') manifest.minHostVersion = raw['minHostVersion']
-  if (isStringArray(permissions)) manifest.permissions = permissions
   // 上面已经逐项校验过，这里直接收窄（校验不过不会走到这）
   if (isPlainObject(configSchema)) manifest.configSchema = configSchema as PluginConfigSchema
 

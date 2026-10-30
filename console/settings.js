@@ -97,108 +97,6 @@
     }
   }
 
-  /* ============================================================
-   * 模型
-   * ============================================================ */
-    /**
- * 设置页 → NapCat：看现在解析到哪个目录，也能手动改。
- *
- * 之前只有「日志 → NapCat」那行有个小「改」，而且是 prompt() 弹窗 ——
- * 换过 NapCat 位置的人根本找不到地方改。
- */
-async function loadNapcatSettings() {
-  const box = document.getElementById('napcat-body')
-  if (!box) return
-  box.innerHTML = '<div class="hint" style="padding:10px 0">读取中…</div>'
-
-  let d
-  try {
-    d = await api('/api/napcat/shelldir')
-  } catch (e) {
-    box.innerHTML = ''
-    const err = el('div', 'hint')
-    err.style.cssText = 'padding:10px 0;color:#f85149'
-    err.textContent = '读不到：' + e.message
-    box.appendChild(err)
-    return
-  }
-
-  box.innerHTML = ''
-  const card = el('div', 'card')
-
-  const title = el('div', 'op-t', 'NapCat 安装目录')
-  card.appendChild(title)
-
-  const state = el('div', 'hint')
-  state.style.cssText = 'font-size:12px;line-height:1.7;margin-top:8px'
-  if (d.ok) {
-    state.innerHTML =
-      '<span style="color:#3fb950">✓ 找到了</span><br>' +
-      '<code style="color:#79c0ff;word-break:break-all">' + escHtml(d.shellDir) + '</code>' +
-      (d.configured ? '' : ' <span style="color:#8b949e">（自动探测到的，没手动指定）</span>')
-  } else {
-    state.innerHTML =
-      '<span style="color:#d29922">✗ 没找到 NapCat</span><br>' +
-      '<span style="color:#8b949e">' + escHtml(d.error || '') + '</span>'
-  }
-  card.appendChild(state)
-
-  // 输入框
-  const row = el('div')
-  row.style.cssText = 'display:flex;gap:8px;margin-top:12px;align-items:center'
-  const input = el('input')
-  input.type = 'text'
-  input.placeholder = d.ok ? '' : '例如 D:/NapCat/NapCat.52230.Shell'
-  input.value = d.configured && d.ok ? d.shellDir : ''
-  input.style.cssText =
-    'flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:6px;' +
-    'padding:6px 10px;font-size:12.5px;color:inherit;font-family:ui-monospace,Consolas,monospace'
-  row.appendChild(input)
-
-  const save = el('button', 'mini-btn', '保存路径')
-  save.onclick = async () => {
-    const v = input.value.trim()
-    save.disabled = true
-    save.textContent = '保存中…'
-    try {
-      const r = await sendJson('/api/napcat/shelldir', { shellDir: v }, 'PUT')
-      if (v && !r.resolved) {
-        toast('保存了，但这个路径下没找到 NapCat（检查一下是不是 <版本>.Shell 那一层）')
-      } else {
-        toast(v ? '已保存，解析到 ' + r.resolved.shellDir : '已清空，改用自动探测')
-      }
-      loadNapcatSettings()
-    } catch (e) {
-      toast('✗ ' + e.message)
-    }
-    save.disabled = false
-    save.textContent = '保存路径'
-  }
-  row.appendChild(save)
-
-  const auto = el('button', 'mini-btn', '自动探测')
-  auto.onclick = async () => {
-    try {
-      await sendJson('/api/napcat/shelldir', { shellDir: '' }, 'PUT')
-      toast('已清空手动指定，改用自动探测')
-      loadNapcatSettings()
-    } catch (e) {
-      toast('✗ ' + e.message)
-    }
-  }
-  row.appendChild(auto)
-  card.appendChild(row)
-
-  const hint = el('div', 'hint')
-  hint.style.cssText = 'font-size:11.5px;line-height:1.8;margin-top:10px;color:#8b949e'
-  hint.innerHTML =
-    '填的是 <code style="color:#79c0ff">&lt;版本&gt;.Shell</code> 那一层，例如 <code>D:/NapCat/NapCat.52230.Shell</code>。<br>' +
-    '留空 = 自动探测常见位置（数据目录下的 napcat、C/D/E/F 盘的 NapCat 等）。<br>' +
-    '还没装？去 <b>日志 → NapCat</b> 点「一键安装 NapCat」。'
-  card.appendChild(hint)
-
-  box.appendChild(card)
-}
 
 /** 简单的 HTML 转义（settings.js 里没有全局的） */
 function escHtml(s) {
@@ -626,6 +524,4 @@ async function loadModel() {
   window.loadModel = loadModel
   window.loadAbout = loadAbout
   // 这个文件整体包在 IIFE 里，不挂到 window 的话
-  // onclick="loadNapcatSettings()" 会报 is not defined —— 刚踩过。
-  window.loadNapcatSettings = loadNapcatSettings
 })()
