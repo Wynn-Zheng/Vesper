@@ -438,6 +438,38 @@
      之前是普通 block，卡片之间没有任何间距、全贴在一起，
      这里统一成 flex 列 + 模块间距。 */
   #self-body{display:flex;flex-direction:column;gap:var(--gap-card)}
+/* ===== 插件页：接入平台 / 分组 ===== */
+  .grp{margin-bottom:var(--gap-group)}
+  .grp-h{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .grp-h b{font-size:13px;font-weight:700}
+  .grp-h span{font-size:11.5px;color:var(--dim2)}
+  .grp-h .r{margin-left:auto;font-size:11.5px;color:var(--dim2)}
+
+  .platform{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);
+    overflow:hidden;transition:border-color .16s var(--ease);
+  }
+  .platform + .platform{margin-top:var(--s3)}
+  .platform:hover{border-color:var(--line-hover)}
+  .platform-h{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+  .platform-h .pico{width:28px;height:28px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;flex:none;background:rgba(94,106,210,.15);color:#aab2ff}
+  .platform-h .pico.off{background:rgba(255,255,255,.06);color:var(--dim2)}
+  .platform-h b{font-size:13.5px;font-weight:700}
+  .platform-h .spacer{flex:1}
+
+  .adapter{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .adapter:last-of-type{border-bottom:none}
+  .adapter-main{flex:1;min-width:0}
+  .adapter-title{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .adapter-title b{font-size:13px;font-weight:700}
+  .adapter-desc{font-size:11.5px;color:var(--dim2);line-height:1.6}
+  .adapter-meta{display:flex;gap:16px;margin:8px 0 0;flex-wrap:wrap}
+  .adapter-meta .tm{font-size:11.5px;color:var(--dim2)}
+  .adapter-meta .tm b{color:var(--dim);font-weight:400;font-variant-numeric:tabular-nums}
+  .adapter-acts{display:flex;gap:6px;flex-shrink:0;align-items:flex-start}
+  .platform-empty{padding:16px;display:flex;align-items:center;gap:12px}
+  .platform-empty .t{flex:1;font-size:12px;color:var(--dim2)}
+
   /* 它对自己的理解：一行「键 + 值」 */
   .self-trait-row{display:flex;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
   .self-trait-row:last-of-type{border-bottom:none;padding-bottom:0}
@@ -837,21 +869,30 @@
       </div>
     </section>
 
-    <section class="view" id="v-ability">
-      <div class="card" style="margin-bottom:16px">
+<section class="view" id="v-ability">
+      <div class="card" style="margin-bottom:var(--gap-card)">
         <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <b style="font-size:15px">插件</b>
-          <span class="hint">内置能力 + 以后装的。开关立刻生效，不用重启。</span>
-          <button class="mini-btn" onclick="loadAbility()">刷新</button>
+          <span class="hint">接入平台、能力、工具 —— 开关立刻生效，不用重启</span>
+          <button class="mini-btn" style="margin-left:auto" onclick="loadAbility()">刷新</button>
         </div>
       </div>
-      <div id="ability-groups"></div>
 
-      <!-- 外部插件面板：plugins.js 往这里渲染「已装的插件 / 安装 / 检查更新」。
-           内置的 11 个在上面，外部插件在下面，同一页管完。 -->
-      <div id="plugins-panel" style="margin-top:24px"></div>
+      <!-- 接入平台：QQ / 微信…（数据驱动，见 renderPlatforms） -->
+      <div class="grp">
+        <div class="grp-h"><b>接入平台</b><span id="platform-count">消息从哪个应用进来</span><span class="r">每个平台可以接多种实现</span></div>
+        <div id="platform-list"></div>
+      </div>
+
+      <!-- 内置能力 -->
+      <div class="grp">
+        <div class="grp-h"><b>内置能力</b><span id="ability-count">—</span><span class="r">跟主程序一起发，不能卸</span></div>
+        <div id="ability-groups"></div>
+      </div>
+
+      <!-- 工具插件 + 已安装（plugins.js 渲染） -->
+      <div id="plugins-panel"></div>
     </section>
-
     <section class="view" id="v-napcat">
       <div id="nc-main" style="transition:margin-right .2s ease-out">
         <!-- 状态卡 -->
@@ -1607,7 +1648,7 @@ const GROUPS = {
   self: [['v-self', '自我']],
   ability: [['v-ability', '插件']],
   people: [['v-members', '成员'], ['v-groups', '群'], ['v-search', '搜索']],
-  logs: [['v-logs', '运行日志'], ['v-napcat', 'NapCat'], ['v-desktop-log', '操作日志'], ['v-qzone', '说说']],
+  logs: [['v-logs', '运行日志'], ['v-desktop-log', '操作日志'], ['v-qzone', '说说']],
   // 设置是一页滚到底，所以只有一个入口。
   // 页内用 set-head 分块：连接 / 规则 / 权限 / 数据 / 关于 / 健康检查
   // v-ops 是导出/从备份恢复，之前不在任何 GROUPS 里 —— 卡片存在但永远打不开
@@ -4539,7 +4580,125 @@ function fmtDur(sec) {
   return Math.floor(sec / 86400) + ' 天'
 }
 
+/**
+ * 接入平台：哪个应用、接了什么实现。
+ *
+ * 现在的数据源只有 NapCat（QQ 的实现）。微信/Telegram 这些先渲染成
+ * "未接入"的占位 —— 让"以后能加"这件事在界面上是可见的，而不是藏着。
+ */
+async function renderPlatforms() {
+  const box = document.getElementById('platform-list')
+  if (!box) return
+  box.innerHTML = '<div class="hint">加载中…</div>'
+
+  let napcat = null
+  try {
+    napcat = await api('/api/napcat')
+  } catch {
+    napcat = null
+  }
+
+  const platforms = [
+    {
+      id: 'qq',
+      name: 'QQ',
+      icon: '<path d="M4 5h16v11H9l-5 4V5z"/>',
+      adapters: napcat
+        ? [
+            {
+              id: 'napcat',
+              name: 'NapCat',
+              version: napcat.version || '',
+              desc: 'QQ 协议的实现：把消息转成 OneBot 事件发进来，把回复发回 QQ。',
+              connected: Boolean(napcat.connected ?? napcat.running),
+              meta: [
+                ['登录', napcat.qq || napcat.login || '未登录'],
+                ['反向 WS', napcat.wsUrl || '127.0.0.1:8765'],
+                ['安装目录', napcat.shellDir || '自动探测'],
+                ['心跳', napcat.heartbeat ? new Date(napcat.heartbeat).toLocaleTimeString('zh-CN', { hour12: false }) : '—'],
+              ],
+            },
+          ]
+        : [],
+    },
+    { id: 'weixin', name: '微信', icon: '<path d="M4 5h16v11H9l-5 4V5z"/>', adapters: [] },
+  ]
+
+  box.innerHTML = ''
+  for (const p of platforms) {
+    const card = el('div', 'platform')
+    const head = el('div', 'platform-h')
+    const ico = el('div', 'pico' + (p.adapters.length ? '' : ' off'))
+    ico.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + p.icon + '</svg>'
+    head.appendChild(ico)
+    head.appendChild(el('b', '', p.name))
+    head.appendChild(el('span', 'tag ' + (p.adapters.length ? 'green' : 'dim'), p.adapters.length ? '已接入' : '未接入'))
+    if (p.adapters.length) head.appendChild(el('span', 'tag', p.adapters.length + ' 个实现'))
+    const sp = el('span', 'spacer')
+    head.appendChild(sp)
+    if (p.adapters.length) {
+      const add = el('button', 'mini-btn', '+ 加一个实现')
+      add.onclick = () => toast('多实现还在做，现在只支持一个')
+      head.appendChild(add)
+    }
+    card.appendChild(head)
+
+    if (!p.adapters.length) {
+      const empty = el('div', 'platform-empty')
+      empty.appendChild(el('div', 't', '还没接。装一个 ' + p.name + ' 的适配器就能收到那边的消息。'))
+      const add = el('button', 'mini-btn', '+ 添加实现')
+      add.onclick = () => toast('适配器安装还没做')
+      empty.appendChild(add)
+      card.appendChild(empty)
+    } else {
+      for (const a of p.adapters) {
+        const row = el('div', 'adapter')
+        const main = el('div', 'adapter-main')
+        const title = el('div', 'adapter-title')
+        title.appendChild(el('b', '', a.name))
+        if (a.version) title.appendChild(el('span', 'ver', 'v' + String(a.version).replace(/^v/, '')))
+        const connTag = el('span', 'tag ' + (a.connected ? 'green' : ''), a.connected ? '已连接' : '未连接')
+        if (!a.connected) connTag.style.color = 'var(--red)', connTag.style.borderColor = 'rgba(248,81,73,.35)'
+        title.appendChild(connTag)
+        main.appendChild(title)
+        main.appendChild(el('div', 'adapter-desc', a.desc))
+        const meta = el('div', 'adapter-meta')
+        for (const [k, v] of a.meta) {
+          const m = el('span', 'tm')
+          m.appendChild(document.createTextNode(k + ' '))
+          m.appendChild(el('b', '', String(v)))
+          meta.appendChild(m)
+        }
+        main.appendChild(meta)
+        row.appendChild(main)
+
+        const acts = el('div', 'adapter-acts')
+        const bRestart = el('button', 'mini-btn', '重启')
+        bRestart.onclick = () => napcatAction('restart')
+        acts.appendChild(bRestart)
+        const bStop = el('button', 'mini-btn', '停止')
+        bStop.onclick = () => napcatAction('stop')
+        acts.appendChild(bStop)
+        const bCfg = el('button', 'mini-btn', '配置')
+        bCfg.onclick = () => showGroup('logs', 'v-napcat')
+        acts.appendChild(bCfg)
+        row.appendChild(acts)
+
+        card.appendChild(row)
+      }
+    }
+    box.appendChild(card)
+  }
+
+  const cnt = document.getElementById('platform-count')
+  if (cnt) {
+    const live = platforms.filter((p) => p.adapters.length).length
+    cnt.textContent = '消息从哪个应用进来 · ' + live + ' / ' + platforms.length + ' 已接入'
+  }
+}
 async function loadAbility() {
+  // 接入平台先渲染（NapCat 现在是「QQ」这个平台的实现）
+  void renderPlatforms()
   const box = $('ability-groups')
   if (!box) return
   box.innerHTML = '<div class="hint">加载中…</div>'
@@ -4557,6 +4716,12 @@ async function loadAbility() {
       head.style.cssText = 'display:flex;align-items:baseline;gap:8px;margin:4px 0 10px'
       head.appendChild(el('b', '', g)).style.cssText = 'font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--text)'
       head.appendChild(el('span', 'hint', list.filter((x) => x.on).length + ' / ' + list.length + ' 开着'))
+      // 顶部总数：所有能力里开了几个
+      const cntEl = document.getElementById('ability-count')
+      if (cntEl) {
+        const onCount = cards.filter((x) => x.on).length
+        cntEl.textContent = cards.length + ' 个 · ' + onCount + ' 开着'
+      }
       box.appendChild(head)
 
       const grid = el('div')
