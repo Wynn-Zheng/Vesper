@@ -48,7 +48,7 @@ check('有 tab 容器', html.includes('id="self-tabs"'))
 check('默认停在角色卡', /let SELF_TAB = 'card'/.test(html))
 
 console.log('\n=== 3. 保留的功能函数 ===')
-for (const fn of ['saveSelfText', 'switchSelfOwner', 'decideRequest', 'selfSec', 'selfCard', 'selfChip', 'selfEmpty']) {
+for (const fn of ['decideRequest', 'selfSec', 'selfCard', 'selfEmpty', 'renderSelfCardPage']) {
   check(`有 ${fn}`, html.includes(fn))
 }
 check('有 renderSelfV2', html.includes('function renderSelfV2()'))
@@ -60,17 +60,25 @@ check('有「记住的事」', html.includes('记住的事'))
 check('待办有输入框', html.includes('self-todo-input'))
 check('待办走 intentAction', html.includes("intentAction('complete'"))
 
-console.log('\n=== 3c. 就地编辑 ===')
-for (const s of ['self-name-input', 'self-callyou-input', 'talk-max', 'talk-chars', 'talk-quote', 'self-core-input', 'self-traits-box']) {
-  check(`有 ${s}`, html.includes(s))
+console.log('\n=== 3c. 自我页六板块（2026-10-29 重构）===')
+// 旧版的自述/特质/称呼输入框在 6 tab 重构后被替代了：
+// 名字/生日/性格都在「角色卡」，说话方式在「对话规则」。
+for (const tab of ['card', 'status', 'learn', 'exp', 'think', 'talk']) {
+  check('有 tab ' + tab, html.includes("['" + tab + "',"))
 }
-for (const api of ['/api/self/name', '/api/self/traits', '/api/self/callyou', '/api/talk-style']) {
-  check(`调 ${api}`, html.includes(api))
+for (const s of ['renderSelfCardPage', 'renderSelfStatusPage', 'renderSelfLearnPage', 'renderSelfExpPage', 'renderSelfThinkPage', 'renderSelfTalkPage']) {
+  check('有 ' + s, html.includes(s))
 }
-for (const fn of ['saveSelfName', 'saveSelfCallYou', 'saveSelfTraits', 'saveTalkStyle', 'selfCoreAdd', 'selfCoreDrop']) {
-  check(`有 ${fn}`, html.includes(`function ${fn}(`))
+for (const s of ['self-card-form', 'self-tabs', 'self-body']) {
+  check('有 ' + s, html.includes(s))
 }
-
+// 名字/性格走的是角色卡接口，不再是 self/name
+for (const api of ['/api/card', '/api/self/v2']) {
+  check('调 ' + api, html.includes(api))
+}
+for (const fn of ['loadSelfV2', 'askText', 'selfCard']) {
+  check('有 ' + fn, html.includes(fn))
+}
 
 console.log('\n=== 5. lineDiff ===')
 {

@@ -2609,29 +2609,9 @@ async function decideRequest(id, action, grant) {
 
 /* ---------------- 就地编辑 ---------------- */
 
-async function saveSelfName() {
-  const inp = $('self-name-input')
-  if (!inp) return
-  try {
-    await sendJson('/api/self/name', { name: inp.value.trim() }, 'PUT')
-    toast('名字改好了')
-    loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
 
-async function saveSelfCallYou() {
-  const inp = $('self-callyou-input')
-  if (!inp) return
-  try {
-    await sendJson('/api/self/callyou', { 昵称: inp.value.trim() }, 'PUT')
-    toast('称呼改好了')
-    loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
+
+
 
 async function saveTalkStyle() {
   const val = (id) => $(id)?.value ?? ''
@@ -2652,23 +2632,7 @@ async function saveTalkStyle() {
   }
 }
 
-async function saveSelfTraits() {
-  const box = $('self-traits-box')
-  if (!box) return
-  const traits = {}
-  for (const row of box.querySelectorAll('.self-trait-row')) {
-    const k = row.querySelector('.self-trait-k').value.trim()
-    const v = row.querySelector('.self-trait-v').value.trim()
-    if (k && v) traits[k] = v
-  }
-  try {
-    await sendJson('/api/self/traits', { traits }, 'PUT')
-    toast('规矩保存了')
-    loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
+
 
 async function selfCoreAdd() {
   const inp = $('self-core-input')
@@ -2717,9 +2681,7 @@ function selfCard(title, extra) {
   return c
 }
 
-function selfChip(text, color) {
-  return el('span', 'self-chip ' + (color || ''), text)
-}
+
 
 function selfEmpty(text) {
   return el('div', 'self-empty', text)
@@ -2734,12 +2696,7 @@ function selfField(label, inputEl) {
 }
 
 /** 一行「标签 + 多个输入框」 */
-function selfFieldRow(label, nodes) {
-  const row = el('div', 'self-field')
-  row.appendChild(el('label', '', label))
-  for (const n of nodes) row.appendChild(n)
-  return row
-}
+
 
 /* ============================================================
  * 自我页：渲染（v5）
@@ -4121,30 +4078,10 @@ function renderSelfTalkPage(body, d) {
  *  'me' = 锁住，它只读（自我反思不会再覆盖）
  *  'it' = 它能写（每次反思可能改写）
  */
-async function switchSelfOwner(owner) {
-  const msg = owner === 'me'
-    ? '从现在起这段它只读，不会自己改。\n\n你写什么，它就照着当自己。确定？'
-    : '这段交回给它。\n\n下次它反思时可能会改写，你现在的版本会被覆盖。确定？'
-  if (!confirm(msg)) return
-  try {
-    await sendJson('/api/self/owner', { owner }, 'PUT')
-    toast(owner === 'me' ? '已锁住，它不会再改' : '已交回给它，下次反思会更新')
-    loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
 
 
-async function saveSelfText(text) {
-  try {
-    await sendJson('/api/self/text', { text }, 'PUT')
-    toast('已保存')
-    loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
+
+
 
 async function intentAction(action, text) {
   try {
@@ -4303,50 +4240,7 @@ function renderHealth(r, box) {
  * 32-40px 高的 polyline + 底下渐变的面积填充 —— 卡片里放这么一条，
  * 比多写一个数字能多传达"最近在涨还是在跌"。
  */
-function sparklineEl(vals, w = 200, h = 34) {
-  const svgNS = 'http://www.w3.org/2000/svg'
-  const svg = document.createElementNS(svgNS, 'svg')
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
-  svg.setAttribute('width', '100%')
-  svg.setAttribute('height', String(h))
-  svg.setAttribute('preserveAspectRatio', 'none')
-  svg.setAttribute('class', 'dash-spark')
 
-  const n = vals.length
-  if (!n) return svg
-
-  const max = Math.max(1, ...vals)
-  const pad = 3
-  const dx = n > 1 ? (w - pad * 2) / (n - 1) : 0
-  const pt = (i) => {
-    const x = pad + i * dx
-    const y = h - pad - (vals[i] / max) * (h - pad * 2)
-    return [x, y]
-  }
-
-  // 面积填充
-  const area = document.createElementNS(svgNS, 'path')
-  const pts = vals.map((_, i) => pt(i))
-  let d = `M ${pts[0][0]} ${h}`
-  for (const [x, y] of pts) d += ` L ${x.toFixed(2)} ${y.toFixed(2)}`
-  d += ` L ${pts[pts.length - 1][0]} ${h} Z`
-  area.setAttribute('d', d)
-  area.setAttribute('fill', 'rgba(88,166,255,.14)')
-  svg.appendChild(area)
-
-  // 折线
-  const line = document.createElementNS(svgNS, 'polyline')
-  line.setAttribute('points', pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' '))
-  line.setAttribute('fill', 'none')
-  line.setAttribute('stroke', 'var(--blue)')
-  line.setAttribute('stroke-width', '1.6')
-  line.setAttribute('stroke-linejoin', 'round')
-  line.setAttribute('stroke-linecap', 'round')
-  line.setAttribute('vector-effect', 'non-scaling-stroke')
-  svg.appendChild(line)
-
-  return svg
-}
 
 /**
  * 主指标 + 三个陪衬。
