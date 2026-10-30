@@ -1690,7 +1690,7 @@ const GROUPS = {
   // 设置是一页滚到底，所以只有一个入口。
   // 页内用 set-head 分块：连接 / 规则 / 权限 / 数据 / 关于 / 健康检查
   // v-ops 是导出/从备份恢复，之前不在任何 GROUPS 里 —— 卡片存在但永远打不开
-  settings: [['v-settings', '设置'], ['v-ops', '备份']],
+  settings: [['v-settings', '设置'], ['v-ops', '操作']],
   test: [['v-try', '试聊'], ['v-tools-test', '工具连通性'], ['v-recall-test', '记忆检索']],
 }
 const TITLES = { dashboard: '仪表盘', self: '自我', ability: '插件', people: '成员', logs: '日志', settings: '设置', test: '测试' }
@@ -4275,7 +4275,7 @@ function renderHealth(r, box) {
     const s = LEVEL_STYLE[it.level] || LEVEL_STYLE.warn
     const row = el('div', 'item')
     row.style.cssText =
-      'padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);border-left:3px solid ' + s.color + ';padding-left:10px'
+      'display:block;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);border-left:3px solid ' + s.color + ';padding-left:10px'
     const head = el('div')
     head.style.cssText = 'display:flex;gap:8px;align-items:baseline'
     head.appendChild(el('span', '', s.mark)).style.color = s.color
@@ -4287,7 +4287,7 @@ function renderHealth(r, box) {
 
     if (it.fix) {
       const fix = el('div', 'sub', '→ ' + it.fix)
-      fix.style.cssText = 'color:var(--yellow);margin-top:3px;font-size:12px;line-height:1.5'
+      fix.style.cssText = 'color:var(--yellow);margin-top:6px;font-size:11.5px;line-height:1.65;padding-left:21px'
       row.appendChild(fix)
     }
     box.appendChild(row)
