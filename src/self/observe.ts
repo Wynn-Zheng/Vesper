@@ -144,7 +144,17 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
 
   // 有位置的按 minCount 收；没位置的必须出现更多次才值得报——
   // 不然一堆"不知道在哪"的噪声，看的人也没法处理。
-  const issues = [...buckets.values()].filter((i) => (i.where ? i.count >= minCount : i.count >= Math.max(5, minCount)))
+  // 测试造的错不该进"它发现的问题"：
+  //   probe-/e2e-/edge- 是测试插件的 id（见 scripts/_plugin-test-guard.ts），
+  //   qqbot-* 临时目录是测试的沙盒。
+  // 这些会经日志漏进来，导致它在聊天里跟用户报"我这套程序有地方报错"，其实是测试。
+  const TEST_NOISE = /(?:\[plugin:(?:probe-|e2e-|edge-))|(?:qqbot-(?:probe|plugin|health|store|emoji)-)|(?:Temp[\\\\/]qqbot)/
+  const isTestNoise = (m: string): boolean => TEST_NOISE.test(m)
+
+  const issues = [...buckets.values()]
+    .filter((i) => (i.where ? i.count >= minCount : i.count >= Math.max(5, minCount)))
+    // 测试造的错不算"它发现的问题"
+    .filter((i) => !isTestNoise(i.message) && !isTestNoise((i.samples || []).join(' ')))
 
   for (const issue of issues) {
     issue.confidence = issue.where ? '确定' : '可能'
