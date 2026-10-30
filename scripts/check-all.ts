@@ -151,6 +151,7 @@ const STEPS: Step[] = [
   // 插件系统（阶段 3+4）
   { name: '插件注册表', cmd: 'node scripts/selfcheck-plugin-registry.ts', expect: /全部通过/ },
   { name: '插件宿主', cmd: 'node scripts/selfcheck-plugin-host.ts', expect: /全部通过/ },
+  { name: '插件权限', cmd: 'node scripts/selfcheck-plugin-permissions.ts', expect: /全部通过/ },
   { name: '插件安装', cmd: 'node scripts/selfcheck-plugin-installer.ts', expect: /全部通过/ },
   { name: '插件接口', cmd: 'node scripts/selfcheck-plugin-api.ts', expect: /全部通过/ },
   { name: '插件前端', cmd: 'node scripts/selfcheck-console-plugins.ts', expect: /全部通过/ },
