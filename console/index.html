@@ -926,7 +926,12 @@
       <!-- 工具插件 + 已安装（plugins.js 渲染） -->
       <div id="plugins-panel"></div>
     </section>
-    <section class="view" id="v-napcat">
+<section class="view" id="v-napcat">
+      <!-- 这个页不在导航里了：从「插件 → 接入平台 → 配置」进来，给个返回 -->
+      <div class="row" style="margin-bottom:var(--gap-card)">
+        <button class="mini-btn" onclick="showGroup('ability')">← 返回插件</button>
+        <span class="hint">NapCat 详情：登录、安装目录、日志、WebUI</span>
+      </div>
       <div id="nc-main" style="transition:margin-right .2s ease-out">
         <!-- 状态卡 -->
         <div class="card">
@@ -1698,6 +1703,24 @@ function activeView() {
   return currentViewId
 }
 
+/**
+ * 直接切到某个 view（不进导航栏）。
+ *
+ * 场景：NapCat 详情页已经不在导航里（改从「插件 → 接入平台」进），
+ * 但它的内容还在，需要能被跳过去 —— 所以给它一个不依赖 GROUPS 的入口。
+ */
+function showView(viewId, group) {
+  document.querySelectorAll('.view').forEach((v) => v.classList.remove('on'))
+  const target = document.getElementById(viewId)
+  if (!target) return false
+  target.classList.add('on')
+  currentViewId = viewId
+  if (group) currentGroup = group
+  const bar = $('group-tabs')
+  if (bar) bar.innerHTML = ''
+  if (typeof runLoaders === 'function') runLoaders(viewId)
+  return true
+}
 function showGroup(g, subIndex = 0) {
   currentGroup = g
   const list = GROUPS[g]
@@ -4713,7 +4736,7 @@ async function renderPlatforms() {
         bStop.onclick = () => napcatAction('stop')
         acts.appendChild(bStop)
         const bCfg = el('button', 'mini-btn', '配置')
-        bCfg.onclick = () => showGroup('logs', 'v-napcat')
+        bCfg.onclick = () => showView('v-napcat', 'ability')
         acts.appendChild(bCfg)
         row.appendChild(acts)
 

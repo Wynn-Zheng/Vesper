@@ -663,8 +663,16 @@
       await reloadList()
 
       // 后端可能只拿到部分索引：列表照常显示，错误单独提示
-      if (d && d.error) showError(d.error)
-      else toast(count > 0 ? count + ' 个插件有更新' : '插件都是最新的')
+      // 没有 plugins/index.json 是「正常但检查不了」，不是错误。
+      // 之前写进红色错误行，用户看到的是"报错了"，其实插件好好的。
+      if (d && d.error) {
+        const friendly = /index\.json/.test(String(d.error))
+          ? '还没配更新源（plugins/index.json），检查不了更新；不影响插件使用'
+          : String(d.error)
+        toast(friendly)
+      } else {
+        toast(count > 0 ? count + ' 个插件有更新' : '插件都是最新的')
+      }
     } catch (e) {
       showError(errText(e))
     }
