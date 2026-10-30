@@ -93,6 +93,8 @@ export function createPluginService(options: {
   host?: ReturnType<typeof createHost>
   /** 插件配置文件。默认 persona/plugins.yaml */
   settingsFile?: string
+  /** 发消息的实现（只有声明 message 权限的插件才拿得到） */
+  send?: (target: { kind: 'private' | 'group'; id: string }, text: string) => Promise<void>
 }) {
   const pluginsRoot = options.pluginsRoot
   const dataRoot = options.dataRoot
@@ -103,6 +105,7 @@ export function createPluginService(options: {
       pluginsRoot,
       dataRoot,
       settingsFile,
+      ...(options.send === undefined ? {} : { send: options.send }),
       // 插件里 ctx.log() 打到业务日志（data/logs/*.jsonl），
       // 不然只会落在进程控制台，用户在控制台里看不到。
       logger: (level, message) => {

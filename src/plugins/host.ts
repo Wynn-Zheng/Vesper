@@ -92,11 +92,19 @@ export function createHost(options: {
   logger?: PluginLogger
   /** 插件配置文件。默认 persona/plugins.yaml（跟着数据目录走） */
   settingsFile?: string
+  /**
+   * 发消息的实现。由宿主传进来（插件不该直接碰 transport）。
+   *
+   * 只有声明了 message 权限的插件才拿得到 ctx.send ——
+   * 传进来的这个函数就是唯一的出口。
+   */
+  send?: (target: { kind: 'private' | 'group'; id: string }, text: string) => Promise<void>
 }) {
   const pluginsRoot = options.pluginsRoot
   const dataRoot = options.dataRoot
   const settingsFile = options.settingsFile ?? join('persona', 'plugins.yaml')
   const logger = options.logger ?? defaultLogger
+  const sendFn = options.send
 
   const errors: { id: string; message: string }[] = []
   /** 已成功激活的插件 */
@@ -184,6 +192,19 @@ export function createHost(options: {
       ...(permissions.includes('net')
         ? {
             fetch: (url: string, init?: RequestInit) => fetch(url, init),
+          }
+        : {}),
+      ...(permissions.includes('message') && sendFn
+        ? {
+            // 主动发一条。声明了 message 才有 —— 没声明就连这个入口都没有
+            send: async (target: { kind: 'private' | 'group'; id: string }, text: string) => {
+              const kind = target?.kind === 'group' ? 'group' : 'private'
+              const id = String(target?.id || '').trim()
+              if (!id) throw new Error('send 少了目标 id')
+              const body = String(text || '').trim()
+              if (!body) throw new Error('内容为空')
+              await sendFn({ kind, id }, body)
+            },
           }
         : {}),
       ...(permissions.includes('memory')

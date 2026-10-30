@@ -216,7 +216,7 @@ export function deactivate(ctx) { ... }
 |---|---|---|
 | `net` | `ctx.fetch(url, init)` | `ctx.fetch` 不存在（`undefined`） |
 | `memory` | `ctx.readPersona(relPath)` —— 只能读 `persona/` 内，`..` 和绝对路径拒绝 | `ctx.readPersona` 不存在 |
-| `message` | `ctx.send(target, text)` | 还没接（见下方限制） |
+| `message` | `ctx.send(target, text)` —— 走宿主的 transport，跟它自己发消息同一条路 | `ctx.send` 不存在 |
 | `files` / `shell` | 还没接 | — |
 
 **装之前会展示**：点「安装」→ 填路径 → 读 `plugin.json` → 弹窗列出名字/版本/类型/权限 → 你点「仍然安装」才复制文件。
@@ -227,7 +227,7 @@ export function deactivate(ctx) { ... }
 - 但挡不住插件直接写 `globalThis.fetch(...)` 或 `import('node:fs')`
 - 真正的隔离要把插件丢进 Worker/子进程走 IPC，那会改插件写法 —— 这一版不做
 
-**未接的两项**：`message`（要先把 transport 传进 host）和 `files`/`shell`（有更大风险，先不开）。
+**未接的**：`files` / `shell`。这两个风险明显更大（能读全盘、能执行任意命令），暂时不给。\n\n**`ctx.send` 的实际链路**：插件 → `ctx.send` → `consoleOpts.transport.send` → NapCat。通道没连时抛「NapCat 未连接」，插件自己 catch 处理。
 
 ## 13. 不该出现在设置页的东西
 
