@@ -184,6 +184,21 @@
 
     card.appendChild(el('div', 'desc', p.description || '（没有说明）'))
 
+    // 有更新就把版本号显示成「当前 → 最新」
+    const up = UPDATES[String(p.id)]
+    if (up) {
+      const row = el('div', 'prow')
+      row.appendChild(el('span', 'k', '版本'))
+      const v = el('span', 'v', (up.current || p.version || '?') + ' → ' + (up.latest || '?'))
+      v.style.color = 'var(--yellow)'
+      row.appendChild(v)
+      const badge = el('span', 'tag', '有更新')
+      badge.style.color = 'var(--yellow)'
+      badge.style.borderColor = 'rgba(210,153,34,.35)'
+      row.appendChild(badge)
+      card.appendChild(row)
+    }
+
     // 工具插件：把它注册了哪些工具列出来 —— 这是它和普通插件最大的区别
     if (isTool && Array.isArray(p.tools) && p.tools.length) {
       const params = el('div', 'params')
@@ -226,6 +241,12 @@
     const cfg = el('button', 't', '配置')
     cfg.onclick = () => openConfigEditor(p)
     foot.appendChild(cfg)
+    // 工具插件：手动跑一次，看它到底行不行（不用等模型去调）
+    if (isTool && Array.isArray(p.tools) && p.tools.length) {
+      const test = el('button', 't', '测试')
+      test.onclick = () => testPluginTool(p.tools[0])
+      foot.appendChild(test)
+    }
     const reload = el('button', 't', '重载')
     reload.onclick = () => window.pluginReload?.(p.id)
     foot.appendChild(reload)
@@ -235,6 +256,17 @@
     card.appendChild(foot)
 
     return card
+  }
+
+  /** 手动跑一次插件工具，把返回内容显示出来 */
+  async function testPluginTool(toolName) {
+    try {
+      const r = await postData('/api/plugins/test', { tool: toolName })
+      const d = r && typeof r === 'object' ? r : {}
+      window.alert(`[${toolName}] ${d.ms ?? 0}ms\n\n${d.result || '（没有返回内容）'}`)
+    } catch (e) {
+      window.alert('测试失败：' + errText(e))
+    }
   }
 
   function drawRows() {

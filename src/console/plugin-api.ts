@@ -274,8 +274,34 @@ export function createPluginService(options: {
       }),
     },
     {
-      method: 'GET',
+      path: '/test',
+      method: 'POST',
+      /**
+       * 手动跑一次插件工具。
+       *
+       * 为什么要有：插件装上之后，用户没法知道它到底行不行 ——
+       * 得等模型在对话里真去调它。这里给个直接入口。
+       */
+      handler: safeHandler(async (body) => {
+        if (!isRecord(body)) return invalidBody('body')
+        const name = body['tool']
+        const args = isRecord(body['args']) ? body['args'] : {}
+        if (typeof name !== 'string' || !name) return invalidBody('tool')
+
+        const tool = host.tools().find((t) => t.name === name)
+        if (!tool) return { ok: false, error: `没有这个工具：${name}` }
+        try {
+          const started = Date.now()
+          const result = await tool.run(args as Record<string, unknown>)
+          return { ok: true, data: { tool: name, result: String(result).slice(0, 2000), ms: Date.now() - started } }
+        } catch (err) {
+          return { ok: false, error: errorMessage(err) }
+        }
+      }),
+    },
+    {
       path: '/updates',
+      method: 'GET',
       handler: safeHandler(async () => {
         const result = await checkUpdates({ pluginsRoot })
         return {
