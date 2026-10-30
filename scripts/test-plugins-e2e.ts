@@ -6,6 +6,7 @@
 import { mkdirSync, writeFileSync, rmSync, existsSync, cpSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { assertTestPluginId, testPluginId } from './_plugin-test-guard.ts'
 
 const BASE = 'http://127.0.0.1:7788'
 const TOKEN = process.env['CONSOLE_TOKEN'] || 'REDACTED'
@@ -126,7 +127,8 @@ console.log('\n=== 8. 安装一个清单非法的目录 ===')
 
 console.log('\n=== 9. 安装一个合法的新插件（再卸掉） ===')
 {
-  const id = 'tmp-check-' + Date.now().toString(36)
+  // 护栏：测试只能操作 e2e- 开头的插件（否则一个手滑就把 plugins/demo 删了）
+  const id = testPluginId('e2e', 'tmp-check')
   const dir = join(tmpdir(), id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(
@@ -143,6 +145,7 @@ console.log('\n=== 9. 安装一个合法的新插件（再卸掉） ===')
     const list = await api('/api/plugins/list')
     ok('列表里有它', (list.body?.data?.plugins ?? []).some((p: any) => p.id === id))
 
+    assertTestPluginId(id)
     const rm = await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
     ok('卸载成功', rm.status === 200 && rm.body?.ok === true, JSON.stringify(rm.body).slice(0, 200))
     ok('目录删掉了', !existsSync(join('plugins', id)))
@@ -151,6 +154,7 @@ console.log('\n=== 9. 安装一个合法的新插件（再卸掉） ===')
     ok('列表里没了', !(list2.body?.data?.plugins ?? []).some((p: any) => p.id === id))
   } finally {
     rmSync(dir, { recursive: true, force: true })
+    assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
   }
 }

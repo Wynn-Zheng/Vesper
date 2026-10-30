@@ -15,6 +15,7 @@
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { assertTestPluginId, testPluginId } from './_plugin-test-guard.ts'
 
 const BASE = 'http://127.0.0.1:7788'
 const TOKEN = process.env['CONSOLE_TOKEN'] || 'REDACTED'
@@ -65,11 +66,13 @@ function makePlugin(id: string, extra: Record<string, unknown> = {}, indexJs?: s
 /** 装完就卸，确保不留垃圾 */
 async function installAndCleanup(dir: string, id: string): Promise<void> {
   try {
+  assertTestPluginId(id)
     await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
   } catch {
     /* ignore */
   }
   rmSync(dir, { recursive: true, force: true })
+  assertTestPluginId(id)
   rmSync(join('plugins', id), { recursive: true, force: true })
 }
 
@@ -87,12 +90,14 @@ console.log('=== A. 路径穿越：source 指向项目外 ===')
 console.log('\n=== B. source 带 .. 但指向一个合法插件 ===')
 {
   // 造在项目外的临时目录，用相对路径穿越过去
-  const id = 'probe-traverse'
+const id = testPluginId('edge', 'traverse')
+  // 注意：护栏只允许 edge- 前缀（见 _plugin-test-guard.ts）
   const dir = makePlugin(id)
   const rel = join('..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..', '..')
   void rel
   const r = await api('/api/plugins/install', { method: 'POST', body: JSON.stringify({ source: dir }) })
   ok('绝对路径能装', r.status === 200 && r.body?.ok === true, JSON.stringify(r.body).slice(0, 200))
+  assertTestPluginId(id)
   const cleaned = await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
   ok('能卸掉', cleaned.status === 200 && cleaned.body?.ok === true, JSON.stringify(cleaned.body).slice(0, 120))
   await installAndCleanup(dir, id)
@@ -100,7 +105,8 @@ console.log('\n=== B. source 带 .. 但指向一个合法插件 ===')
 
 console.log('\n=== C. 重复安装同一个 id ===')
 {
-  const id = 'probe-dup'
+const id = testPluginId('edge', 'dup')
+  // 注意：护栏只允许 edge- 前缀（见 _plugin-test-guard.ts）
   const d1 = makePlugin(id, { version: '0.0.1' })
   const d2 = makePlugin(id, { version: '0.0.2' })
   try {
@@ -117,17 +123,20 @@ console.log('\n=== C. 重复安装同一个 id ===')
     ok('列表里只有一个 probe-dup', (list.body?.data?.plugins ?? []).filter((p: any) => p.id === id).length === 1)
     console.log(`   装完版本：${found?.version}`)
 
+  assertTestPluginId(id)
     await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
   } finally {
     rmSync(d1, { recursive: true, force: true })
     rmSync(d2, { recursive: true, force: true })
+  assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
   }
 }
 
 console.log('\n=== D. 入口文件不存在 ===')
 {
-  const id = 'probe-noentry'
+const id = testPluginId('edge', 'noentry')
+  // 注意：护栏只允许 edge- 前缀（见 _plugin-test-guard.ts）
   const dir = join(tmpdir(), id + '-' + Date.now())
   mkdirSync(dir, { recursive: true })
   writeFileSync(
@@ -149,16 +158,19 @@ console.log('\n=== D. 入口文件不存在 ===')
     if (found) ok('入口缺失时 loaded:false', found.loaded === false, JSON.stringify(found))
     else ok('入口缺失时干脆没装进来', true)
 
+  assertTestPluginId(id)
     await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
   }
 }
 
 console.log('\n=== E. activate 抛异常 ===')
 {
-  const id = 'probe-throw'
+const id = testPluginId('edge', 'throw')
+  // 注意：护栏只允许 edge- 前缀（见 _plugin-test-guard.ts）
   const dir = makePlugin(id, {}, 'export function activate(){ throw new Error("boom from plugin") }')
   try {
     const r = await api('/api/plugins/install', { method: 'POST', body: JSON.stringify({ source: dir }) })
@@ -174,24 +186,29 @@ console.log('\n=== E. activate 抛异常 ===')
     ok('demo 仍然在列表里', demo !== undefined)
     ok('demo 仍然 loaded', demo?.loaded === true, JSON.stringify(demo))
 
+  assertTestPluginId(id)
     await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
   }
 }
 
 console.log('\n=== F. minHostVersion 不满足 ===')
 {
-  const id = 'probe-minver'
+const id = testPluginId('edge', 'minver')
+  // 注意：护栏只允许 edge- 前缀（见 _plugin-test-guard.ts）
   const dir = makePlugin(id, { minHostVersion: '999.0.0' })
   try {
     const r = await api('/api/plugins/install', { method: 'POST', body: JSON.stringify({ source: dir }) })
     ok('不会 500', r.status < 500, `实际 ${r.status}`)
     console.log(`   返回：${JSON.stringify(r.body).slice(0, 200)}`)
+  assertTestPluginId(id)
     await api('/api/plugins/uninstall', { method: 'POST', body: JSON.stringify({ id }) })
   } finally {
     rmSync(dir, { recursive: true, force: true })
+  assertTestPluginId(id)
     rmSync(join('plugins', id), { recursive: true, force: true })
   }
 }
