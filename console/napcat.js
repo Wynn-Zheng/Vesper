@@ -648,20 +648,49 @@
    * 留空 = 恢复自动探测。填的应该是 <版本>.Shell 那一层。
    */
   async function editNapcatShelldir() {
-    toast('去「设置 → NapCat」里改，那里有输入框')
-    if (typeof showGroup === 'function') {
-      showGroup('settings', 'v-settings')
-      setTimeout(() => {
-        const box = document.getElementById('napcat-body')
-        if (box) box.scrollIntoView({ block: 'center' })
-        if (typeof loadNapcatSettings === 'function') loadNapcatSettings()
-      }, 300)
+    // 就地展开编辑区（之前是跳去设置页，但设置页那块已经删了）
+    const box = document.getElementById('nc-shelldir-edit')
+    const inp = document.getElementById('nc-shelldir-input')
+    if (!box || !inp) return
+    box.style.display = 'flex'
+    const cur = document.getElementById('nc-shelldir')?.textContent || ''
+    inp.value = cur && !cur.includes('自动探测') ? cur.trim() : ''
+    inp.focus()
+    inp.select()
+  }
+
+  async function closeShelldirEdit() {
+    const box = document.getElementById('nc-shelldir-edit')
+    if (box) box.style.display = 'none'
+  }
+
+  /** 保存安装目录（留空 = 自动探测） */
+  async function saveNapcatShelldir() {
+    const inp = document.getElementById('nc-shelldir-input')
+    if (!inp) return
+    try {
+      await sendJson('/api/napcat/shelldir', { dir: inp.value.trim() }, 'PUT')
+      toast(inp.value.trim() ? '安装目录已保存' : '已恢复自动探测')
+      closeShelldirEdit()
+      loadNapcat()
+    } catch (e) {
+      alert('失败：' + e.message)
     }
+  }
+
+  /** 自动探测（清空配置让它自己找） */
+  async function autoNapcatShelldir() {
+    const inp = document.getElementById('nc-shelldir-input')
+    if (inp) inp.value = ''
+    await saveNapcatShelldir()
   }
 
   window.loadNapcatLogin = loadNapcatLogin
   window.loadShelldir = loadShelldir
   window.editNapcatShelldir = editNapcatShelldir
+  window.saveNapcatShelldir = saveNapcatShelldir
+  window.autoNapcatShelldir = autoNapcatShelldir
+  window.closeShelldirEdit = closeShelldirEdit
   window.switchNapcatView = switchNapcatView
   window.toggleNapcatLog = toggleNapcatLog
   window.loadLogSetting = loadLogSetting

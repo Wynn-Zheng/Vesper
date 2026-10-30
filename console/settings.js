@@ -92,54 +92,6 @@
       ).style.marginTop = '6px'
       box.appendChild(c2)
 
-      // 备份
-      const c3 = el('div', 'card')
-      c3.style.marginTop = '12px'
-      c3.appendChild(el('div', 'op-t', '备份 / 还原'))
-      c3.appendChild(el('div', 'hint', '「立刻快照」把整个 persona/ 拍一张，出问题能回滚')).style.marginTop =
-        '4px'
-
-      const btnRow = el('div')
-      btnRow.style.cssText = 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap'
-
-      const snap = el('button', 'mini-btn', '立刻快照')
-      snap.onclick = async () => {
-        snap.disabled = true
-        snap.textContent = '拍…'
-        try {
-          await sendJson('/api/action', { action: 'snapshot', payload: {} })
-          toast('快照完成')
-          loadData()
-        } catch (e) {
-          alert('失败：' + e.message)
-        }
-        snap.disabled = false
-        snap.textContent = '立刻快照'
-      }
-      btnRow.appendChild(snap)
-
-      const exp = el('button', 'mini-btn', '导出全部（JSON）')
-      exp.onclick = () => {
-    const t = window.__token || new URLSearchParams(location.search).get('token') || ''
-    if (!t) {
-      alert('当前页面没有 token，请用带 token 的地址打开控制台再导出')
-      return
-    }
-    // 绝对地址：Electron 交给系统浏览器时，相对路径会变成 file:///… 打不开
-    window.open(location.origin + '/api/export?token=' + encodeURIComponent(t), '_blank')
-  }
-      btnRow.appendChild(exp)
-
-      const imp = el('button', 'mini-btn', '从备份恢复')
-      imp.title = '导入只会补缺，不覆盖现有数据；导入前会自动拍快照'
-      imp.onclick = () => {
-        if (typeof window.doImport === 'function') window.doImport()
-        else alert('请回到主页面操作（数据页也有一个入口）')
-      }
-      btnRow.appendChild(imp)
-
-      c3.appendChild(btnRow)
-      box.appendChild(c3)
     } catch (e) {
       box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
     }
