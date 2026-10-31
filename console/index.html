@@ -281,7 +281,14 @@
     /* 竖屏底栏只放 5 个：仪表盘/自我/插件/对话/更多 */
     #nav .nav-sep,#nav .nav-btn-settings{display:none}
     /* 成员/日志 收进「更多」，底栏只留 5 个 */
-    #nav button[data-v="people"],#nav button[data-v="logs"]{display:none}
+    /* 底栏只留 5 个：仪表盘 / 对话 / 自我 / 成员 / 更多；插件、日志、设置进「更多」 */
+    #nav button[data-v="ability"],#nav button[data-v="logs"]{display:none}
+    /* 用 order 重排，不动 HTML 顺序（桌面侧栏还是原来的顺序） */
+    #nav button[data-v="dashboard"]{order:1}
+    #nav button[data-v="test"]{order:2}
+    #nav button[data-v="self"]{order:3}
+    #nav button[data-v="people"]{order:4}
+    #nav .nav-more{order:5}
     #nav .nav-more{display:flex}
     #nav .nav-more .ico{opacity:.85}
 
@@ -727,7 +734,7 @@
 
   <!-- 手机端「更多」面板 -->
   <div id="nav-more-panel" class="nav-more-panel">
-    <button data-v="people">成员</button>
+    <button data-v="ability">插件</button>
     <button data-v="logs">日志</button>
     <button data-v="settings">设置</button>
   </div>
