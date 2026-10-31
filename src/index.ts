@@ -341,6 +341,8 @@ const consoleToken = process.env['CONSOLE_TOKEN'] ?? ''
 try {
     await startConsole({
       port: consolePort,
+      // 手机要访问就设 CONSOLE_HOST=0.0.0.0（默认只听本机）
+      host: process.env['CONSOLE_HOST'] || '127.0.0.1',
       token: consoleToken,
       getRules,
       transport,

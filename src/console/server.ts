@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
@@ -37,6 +38,16 @@ import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
 
 export interface ConsoleOptions {
+  /**
+   * 监听地址。
+   *
+   *   127.0.0.1（默认）= 只有这台电脑能访问；
+   *   0.0.0.0          = 同一局域网/同一 WiFi 的手机也能访问。
+   *
+   * 注意：0.0.0.0 意味着网内任何人都能打开控制台（能读记忆、能发消息），
+   * 只在信得过的网络里开。
+   */
+  host?: string
   port: number
   token: string
   getRules: () => Rules
@@ -62,6 +73,29 @@ const RULES_FILE = 'persona/rules.yaml'
  * 打包后 cwd 变成用户数据目录（%APPDATA%/QQBot/data-root），
  * 而 console/ 还在程序目录里 —— 由 Electron 主进程用 QQBOT_ROOT 告诉这里。
  */
+/**
+ * 取一个能用的局域网 IPv4（手机访问控制台时要用）。
+ *
+ * 跳过 127.x 和 VMware/VirtualBox 那种虚拟网卡 —— 它们不是手机能到的地址。
+ * 拿不到就返回空字符串，调用方回退到 127.0.0.1。
+ */
+function firstLanIP(): string {
+  try {
+    const nets = networkInterfaces()
+    for (const name of Object.keys(nets)) {
+      if (/vmware|virtualbox|vethernet|loopback/i.test(name)) continue
+      for (const info of nets[name] ?? []) {
+        if (info.family !== 'IPv4' || info.internal) continue
+        if (info.address.startsWith('127.')) continue
+        return info.address
+      }
+    }
+  } catch {
+    /* 拿不到就算了 */
+  }
+  return ''
+}
+
 function staticRoot(): string {
   const fromEnv = process.env['QQBOT_ROOT']
   if (fromEnv) return resolve(fromEnv, 'console')
@@ -1890,10 +1924,12 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
   await new Promise<void>((resolveListen, reject) => {
     server.once('error', reject)
-    server.listen(opts.port, '127.0.0.1', () => resolveListen())
+    server.listen(opts.port, opts.host ?? '127.0.0.1', () => resolveListen())
   })
 
-  const url = `http://127.0.0.1:${opts.port}/`
+  // 非本机监听时，把局域网地址也打出来 —— 手机要用这个
+  const lanIP = opts.host && opts.host !== '127.0.0.1' ? firstLanIP() : ''
+  const url = `http://${lanIP || '127.0.0.1'}:${opts.port}/`
   // 打印完整链接：这是本地控制台，token 就在同目录的 .env 里，藏它没意义。
   // 之前打的是 `?token=0c97…`，结果有人照着复制去掉了省略号 → 401，白折腾。
   const full = opts.token ? `${url}?token=${opts.token}` : url
