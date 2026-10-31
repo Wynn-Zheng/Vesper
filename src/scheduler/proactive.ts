@@ -279,6 +279,13 @@ export interface GateInput {
   urge: number
   /** 连续几次主动后对方没回 */
   noReply: number
+  /**
+   * 最近 24 小时有没有"聊深了"（关系锚点幅度 >= 2 且向上）。
+   *
+   * 现实里刚聊完一件私事，隔天想再说一句是很自然的——"趁热打铁"。
+   * 没有这条的话，阶段间隔又把人拦住，热度就凉了。
+   */
+  justGrewCloser?: boolean
 }
 
 export interface GateResult {
@@ -330,10 +337,23 @@ export function shouldProactive(i: GateInput): GateResult {
   if (i.urge >= 8 && needH > 72) needH = 72
   else if (i.urge >= 7 && needH > 96) needH = 96
 
+  /* 刚聊深了 → 趁热。
+   *
+   * 24 小时内有"聊深了"的锚点（分享私事、道歉、说真话），
+   * 隔天想再说一句是自然的。这时候直接把间隔压到 1/3，
+   * 但保留 12 小时下限——不能刚聊完两小时又追着说。
+   */
+  let heatNote = ''
+  if (i.justGrewCloser) {
+    const before = needH
+    needH = Math.max(12, needH / 3)
+    if (needH < before) heatNote = '，刚聊深了趁热'
+  }
+
   if (gapH < needH) {
     return {
       ok: false,
-      reason: `间隔不够（${gapH.toFixed(1)}h < ${needH.toFixed(0)}h${gapScale < 1 ? `，由头超门槛 ${urgeOver} 分已打折` : ''}）`,
+      reason: `间隔不够（${gapH.toFixed(1)}h < ${needH.toFixed(0)}h${gapScale < 1 ? `，由头超门槛 ${urgeOver} 分已打折` : ''}${heatNote}）`,
     }
   }
 
@@ -431,6 +451,12 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     openCount: open.length,
     urge: urge.score,
     noReply,
+    // 24 小时内聊深了（关系锚点 >= 2 且向上）→ 趁热
+    justGrewCloser: relation.anchors.some((a) => {
+      if (a.direction !== 'up' || (a.amount ?? 0) < 2) return false
+      const t = Date.parse(`${a.date}T00:00:00`)
+      return !Number.isNaN(t) && now.getTime() - t <= 86_400_000
+    }),
   })
 
   if (!gate.ok) {
