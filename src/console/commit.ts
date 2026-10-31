@@ -82,3 +82,38 @@ export async function commitConsoleToMemory(opts: {
     return { ok: false, detail: e instanceof Error ? e.message : String(e) }
   }
 }
+
+/**
+ * 启动时把控制台对话倒回 session。
+ *
+ * 为什么要这个：session 是内存态（`session.ts` 的设计——只有触发上下文压缩
+ * 才落盘），重启后模型就"忘了"上一轮在控制台说过什么，但页面上的记录还在。
+ * 两边不一致会让人以为它失忆了。
+ *
+ * 幂等：只往**空**的 session 里倒（启动时本来就是空的），
+ * 已经有内容就跳过，避免每次重启把同一段话塞两遍。
+ */
+export async function restoreConsoleSession(ownerQQ: string, rounds = 20): Promise<number> {
+  const owner = String(ownerQQ || '').trim()
+  if (!owner) return 0
+
+  const turns = recentConsoleTurns(rounds)
+  if (!turns.length) return 0
+
+  const { getTurns, pushTurn } = await import('../loop/session.ts')
+  const key = `private:console-${owner}`
+  if (getTurns(key).length > 0) return 0
+
+  for (const t of turns) {
+    pushTurn(
+      key,
+      {
+        role: t.role === 'user' ? 'user' : 'assistant',
+        content: t.text,
+        at: t.at,
+      },
+      60,
+    )
+  }
+  return turns.length
+}

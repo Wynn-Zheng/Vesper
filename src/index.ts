@@ -360,7 +360,20 @@ setInterval(() => {
 const consolePort = Number(process.env['CONSOLE_PORT']) || 7788
 const consoleToken = process.env['CONSOLE_TOKEN'] ?? ''
 try {
-    await startConsole({
+// 控制台对话的 session 是内存态，重启就没了；但页面上的记录还在。
+// 启动时倒回去，不然它"忘了"上一轮在控制台说过什么，看着像失忆。
+try {
+  const owner = String(process.env['OWNER_QQ'] ?? '').trim()
+  if (owner) {
+    const { restoreConsoleSession } = await import('./console/commit.ts')
+    const n = await restoreConsoleSession(owner)
+    if (n > 0) info(`控制台对话已恢复 ${n} 条（session 是内存态，重启靠这个接上）`)
+  }
+} catch {
+  /* 恢复失败不影响启动 */
+}
+
+await startConsole({
       port: consolePort,
       // 手机要访问就设 CONSOLE_HOST=0.0.0.0（默认只听本机）
       host: process.env['CONSOLE_HOST'] || '127.0.0.1',
