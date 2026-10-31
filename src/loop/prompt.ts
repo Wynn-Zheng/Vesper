@@ -13,6 +13,8 @@ function nowText(d: Date): string {
 export interface PromptParts {
   /** 它已经提了、还在等主人批的修改申请（没批之前不算数） */
   requests?: string
+  /** 这一轮是不是在控制台里聊（不是 QQ） */
+  consoleMode?: boolean
   /** 核心记忆（只能人改的那部分），优先级最高 */
   core?: string
   /** 说话习惯（从它自己说过的话统计出来的） */
@@ -108,6 +110,13 @@ export function buildSystem(parts: PromptParts): string {
   const role = personRole?.trim() || roleOfPerson(personName)
   const who = personName ? `「${personName}」` : '一个人'
   lines.push(`你在 QQ 上跟${who}${role ? `（关系：${role}）` : ''}聊天。这不是客服，是两个人说话。`)
+  // 控制台对话：它得知道自己不在 QQ 上，而且这里说的不会自动进正式记忆
+  if (parts.consoleMode) {
+    lines.push(
+      '（这段是在控制台里跟他说的，不是 QQ。控制台聊的内容不会自动变成正式记忆，' +
+        '他在 QQ 那边看不到；要记下来得他明确说「这段记下来」。）',
+    )
+  }
   lines.push('')
 
   // 角色卡 = 你设定的人设，优先级最高（它是"这个人的底子"）。

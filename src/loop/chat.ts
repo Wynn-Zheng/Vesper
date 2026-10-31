@@ -246,6 +246,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
       .filter((s) => s.trim())
       .join('\n\n'),
     // 核心记忆：只能人改的那部分，优先级最高
+    // 这一轮在不在控制台（scope 是 private:console-xxx）
+    consoleMode: scope.startsWith('private:console-'),
     core: renderCoreForPrompt(),
     // 它提了、还在等批的申请（不告诉它，下次会以为自己已经改了）
     requests: renderPendingForPrompt(),
