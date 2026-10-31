@@ -1,0 +1,27 @@
+{
+  "_说明": [
+    "插件更新源。控制台「检查更新」会读这个文件，把已装插件的版本和这里对比。",
+    "没有这个文件也不影响插件使用，只是检查不了更新。",
+    "字段：id（必填，和 plugin.json 一致）、version（必填，比本地大才会提示更新）、",
+    "      name / description / author / homepage / download（都是给人看的，可选）。",
+    "注意：这个文件只用来「提示有新版」，不会自动下载。",
+    "      自动下载安装涉及替换正在运行的代码，容易出半更新状态，所以留给人手动确认。"
+  ],
+  "plugins": [
+    {
+      "id": "weather",
+      "name": "天气",
+      "version": "0.1.0",
+      "author": "示例",
+      "description": "查天气。目前是演示用的假数据，接真 API 请改 index.mjs 里的地址。",
+      "homepage": "https://github.com/你的仓库/tree/main/plugins/weather"
+    },
+    {
+      "id": "demo",
+      "name": "示例插件",
+      "version": "0.1.0",
+      "author": "示例",
+      "description": "最小的 event 插件，只打日志，用来验证加载链路。"
+    }
+  ]
+}

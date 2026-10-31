@@ -18,6 +18,10 @@ electron/dist/
 plugins/*
 !plugins/demo/
 
+# 更新源索引：这是仓库自带的，要进版本控制
+# （plugins/* 默认忽略是因为装进来的第三方插件不该进仓库）
+!plugins/index.json
+
 # 调试截图
 shots/
 
