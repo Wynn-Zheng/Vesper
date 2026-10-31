@@ -44,6 +44,13 @@ export type PluginManifest = {
    *   event     → 只订阅事件（默认，最弱）
    */
   type?: 'tool' | 'panel' | 'transport' | 'event'
+  /**
+   * 这个 transport 接的是哪个平台：`qq` / `weixin` / `telegram` …
+   *
+   * 只有 type: 'transport' 时有意义。控制台「接入平台」按它分组——
+   * 没有这个字段的 transport 归到「其他」，不会静默消失。
+   */
+  platform?: string
   /** 配置项声明。有它 → 控制台按类型渲染表单项；没有 → 退化成键值编辑器 */
   configSchema?: PluginConfigSchema
 }
@@ -215,6 +222,10 @@ export function parseManifest(
       (p): p is PluginPermission => typeof p === 'string' && PERMISSION_NAMES.includes(p as PluginPermission),
     )
     if (known.length) manifest.permissions = [...new Set(known)]
+  }
+  // transport 插件的平台归属（qq / weixin / telegram），小写归一
+  if (typeof raw['platform'] === 'string' && raw['platform'].trim()) {
+    manifest.platform = raw['platform'].trim().toLowerCase()
   }
   // 上面已经逐项校验过，这里直接收窄（校验不过不会走到这）
   if (isPlainObject(configSchema)) manifest.configSchema = configSchema as PluginConfigSchema

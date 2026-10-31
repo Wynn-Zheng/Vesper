@@ -4745,6 +4745,9 @@ function fmtDur(sec) {
  * 现在的数据源只有 NapCat（QQ 的实现）。微信/Telegram 这些先渲染成
  * "未接入"的占位 —— 让"以后能加"这件事在界面上是可见的，而不是藏着。
  */
+/** 平台图标（QQ/微信那种气泡）。单独抽出来是因为对象字面量里塞 SVG 太容易转义出错 */
+const ICON_PLATFORM = '<path d="M4 5h16v11H9l-5 4V5z"/>'
+
 async function renderPlatforms() {
   const box = document.getElementById('platform-list')
   if (!box) return
@@ -4782,6 +4785,40 @@ async function renderPlatforms() {
     },
     { id: 'weixin', name: '微信', icon: '<path d="M4 5h16v11H9l-5 4V5z"/>', adapters: [] },
   ]
+
+  /* transport 类型插件：按 manifest.platform 归到对应平台 */
+  try {
+    const pl = await api('/api/plugins/list')
+    const all = (pl && pl.data ? pl.data.plugins : pl.plugins) || []
+    const transports = all.filter((x) => x.type === 'transport')
+    for (const t of transports) {
+      const key = String(t.platform || 'other')
+      let group = platforms.find((p) => p.id === key)
+      if (!group) {
+        group = {
+          id: key,
+          name: key === 'other' ? '其他' : key,
+          icon: ICON_PLATFORM,
+          adapters: [],
+        }
+        platforms.push(group)
+      }
+      group.adapters.push({
+        id: t.id,
+        name: t.name || t.id,
+        version: t.version || '',
+        desc: t.description || 'transport 类型插件',
+        connected: Boolean(t.loaded),
+        meta: [
+          ['状态', t.loaded ? '已加载' : '未加载'],
+          ['启用', t.enabled ? '是' : '否'],
+          ['接管消息', '要重启才生效（boot 只接一个通道）'],
+        ],
+      })
+    }
+  } catch {
+    /* 插件接口挂了不影响平台列表 */
+  }
 
   box.innerHTML = ''
   for (const p of platforms) {

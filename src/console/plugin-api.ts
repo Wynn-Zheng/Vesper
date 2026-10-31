@@ -43,6 +43,8 @@ type PluginListItem = {
   configSchema?: Record<string, unknown>
   /** 插件类型：tool / panel / transport / event（决定它在插件页哪一组） */
   type: string
+  /** transport 插件接哪个平台（qq / weixin / telegram），其它类型没有这个字段 */
+  platform?: string
   /** 这个插件注册了哪些工具（模型能调用的名字），没有就是空数组 */
   tools: string[]
   /** 声明的权限（没声明就是空数组 = 只能用最基础的能力） */
@@ -142,6 +144,8 @@ export function createPluginService(options: {
           enabled: plugin.enabled,
           loaded: loadedIds.has(plugin.manifest.id),
           type: plugin.manifest.type ?? 'event',
+          // transport 插件靠它归到「接入平台」的哪个组
+          ...(plugin.manifest.platform ? { platform: plugin.manifest.platform } : {}),
           // 这个插件注册的工具名（只算它自己的）
           tools: host.tools().filter((t) => t.pluginId === plugin.manifest.id).map((t) => t.name),
           permissions: plugin.manifest.permissions ?? [],
