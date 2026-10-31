@@ -16,8 +16,8 @@ export const PERMISSIONS = {
   net: { label: '联网', desc: '访问外部网络（调第三方 API）' },
   memory: { label: '读记忆', desc: '读 persona/ 下的记忆、档案、聊天记录' },
   message: { label: '发消息', desc: '主动给你或群里发消息' },
-  files: { label: '读写文件', desc: '读写自己数据目录以外的本机文件' },
-  shell: { label: '执行命令', desc: '在本机运行命令' },
+  files: { label: '读写文件', desc: '读写项目目录内的文件（不能出项目根，越界会被拒）' },
+  shell: { label: '执行命令', desc: '跑白名单里的命令（echo/date/git/node/python 等，10 秒超时，不经过 shell）' },
 } as const
 
 export type PluginPermission = keyof typeof PERMISSIONS

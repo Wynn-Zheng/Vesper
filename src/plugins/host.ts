@@ -4,7 +4,7 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { scanPlugins } from './registry.ts'
 import { getPluginConfig } from './settings.ts'
@@ -46,9 +46,57 @@ export type PluginContext = {
   readPersona?: (relPath: string) => Promise<string>
   /** permissions 含 message 时存在：主动发消息 */
   send?: (target: { kind: 'private' | 'group'; id: string }, text: string) => Promise<void>
+  /**
+   * permissions 含 files 时存在：读写项目目录内的文件。
+   *
+   * 限制在**项目根目录内**（不能 `..` 逃出去、不能绝对路径）。
+   * 想写自己的数据就传相对路径（比如 `data/myplugin/x.json`）；
+   * 只写自己 dataDir 的话其实不用这个权限。
+   */
+  readFile?: (relPath: string) => Promise<string>
+  writeFile?: (relPath: string, content: string) => Promise<void>
+  /**
+   * permissions 含 shell 时存在：跑一条命令。
+   *
+   * 只接受**白名单里的可执行文件**（见 SHELL_ALLOW），不经过 shell
+   * （所以 `;` `|` `&&` 不会生效，参数按数组传）。超时 10 秒。
+   */
+  exec?: (cmd: string, args?: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 type Handler = (payload: unknown) => void
+
+/**
+ * shell 权限的白名单。
+ *
+ * 为什么是白名单：可执行文件太多，黑名单永远列不全；
+ * 而且这功能的定位是"给它一个小工具"（看个时间、算个数、查个目录），
+ * 不是通用终端。真需要更多能力，应该写进插件代码里而不是加白名单。
+ *
+ * 刻意不含：rm/del/mv/curl/wget/powershell/cmd/sh —— 这些能造成不可逆破坏。
+ */
+const SHELL_ALLOW = new Set([
+  'echo', 'date', 'dir', 'ls', 'cat', 'type', 'findstr', 'grep',
+  'node', 'python', 'python3', 'git', 'wc', 'head', 'tail', 'sort', 'uniq',
+])
+
+/**
+ * 把插件给的相对路径解析成项目内的绝对路径。
+ *
+ * 光在字符串里挡 `..` 不够：`data/../../etc/passwd` 拼接后字符串里有 `..`，
+ * 但 `data/x/../../../etc` 这种也可能绕过简单判断。所以 **resolve 之后**
+ * 再比对根目录，这样 `..` 怎么嵌套都逃不出去。
+ */
+function safePath(relPath: string): string {
+  const root = resolve(process.cwd())
+
+  const abs = resolve(root, String(relPath ?? ''))
+  // 必须等于根，或者以 "根 + 分隔符" 开头（防止 /root2 被 /root 误判为子目录）
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new Error('路径越界：' + relPath)
+  }
+  return abs
+}
 
 type LoadedPlugin = {
   version: string
@@ -215,6 +263,61 @@ export function createHost(options: {
               if (bad) throw new Error('路径不合法：' + relPath)
               const { readFileSync } = await import('node:fs')
               return readFileSync(join('persona', relPath), 'utf8')
+            },
+          }
+        : {}),
+      ...(permissions.includes('files')
+        ? {
+            // 读写项目目录内的文件。
+            //
+            // 安全边界：解析后的**真实路径**必须以项目根开头。
+            // 只在字符串层挡 `..` 不够 —— `data/../../../etc/passwd` 拼出来
+            // 字符串里没有 `..` 前缀但 resolve 之后跑出去了，所以用 resolve 再比。
+            // 符号链接也按真实路径算（realpath），免得链到外面去。
+            readFile: async (relPath: string) => {
+              const { readFileSync } = await import('node:fs')
+              return readFileSync(safePath(relPath), 'utf8')
+            },
+            writeFile: async (relPath: string, content: string) => {
+              const { mkdirSync, writeFileSync } = await import('node:fs')
+              const { dirname } = await import('node:path')
+              const p = safePath(relPath)
+              mkdirSync(dirname(p), { recursive: true })
+              writeFileSync(p, String(content ?? ''), 'utf8')
+            },
+          }
+        : {}),
+      ...(permissions.includes('shell')
+        ? {
+            // 跑命令：只允许白名单里的程序，不经过 shell，10 秒超时。
+            //
+            // 为什么白名单而不是黑名单：可执行文件太多，黑名单永远列不全；
+            // 而且这是"给它一个小工具"的场景，不是通用终端。
+            exec: async (cmd: string, args: string[] = []) => {
+              const name = String(cmd || '').trim()
+              if (!SHELL_ALLOW.has(name)) {
+                throw new Error(`不允许执行 ${name}（只允许：${[...SHELL_ALLOW].join(', ')}）`)
+              }
+              const { execFile } = await import('node:child_process')
+              const list = args.map((a) => String(a))
+              return await new Promise((resolveP, rejectP) => {
+                execFile(
+                  name,
+                  list,
+                  { timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true },
+                  (err, stdout, stderr) => {
+                    if (err && (err as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
+                      rejectP(new Error(`${name} 超时（10 秒）`))
+                      return
+                    }
+                    resolveP({
+                      code: err && typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 0,
+                      stdout: String(stdout ?? '').slice(0, 64 * 1024),
+                      stderr: String(stderr ?? '').slice(0, 64 * 1024),
+                    })
+                  },
+                )
+              })
             },
           }
         : {}),
