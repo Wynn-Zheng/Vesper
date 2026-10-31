@@ -22,7 +22,7 @@ function nameOfAccount(account: string): string {
   return ''
 }
 
-import { sharedBigrams, similarity } from '../core/text.ts'
+import { bm25, parseTimeHint, sharedBigrams, similarity } from '../core/text.ts'
 
 export { similarity }
 
@@ -259,18 +259,26 @@ export function recall(opts: RecallOptions): Recalled {
   // 按"有效置信度"排：越久没被提到的越靠后，太旧的不注入
   // 群聊里只注入公开的：私事在公共场合没有该出现的理由
   const isPrivateScope = scope.startsWith('private:')
+  // 关键词召回：事实也过一遍 BM25（和 episodes 一个道理）
+  const factBm25 = bm25(query, allFacts.map((f) => f.text))
+  const factBmMax = Math.max(0, ...factBm25)
   const scoredFacts = allFacts
     // 被新说法取代的旧事实不再注入（文件里留着，能人工恢复）
     .filter((f) => !f.supersededAt)
     // 「重要」的事衰减慢（139 天半衰期），「平常」按正常节奏（35 天）。
     // 老数据没有 tier → 当 normal，和以前行为一致。
-    .map((f) => ({ f, eff: effectiveConfidence(f, now, f.tier === 'major' ? 0.005 : 0.023) }))
+    .map((f, i) => ({
+      f,
+      eff: effectiveConfidence(f, now, f.tier === 'major' ? 0.005 : 0.023),
+      bm: factBmMax > 0 ? (factBm25[i] ?? 0) / factBmMax : 0,
+    }))
     .filter((x) => isPrivateScope || x.f.visibility === 'public')
 
-  // 能正常调出来的
+  // 能正常调出来的：置信度高 **或** 关键词命中强
+  // （后者是为了「问折纸能想起折纸那条」——它可能置信度已经掉到阈值以下了）
   const strong = scoredFacts
-    .filter((x) => x.eff >= 0.2)
-    .sort((a, b) => b.eff - a.eff)
+    .filter((x) => x.eff >= 0.2 || x.bm >= 0.6)
+    .sort((a, b) => b.eff + b.bm * 0.4 - (a.eff + a.bm * 0.4))
     .slice(0, 8)
     .map((x) => x.f)
 
@@ -303,22 +311,43 @@ export function recall(opts: RecallOptions): Recalled {
   const episodes = loadEpisodes().filter((e) => visible(e.scope, scope))
   const insights = loadInsights().filter((i) => visible(i.scope, scope))
 
+  /* ---- 三路召回：语义（scoreOf） + 关键词（BM25） + 时间窗口 ----
+   *
+   * 只有语义的问题：问「折纸那事」时，记忆里写的是「厚纸折之前先用指甲划一道」，
+   * Jaccard 相似度很低 → 排不上去。BM25 靠单字+bigram 能抓到。
+   *
+   * 只有时间的：问「昨天说的」时，相似度算的是"内容像不像"，
+   * 但用户问的是"什么时间的事"——得单独按日期过滤。
+   */
+  const timeHint = parseTimeHint(query, now)
+  const epTexts = episodes.map((e) => `${e.title} ${e.body}`)
+  const epBm25 = bm25(query, epTexts)
+  const epBmMax = Math.max(0, ...epBm25)
+
   const epScored: Scored<Episode>[] = episodes
-    .map((e) => ({
-      item: e,
-      score: scoreOf(
+    .map((e, i) => {
+      let score = scoreOf(
         episodeRef(e),
         // 高情绪的记忆衰减慢（McGaugh 2004：杏仁核在情绪唤起时加强巩固）
         lambdaOfEpisode(e, opts.decay),
-        `${e.title} ${e.body}`,
+        epTexts[i]!,
         e.importance,
         query,
         weights,
         now,
         // 被想起过几次，影响衰减速度
         e.recallCount ?? 0,
-      ),
-    }))
+      )
+      // 关键词加成：归一化到 0-1 再加，权重 0.35
+      // （不直接加原始 BM25 分：它的量纲跟语义分差一个数量级，会把语义完全压掉）
+      if (epBmMax > 0) score += ((epBm25[i] ?? 0) / epBmMax) * 0.35
+      // 时间窗口加成：用户明确问"昨天/上周"时，落在窗口里的才该排前面
+      if (timeHint) {
+        const t = Date.parse(`${e.date}T00:00:00`)
+        if (!Number.isNaN(t) && t >= timeHint.from && t <= timeHint.to) score *= 1.3
+      }
+      return { item: e, score }
+    })
     .sort((a, b) => b.score - a.score)
 
   const inScored: Scored<Insight>[] = insights
