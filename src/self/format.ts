@@ -1,3 +1,4 @@
+import { renderConsoleForPrompt } from '../console/activity.ts'
 import type { Rules } from '../core/config.ts'
 import { loadCard } from '../persona/card.ts'
 import { loadSelf, recentLife } from './store.ts'
@@ -111,6 +112,14 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
   if (life.length) {
     lines.push('- 你自己那边最近的事：')
     for (const l of life) lines.push(`  ${l}`)
+  }
+
+  // 控制台访问记录：只告诉他"聊过几次"，内容在别处，QQ 这边看不到
+  try {
+    const consoleLine = renderConsoleForPrompt()
+    if (consoleLine) lines.push(consoleLine)
+  } catch {
+    /* 读不到不影响组装 */
   }
 
   return lines.length ? `关于你自己：\n${lines.join('\n')}` : ''

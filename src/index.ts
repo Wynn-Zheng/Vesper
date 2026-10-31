@@ -163,6 +163,27 @@ if (apiKey) {
   // 它想改自己被锁住的设定时，只能提申请（和 core 一个道理）
   registry.register(requestChangeTool)
 
+  // 控制台对话里用户说"这段记下来"时，它自己调这个把内容升格成正式记忆
+  registry.register(
+    Object.assign(
+      {
+        name: 'commit_console_memory',
+        description:
+          '把控制台里刚才聊的内容记进正式记忆。只有当他说「这段记下来」「把这个记进记忆」这类明确要求时才用。',
+        parameters: { type: 'object', properties: { title: { type: 'string', description: '这条记忆的一句话概括，比如「他说想换个工作」' } } },
+        run: async (args: Record<string, unknown>) => {
+          const { commitConsoleToMemory } = await import('./console/commit.ts')
+          const r = await commitConsoleToMemory({
+            ownerQQ: String(process.env['OWNER_QQ'] ?? '').trim(),
+            ...(typeof args['title'] === 'string' ? { title: String(args['title']) } : {}),
+          })
+          return JSON.stringify(r)
+        },
+      },
+      {},
+    ),
+  )
+
   // 电脑操作：默认关。开了才把工具放进注册表——
   // 不放进去的话模型根本不知道有这些工具，谈不上"误用"。
   {

@@ -33,6 +33,7 @@ import { handleMemberApi } from './member-api.ts'
 import { handleSettingsApi } from './settings-api.ts'
 import { handleTestApi } from './test-api.ts'
 import { createPluginService, pluginRoutes } from './plugin-api.ts'
+import { recordConsoleTurn } from './activity.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -1018,6 +1019,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             try {
               appendConsoleChat({ at: started, role: 'user', text })
               appendConsoleChat({ at: Date.now(), role: 'it', text: reply })
+              // 元信息：QQ 那边只看到"聊过几次"，看不到内容
+              recordConsoleTurn()
             } catch {
               /* 记流水失败不影响回复 */
             }
@@ -1031,6 +1034,19 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         // 控制台对话历史（只给页面用，别的对方看不到）
         if (req.method === 'GET' && path === '/api/chat/history') {
           json(res, 200, { ok: true, data: { turns: loadConsoleChat(50) } })
+          return
+        }
+
+        // 把控制台最近的对话记成正式记忆（页面按钮 / 它自己调工具都走这里）
+        if (req.method === 'POST' && path === '/api/chat/commit') {
+          const body = (await readJson(req)) as { rounds?: number; title?: string }
+          const { commitConsoleToMemory } = await import('./commit.ts')
+          const r = await commitConsoleToMemory({
+            ownerQQ: String(process.env['OWNER_QQ'] ?? '').trim(),
+            rounds: Number(body.rounds) || 6,
+            ...(body.title ? { title: String(body.title) } : {}),
+          })
+          json(res, r.ok ? 200 : 400, r.ok ? { ok: true, data: { detail: r.detail } } : { ok: false, error: r.detail })
           return
         }
 
