@@ -102,7 +102,8 @@ test('连续 2 次没回：门槛抬高、间隔拉长', () => {
   // 由头刚好到基础门槛：抬高后就不够了
   assert.equal(shouldProactive({ ...base, noReply: 2, urge: 3 }).ok, false)
   // 间隔 8 天本来够，拉长 1.5 倍后不够（5 天 × 1.5 = 7.5 天 < 8 天，仍够）
-  const tighter = shouldProactive({ ...base, noReply: 2, urge: 6, lastTalkAt: testNow.getTime() - 6 * 86_400_000 })
+  // 用「刚好到门槛」的由头，避免被"由头超门槛打折"放过 —— 这条测的是 ×1.5 本身
+  const tighter = shouldProactive({ ...base, noReply: 2, urge: 5, lastTalkAt: testNow.getTime() - 6 * 86_400_000 })
   assert.equal(tighter.ok, false, tighter.reason)
 })
 

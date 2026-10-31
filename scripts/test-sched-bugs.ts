@@ -145,7 +145,9 @@ console.log('\n=== 2. shouldProactive 门控 ===')
   check('连续 2 次没回：门槛抬到 5', shouldProactive({ ...base, noReply: 2, urge: 4 }).ok === false)
   check(
     '连续 2 次没回：间隔也拉长 1.5 倍',
-    shouldProactive({ ...base, noReply: 2, urge: 6, lastTalkAt: NOW.getTime() - 6 * day }).ok === false,
+    // 用「刚好到门槛」的由头（5 分），不然会被"由头超门槛打折"放过 ——
+    // 这条测的是 noReply>=2 时间隔 ×1.5 本身，不该被别的规则抵消。
+    shouldProactive({ ...base, noReply: 2, urge: 5, lastTalkAt: NOW.getTime() - 6 * day }).ok === false,
   )
 }
 

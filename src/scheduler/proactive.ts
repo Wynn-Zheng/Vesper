@@ -298,9 +298,44 @@ export function shouldProactive(i: GateInput): GateResult {
   const urgeNeeded = budget.minUrge + (i.noReply >= 2 ? 2 : 0)
   if (i.urge < urgeNeeded) return { ok: false, reason: `由头不够（${i.urge} < ${urgeNeeded}）` }
 
+  /* ---- 由头足够硬时，可以突破间隔 ----
+   *
+   * 这个函数的设计前提是「由头驱动，不是频率驱动」——关系只决定"多容易开口"。
+   * 但原来 interval 是硬门：由头算到 9 分（门槛 5）也照样被
+   * 「间隔不够（57h < 336h）」拦住，实测就是这样整整一周没开口。
+   *
+   * 现实里也是：真碰到"看到个东西立刻就想到你"的事，隔三天也会说；
+   * 没什么事的时候，隔一周也懒得开口。
+   *
+   * 所以按超出门槛的幅度给间隔打折：
+   *   超 1 分 → 0.8 倍    超 2 分 → 0.6 倍
+   *   超 3 分 → 0.45 倍   超 4 分以上 → 0.3 倍（最低三成，不至于天天说）
+   * 「眼熟」14 天 × 0.3 = 4.2 天，由头很硬的话就是三四天开口一次。
+   */
+  const urgeOver = Math.max(0, i.urge - urgeNeeded)
+  const gapScale = urgeOver >= 4 ? 0.3 : urgeOver >= 3 ? 0.45 : urgeOver >= 2 ? 0.6 : urgeOver >= 1 ? 0.8 : 1
+
   const gapH = (i.now.getTime() - Math.max(i.lastTalkAt, i.lastProactiveAt)) / 3_600_000
-  const needH = budget.minGapHours * (i.noReply >= 2 ? 1.5 : 1)
-  if (gapH < needH) return { ok: false, reason: `间隔不够（${gapH.toFixed(1)}h < ${needH}h）` }
+  let needH = budget.minGapHours * gapScale * (i.noReply >= 2 ? 1.5 : 1)
+
+  /* 由头够硬时，最长等多久。
+   *
+   * 光靠打折不够：眼熟阶段 336h 打三折还有 100h（4 天多），而"确实有事想说"
+   * 卡在四天太不像人。超过三四天，那件事的鲜度就过去了，再提反而像硬找话题。
+   *
+   * 阈值按实测定的：主人的日志里由头是
+   *   没做完的事(+3) + 这几天一起经历(+2) + 我这边有事(+1) + 心情起伏(+1) = 7
+   * 所以 7 分对应的档位必须能开口，否则这个功能对他的日常场景就是不存在的。
+   */
+  if (i.urge >= 8 && needH > 72) needH = 72
+  else if (i.urge >= 7 && needH > 96) needH = 96
+
+  if (gapH < needH) {
+    return {
+      ok: false,
+      reason: `间隔不够（${gapH.toFixed(1)}h < ${needH.toFixed(0)}h${gapScale < 1 ? `，由头超门槛 ${urgeOver} 分已打折` : ''}）`,
+    }
+  }
 
   // 从没聊过、也没有任何由头：不打扰
   if (i.openCount === 0 && i.lastTalkAt === 0 && i.urge === 0) return { ok: false, reason: '没有可说的由头' }
