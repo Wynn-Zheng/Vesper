@@ -401,8 +401,25 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
 
   // 上次主动之后他说过话吗？说过就说明互惠成立，连续没回清零
   const replied = lastUserAt > state.lastAt
-  const noReply = replied ? 0 : (state.noReply ?? 0)
-  if (replied && (state.noReply ?? 0) > 0) saveState({ ...state, noReply: 0 })
+
+  /* 停了太久就自动解冻。
+   *
+   * 「连续 3 次没回就停」本意是别单方面刷屏，但它有个死角：
+   * 对方正好忙了一周（出差、考试、生病），三次全部没回 → 永久停住，
+   * 而恢复的唯一办法是"对方先开口"——可他不知道这边已经停了。
+   * 结果是：一次忙 → 关系彻底沉默。
+   *
+   * 所以加个时间闸：距上次主动超过 7 天，把 noReply 归零重新算。
+   * 7 天是按"一个人忙起来通常不会超过一周"定的，也跟 Dunbar 那层
+   * "朋友联系中位数 27 天"对得上——停满一周还没动静，值得再试一次。
+   */
+  const STALE_MS = 7 * 86_400_000
+  const stale = state.lastAt > 0 && Date.now() - state.lastAt > STALE_MS
+  const noReply = replied || stale ? 0 : (state.noReply ?? 0)
+  if ((replied || stale) && (state.noReply ?? 0) > 0) {
+    saveState({ ...state, noReply: 0 })
+    if (stale && !replied) info(`主动消息：停了 ${Math.floor((Date.now() - state.lastAt) / 86_400_000)} 天，重新开始算`)
+  }
 
   const open = loadOpen(personId).filter((o) => o.kind === 'todo')
 
