@@ -121,10 +121,15 @@
         avatarColor(r.id)
       who.appendChild(av)
       const nmBox = document.createElement('div')
-      nmBox.style.cssText = 'min-width:0'
-      nmBox.appendChild(document.createTextNode(r.名字))
+      // 名字和账号同一行：手机上这一列要压成一行（mt-nm 是给 CSS 用的）
+      nmBox.style.cssText = 'min-width:0;display:flex;align-items:baseline;gap:6px'
+      nmBox.className = 'mt-nm'
+      const nameEl = document.createElement('span')
+      nameEl.className = 'mt-name'
+      nameEl.textContent = r.名字
+      nmBox.appendChild(nameEl)
       const sub = document.createElement('div')
-      sub.className = 'hint'
+      sub.className = 'hint mt-acc'
       sub.style.fontSize = '10.5px'
       sub.textContent = r.账号
       nmBox.appendChild(sub)

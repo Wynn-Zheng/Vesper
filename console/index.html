@@ -332,24 +332,23 @@
     .grid2,.cols2{grid-template-columns:1fr}
     .try-layout{grid-template-columns:1fr}
 
-    /* ---- 成员表：手机上变卡片列表 ----
-       7 列的表格在 390px 里必然横向滚。改成一行一张卡：
-       头像+名字占第一行，其余列缩成"标签: 值"的细行。 */
-    .mt-table,.mt-table tbody,.mt-table tr,.mt-table td{display:block}
+    /* ---- 成员表：手机上一行一个人 ----
+       表格 7 列塞不进 390px，但也不该摊成 7 行卡片（人一多就翻不完）。
+       只留「头像+名字+账号 / 关系 / 对话数」，其余信息点开抽屉看。 */
     .mt-table thead{display:none}
+    .mt-table,.mt-table tbody{display:block}
     .mt-table tr{
-      border:1px solid var(--line);border-radius:var(--r-md);
-      padding:10px 12px;margin-bottom:10px;background:var(--panel);
+      display:flex;align-items:center;gap:10px;
+      padding:9px 12px;border-bottom:1px solid var(--line);
     }
-    .mt-table td{padding:2px 0;font-size:12.5px;border:none}
-    .mt-table td:nth-child(1){margin-bottom:6px}
-    .mt-table td:nth-child(n+2){color:var(--dim);line-height:1.7}
-    .mt-table td:nth-child(2)::before{content:"来源 ";color:var(--dim2);font-size:11px}
-    .mt-table td:nth-child(3)::before{content:"关系 ";color:var(--dim2);font-size:11px}
-    .mt-table td:nth-child(4)::before{content:"记忆 ";color:var(--dim2);font-size:11px}
-    .mt-table td:nth-child(5)::before{content:"对话 ";color:var(--dim2);font-size:11px}
-    .mt-table td:nth-child(6)::before{content:"核心 ";color:var(--dim2);font-size:11px}
-    .mt-table td:nth-child(7)::before{content:"首次见到 ";color:var(--dim2);font-size:11px}
+    .mt-table tr:active{background:var(--panel2)}
+    .mt-table td{display:none;padding:0;border:none;font-size:12.5px}
+    .mt-table td:nth-child(1){display:block;flex:1;min-width:0}
+    .mt-table td:nth-child(3){display:block;flex:none;color:var(--dim);font-size:11.5px;white-space:nowrap}
+    .mt-table td:nth-child(5){display:block;flex:none;color:var(--dim2);font-size:11px;white-space:nowrap}
+    .mt-table .mt-nm{display:flex;align-items:baseline;gap:6px;min-width:0}
+    .mt-table .mt-name{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
+    .mt-table .mt-acc{font-size:10.5px;color:var(--dim2);white-space:nowrap;flex:none}
 
     /* ---- 运行日志：消息换行，不要一条撑到屏幕外 ---- */
     .log .line{flex-wrap:wrap;gap:2px 6px}
