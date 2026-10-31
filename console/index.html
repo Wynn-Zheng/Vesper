@@ -363,6 +363,43 @@
     .log .line .ex{flex:1 1 100%;white-space:normal;overflow:visible;text-overflow:clip;border-left:none;padding-left:0;margin-left:0}
     .log .line .wh{margin-left:0;padding-left:0;flex:1 1 100%}
 
+    /* ---- 触控尺寸：手指不是鼠标，24px 的按钮点不准 ---- */
+    .mini-btn{min-height:44px;padding:0 14px;font-size:13px}
+    .gtab{min-height:40px;display:inline-flex;align-items:center}
+    .chip,.tag{min-height:28px;display:inline-flex;align-items:center}
+    input[type="checkbox"],input[type="radio"]{width:20px;height:20px}
+    /* 行内的小链接类按钮也放大一点 */
+    .link-btn{min-height:36px;display:inline-flex;align-items:center}
+
+    /* ---- 长按会弹"复制/翻译/查找"，在 App 里很突兀 ---- */
+    body{-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+    /* 输入框要保留长按（选文字要用） */
+    input,textarea,pre,[contenteditable]{-webkit-touch-callout:default}
+
+    /* ---- 滚动惯性：不加会发涩 ---- */
+    .body,.try-log,#md-body,.view{ -webkit-overflow-scrolling:touch }
+
+    /* ---- hover 在手机上会"粘住" ----
+       移动浏览器没有真正的鼠标悬停：点一下之后 :hover 状态会一直保留，
+       结果按钮看起来永远是高亮的。这里把最常见的几类效果复位，
+       改用 :active 给即时反馈。 */
+    nav button:hover{background:none;color:var(--dim)}
+    nav button:active{background:var(--panel2)}
+    .gtab:hover{color:var(--dim2)}
+    .mini-btn:hover{color:var(--dim);border-color:var(--line)}
+    .mini-btn:active{background:var(--panel2)}
+    .op:hover{border-color:rgba(255,255,255,.06);transform:none}
+    .op:active{transform:scale(.98)}
+    .item:hover{background:none}
+    tr:hover{background:none}
+
+    /* ---- 分组标题在窄屏会挤成两行（「接入平」/「台」）----
+       标题和说明本来就该分行：标题一行，说明一行。 */
+    .grp-h{flex-wrap:wrap;gap:2px 8px}
+    .grp-h b{flex:none;white-space:nowrap}
+    .grp-h span{flex:1 1 100%;white-space:normal;line-height:1.5}
+    .grp-h .r{flex:1 1 100%}
+
     /* ---- 试聊：右侧面板在窄屏改上下堆叠，别固定 380px ---- */
     .try-side{width:100%!important;max-width:100%!important;min-width:0!important}
     .try-input{min-width:0}
