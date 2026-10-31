@@ -23,6 +23,7 @@ function nameOfAccount(account: string): string {
 }
 
 import { bm25, parseTimeHint, sharedBigrams, similarity } from '../core/text.ts'
+import { rerank } from './rerank.ts'
 
 export { similarity }
 
@@ -346,6 +347,17 @@ export function recall(opts: RecallOptions): Recalled {
         const t = Date.parse(`${e.date}T00:00:00`)
         if (!Number.isNaN(t) && t >= timeHint.from && t <= timeHint.to) score *= 1.3
       }
+      // 时序方向："后来呢"要把近的排前面，"最早那次"要把早的排前面。
+      // 幅度得够大（±25%）：实测 ±12% 会被相关性分数盖过去，排序看不出来。
+      // 用 30 天做尺度——超过一个月就算"很早以前"，不再继续加大差别。
+      if (timeHint?.order) {
+        const t = Date.parse(`${e.date}T00:00:00`)
+        if (!Number.isNaN(t)) {
+          const days = Math.max(0, (now - t) / DAY)
+          const tilt = Math.min(1, days / 30)
+          score *= timeHint.order === 'desc' ? 1.25 - tilt * 0.5 : 0.75 + tilt * 0.5
+        }
+      }
       return { item: e, score }
     })
     .sort((a, b) => b.score - a.score)
@@ -358,10 +370,27 @@ export function recall(opts: RecallOptions): Recalled {
     })
     .sort((a, b) => b.score - a.score)
 
-  const picked = epScored
-    .filter((s) => s.score >= (opts.minScore ?? 0))
-    .slice(0, limit)
-    .map((s) => s.item)
+  // 第一阶段捞得多一点（20 条），第二阶段再挑 —— 只取 limit 就没什么好挑的
+  const picked = rerank(query, epScored.filter((s) => s.score >= (opts.minScore ?? 0)), {
+    limit,
+    now,
+    titleOf: (x) => String((x as Episode).title ?? ''),
+    textOf: (x) => `${(x as Episode).title} ${(x as Episode).body}`,
+  }).map((r) => r.item)
+
+  // 有明确时序方向词时（"后来呢""最开始那次"），最终结果按时间排。
+  //
+  // 为什么不靠分数加权：实测 ±25% 也压不过相关性——「后来呢」问的是
+  // 时间顺序，而含"记忆"三个字的那条相关性分数高得多，加权排不出来。
+  // 用户说"后来"就是想知道"接着发生了什么"，这时候时间顺序本身就是答案。
+  if (timeHint?.order) {
+    picked.sort((a, b) => {
+      const ta = Date.parse(`${a.date}T00:00:00`)
+      const tb = Date.parse(`${b.date}T00:00:00`)
+      if (Number.isNaN(ta) || Number.isNaN(tb)) return 0
+      return timeHint.order === 'desc' ? tb - ta : ta - tb
+    })
+  }
 
   // 最近三天的事无条件带上：人本来就会自然想起最近发生的事，跟话题无关
   // 顺序上放在高分的后面：相关的优先，最近的兜底

@@ -127,7 +127,7 @@ export function bm25(
 export function parseTimeHint(
   query: string,
   now = Date.now(),
-): { from: number; to: number; label: string } | null {
+): { from: number; to: number; label: string; order?: 'asc' | 'desc' } | null {
   const DAY = 86_400_000
   const q = query
 
@@ -151,6 +151,13 @@ export function parseTimeHint(
 
   // 「最近」
   if (/最近|这几天/.test(q)) return { from: now - 7 * DAY, to: now, label: '最近' }
+
+  // 只有方向词的（"后来呢""一开始那次"）—— 窗口给宽，主要靠 order 排
+  // 先判方向，因为它和"昨天"这类窗口词可以同时出现（"昨天之后"）
+  const wantsLate = /后来|之后|然后|接着|再后来|最后/.test(q)
+  const wantsEarly = /最早|一开始|第一次|起初|最开始/.test(q)
+  if (wantsLate) return { from: now - 90 * DAY, to: now, label: '之后', order: 'desc' }
+  if (wantsEarly) return { from: now - 365 * DAY, to: now, label: '最早', order: 'asc' }
 
   // 「上次」「之前」「以前」——范围给宽，只是加权重不是硬过滤
   if (/上次|上一次|之前|以前/.test(q)) return { from: now - 90 * DAY, to: now, label: '之前' }
