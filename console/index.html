@@ -95,6 +95,8 @@
   .brand h1{font-size:15px;font-weight:600}
   .brand p{font-size:11px;color:var(--dim2);margin-top:2px}
   nav{padding:10px 8px;flex:1}
+  /* 手机端专用的「更多」按钮和面板：桌面上不出现 */
+  .nav-more,.nav-more-panel{display:none}
   nav button{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;color:var(--dim);text-align:left;padding:6px 9px;border-radius:var(--r-sm);cursor:pointer;font-size:13px;font-family:inherit;transition:background .16s var(--ease),color .16s var(--ease)}
   nav button:hover{background:var(--panel2);color:var(--text)}
   nav .ico{width:15px;height:15px;flex:none;opacity:.85}
@@ -249,11 +251,75 @@
   .state-think{font-size:13.5px;line-height:1.9;color:var(--text);white-space:pre-wrap}
   /* ---- 移动端预留：后续要完整适配时从这里改 ---- */
   /* 断点：768px（手机）、1024px（平板）。现在只做"能用"，没做完整重排。 */
+/* ===== 手机端（≤768px）=====
+     主框架从「左侧 200px 侧栏」变成「底部 tab 栏」：
+     拇指可达区在屏幕下半；抽屉要点两下，tab 点一下。
+     注意：这里的选择器必须是真实标签名（aside/main），
+     之前写的是 .sidebar/.main —— 类名早就换了，那条规则从没生效过。 */
   @media(max-width:768px){
     body{--mobile:1}
-    .sidebar{width:60px}
-    .sidebar .logo,.sidebar nav button span:not(.ico){display:none}
-    .main{padding:12px}
+
+    /* 侧栏 → 底部固定 tab 栏 */
+    aside{
+      position:fixed;bottom:0;left:0;right:0;width:100%;height:auto;
+      flex-direction:row;align-items:stretch;
+      border-right:none;border-top:1px solid var(--line);
+      background:var(--sunk);z-index:100;
+      padding-bottom:env(safe-area-inset-bottom,0px);
+    }
+    aside .brand,aside .foot{display:none}
+
+    #nav{flex-direction:row;justify-content:space-around;width:100%;padding:4px 0;gap:0}
+    #nav button{
+      flex:1;flex-direction:column;gap:3px;
+      font-size:10px;line-height:1;
+      padding:6px 2px;min-height:48px;
+      justify-content:center;align-items:center;
+      border-radius:0;
+    }
+    #nav button .ico{width:18px;height:18px}
+    /* 竖屏底栏只放 5 个：仪表盘/自我/插件/对话/更多 */
+    #nav .nav-sep,#nav .nav-btn-settings{display:none}
+    /* 成员/日志 收进「更多」，底栏只留 5 个 */
+    #nav button[data-v="people"],#nav button[data-v="logs"]{display:none}
+    #nav .nav-more{display:flex}
+    #nav .nav-more .ico{opacity:.85}
+
+    /* 「更多」面板：从底栏上方弹出 */
+    .nav-more-panel{
+      position:fixed;left:0;right:0;bottom:calc(48px + env(safe-area-inset-bottom,0px));
+      background:var(--panel);border-top:1px solid var(--line);
+      display:none;flex-direction:column;gap:2px;
+      padding:8px;z-index:99;
+      box-shadow:0 -8px 24px rgba(0,0,0,.4);
+    }
+    .nav-more-panel.on{display:flex}
+    .nav-more-panel button{
+      text-align:left;padding:13px 14px;font-size:14px;
+      border-radius:var(--r-sm);border:none;background:none;
+      color:var(--text);font-family:inherit;
+    }
+    .nav-more-panel button:active{background:var(--panel2)}
+
+    /* 内容区给底栏留位置 */
+    main{padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}
+    header{height:40px;padding:0 12px}
+    .views{padding:12px 12px 20px}
+
+    /* 自我页/设置页的 tab 条：不换行、横向滑动（换行后"角色卡"会竖排） */
+    .group-tabs{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:14px;-webkit-overflow-scrolling:touch}
+    .group-tabs::-webkit-scrollbar{display:none}
+    .gtab{white-space:nowrap;padding:8px 0;font-size:13.5px}
+
+    /* 生日那种 年/月/日 三连输入：允许换行，别撑出卡片 */
+    .self-field{flex-wrap:wrap}
+    .self-input{min-width:0;max-width:100%}
+    .self-input.num{width:60px!important}
+
+    /* iOS：输入框小于 16px 会自动放大页面 */
+    .self-input,.mt-input,input[type=text],input[type=number],input[type=date],select,textarea{font-size:16px}
+
+    /* 页面内已有的单列规则 */
     .hero{grid-template-columns:1fr}
     .hero-stats{grid-template-columns:repeat(2,1fr)}
     .grid2,.cols2{grid-template-columns:1fr}
@@ -655,7 +721,16 @@
     <button data-v="test"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 1.5h4M6.5 1.5v4L3.2 12a1.4 1.4 0 0 0 1.2 2.1h7.2a1.4 1.4 0 0 0 1.2-2.1L9.5 5.5v-4"/></svg>对话</button>
     <div class="nav-sep"></div>
     <button class="nav-btn-settings" data-v="settings"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/></svg>设置</button>
+    <!-- 手机端专用：底栏只放 5 个，"更多"里是剩下的 -->
+    <button class="nav-more" onclick="toggleNavMore()"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="3.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/></svg>更多</button>
   </nav>
+
+  <!-- 手机端「更多」面板 -->
+  <div id="nav-more-panel" class="nav-more-panel">
+    <button data-v="people">成员</button>
+    <button data-v="logs">日志</button>
+    <button data-v="settings">设置</button>
+  </div>
   <div class="foot"><span class="dot" id="dot"></span><span id="conn">未连接</span></div>
 </aside>
 
@@ -1712,6 +1787,23 @@ function activeView() {
  * 场景：NapCat 详情页已经不在导航里（改从「插件 → 接入平台」进），
  * 但它的内容还在，需要能被跳过去 —— 所以给它一个不依赖 GROUPS 的入口。
  */
+/** 手机端「更多」面板开关（桌面上这些元素是隐藏的，调了也没副作用） */
+function toggleNavMore() {
+  const panel = document.getElementById('nav-more-panel')
+  if (!panel) return
+  panel.classList.toggle('on')
+}
+
+// 点面板里的项 → 切页 + 收起；点别处 → 收起
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('nav-more-panel')
+  if (!panel || !panel.classList.contains('on')) return
+  const inPanel = panel.contains(e.target)
+  const onMore = e.target.closest && e.target.closest('.nav-more')
+  if (inPanel || onMore) return
+  panel.classList.remove('on')
+})
+
 function showView(viewId, group) {
   document.querySelectorAll('.view').forEach((v) => v.classList.remove('on'))
   const target = document.getElementById(viewId)
@@ -1799,11 +1891,18 @@ function runLoaders(viewId) {
   if (viewId === 'v-history') loadHistory()
 }
 
-$('nav').addEventListener('click', (e) => {
+// 绑在 aside 上而不是 #nav：手机端「更多」面板在 aside 里、不在 #nav 里，
+// 只绑 #nav 的话面板里的按钮点了没反应。
+document.querySelector('aside').addEventListener('click', (e) => {
   const b = e.target.closest('button')
   if (!b) return
-  $('nav').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b))
+  // 只处理有 data-v 的（「更多」按钮没有，它自己 onclick）
+  if (!b.dataset.v) return
+  document.querySelectorAll('#nav button, #nav-more-panel button').forEach((x) => x.classList.toggle('on', x === b))
   showGroup(b.dataset.v)
+  // 手机端：点完收起「更多」面板
+  const pnl = document.getElementById('nav-more-panel')
+  if (pnl) pnl.classList.remove('on')
 })
 
 // ---------- 状态 ----------
