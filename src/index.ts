@@ -343,6 +343,8 @@ try {
       port: consolePort,
       // 手机要访问就设 CONSOLE_HOST=0.0.0.0（默认只听本机）
       host: process.env['CONSOLE_HOST'] || '127.0.0.1',
+      // 控制台「对话」页要真聊：走和 QQ 同一条 generateReply
+      reply: (m, r) => generateReply(m as never, { rules: r, llm: llm!, tools: toolRegistry ?? undefined }),
       token: consoleToken,
       getRules,
       transport,

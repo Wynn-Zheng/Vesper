@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
@@ -61,6 +61,16 @@ export interface ConsoleOptions {
    * 所以这里只做「加载完把工具交出去」，注册由 index.ts 完成。
    */
   onPluginTools?: (tools: Array<{ name: string; description: string; parameters: Record<string, unknown>; run: (args: Record<string, unknown>) => Promise<string> }>) => void
+  /**
+   * 真对话：控制台「对话」页走线上那条生成链路。
+   *
+   * 和试聊的区别是它**有副作用**：写 session、写 raw、算成本。
+   * 但关系值不涨（控制台是私下聊聊，不算正式相处），
+   * 记忆也只写 `private:console-<主人QQ>` 这个 scope —— 别处看不到。
+   *
+   * 找不到就退化成试聊（previewReply），不影响页面能用。
+   */
+  reply?: (m: unknown, rules: Rules) => Promise<string>
   llm?: LlmOptions
 }
 
@@ -79,6 +89,43 @@ const RULES_FILE = 'persona/rules.yaml'
  * 跳过 127.x 和 VMware/VirtualBox 那种虚拟网卡 —— 它们不是手机能到的地址。
  * 拿不到就返回空字符串，调用方回退到 127.0.0.1。
  */
+/**
+ * 控制台对话的流水。
+ *
+ * 单独一个文件（data/console/chat.jsonl），不写进 data/raw/ ——
+ * 写 raw 会被 distill 整理成正式记忆，那就违背"控制台不污染"了。
+ * 这里只是给页面回看用，QQ 那边完全不知道内容（只有次数，见 activity.ts）。
+ */
+const CONSOLE_CHAT = 'data/console/chat.jsonl'
+
+type ConsoleTurn = { at: number; role: 'user' | 'it'; text: string }
+
+function appendConsoleChat(turn: ConsoleTurn): void {
+  mkdirSync('data/console', { recursive: true })
+  appendFileSync(CONSOLE_CHAT, JSON.stringify(turn) + '\n', 'utf8')
+}
+
+function loadConsoleChat(limit = 50): ConsoleTurn[] {
+  try {
+    if (!existsSync(CONSOLE_CHAT)) return []
+    const lines = readFileSync(CONSOLE_CHAT, 'utf8').split('\n').filter((x) => x.trim())
+    const out: ConsoleTurn[] = []
+    for (const line of lines.slice(-limit * 2)) {
+      try {
+        const j = JSON.parse(line) as Partial<ConsoleTurn>
+        if (typeof j.text === 'string' && (j.role === 'user' || j.role === 'it')) {
+          out.push({ at: Number(j.at) || 0, role: j.role, text: j.text })
+        }
+      } catch {
+        /* 坏行跳过 */
+      }
+    }
+    return out.slice(-limit)
+  } catch {
+    return []
+  }
+}
+
 function firstLanIP(): string {
   try {
     const nets = networkInterfaces()
@@ -941,6 +988,52 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         //
         // plugin-api.ts 只给「路由表 + handler」，不管 HTTP（那是它的设计），
         // 所以这里负责把 /api/plugins/xxx 分发过去。
+        // ---- 控制台对话（真聊）----
+/* ============ 控制台「对话」页：真聊 ============
+           和试聊的区别：这条走 generateReply，会写 session / raw / 算成本。
+           但记忆只写 private:console-<主人QQ>，别处看不到（见 memory/recall.ts 的 visible）。
+           关系值不涨 —— 控制台是私下聊聊，不算正式相处。 */
+        if (req.method === 'POST' && path === '/api/chat/send') {
+          const body = (await readJson(req)) as { text?: string }
+          const text = String(body.text ?? '').trim().slice(0, 2000)
+          if (!text) { json(res, 400, { ok: false, error: '空消息' }); return }
+          if (!opts.reply) { json(res, 400, { ok: false, error: '这个版本没接真对话' }); return }
+
+          const ownerQQ = String(process.env['OWNER_QQ'] ?? '').trim()
+          const started = Date.now()
+          try {
+            const reply = await opts.reply(
+              {
+                id: 'console-' + started,
+                from: { kind: 'private', id: 'console-' + ownerQQ },
+                selfId: '',
+                text,
+                at: started,
+                senderId: ownerQQ || 'console',
+                senderName: '主人（控制台）',
+              },
+              opts.getRules(),
+            )
+            // 控制台自己的流水：给页面显示历史用，不进 distill
+            try {
+              appendConsoleChat({ at: started, role: 'user', text })
+              appendConsoleChat({ at: Date.now(), role: 'it', text: reply })
+            } catch {
+              /* 记流水失败不影响回复 */
+            }
+            json(res, 200, { ok: true, data: { reply, ms: Date.now() - started } })
+          } catch (e) {
+            json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) })
+          }
+          return
+        }
+
+        // 控制台对话历史（只给页面用，别的对方看不到）
+        if (req.method === 'GET' && path === '/api/chat/history') {
+          json(res, 200, { ok: true, data: { turns: loadConsoleChat(50) } })
+          return
+        }
+
         if (path.startsWith('/api/plugins/')) {
           const sub = path.slice('/api/plugins'.length)
           const svc = getPluginService()

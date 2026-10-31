@@ -30,9 +30,22 @@ export { similarity }
  * 可见性规则（三个人以上的世界）：
  * - 私聊：自己的私聊 + 公共的。**绝不带出别人的私聊**
  * - 群聊：公共的 + 本群
+ * - 控制台：主人私聊的 + 自己的 + 公共的
+ *
  * 记住：scope 是会话，不是人。私聊 scope 里存的是"和这个人之间发生的事"。
+ *
+ * 控制台的 scope 是 `private:console-<主人QQ>`：
+ *   - **读**放开到主人私聊——用户要的是"能想起之前在 QQ 里聊过什么"
+ *   - **写**只写自己——控制台说的话不污染正式记忆
+ * 写那边的隔离不靠这个函数，靠调用方传的 scope（永远是 private:console-xxx）。
  */
 export function visible(scope: Scope, current: Scope): boolean {
+  const consoleMatch = /^private:console-(.+)$/.exec(current)
+  if (consoleMatch) {
+    const owner = consoleMatch[1]!
+    // 主人私聊、控制台自己的历史、公共的，都读
+    return scope === 'shared' || scope === current || scope === `private:qq-${owner}`
+  }
   if (current.startsWith('private:')) {
     return scope === current || scope === 'shared'
   }
