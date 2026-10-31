@@ -331,6 +331,35 @@
     .hero-stats{grid-template-columns:repeat(2,1fr)}
     .grid2,.cols2{grid-template-columns:1fr}
     .try-layout{grid-template-columns:1fr}
+
+    /* ---- 成员表：手机上变卡片列表 ----
+       7 列的表格在 390px 里必然横向滚。改成一行一张卡：
+       头像+名字占第一行，其余列缩成"标签: 值"的细行。 */
+    .mt-table,.mt-table tbody,.mt-table tr,.mt-table td{display:block}
+    .mt-table thead{display:none}
+    .mt-table tr{
+      border:1px solid var(--line);border-radius:var(--r-md);
+      padding:10px 12px;margin-bottom:10px;background:var(--panel);
+    }
+    .mt-table td{padding:2px 0;font-size:12.5px;border:none}
+    .mt-table td:nth-child(1){margin-bottom:6px}
+    .mt-table td:nth-child(n+2){color:var(--dim);line-height:1.7}
+    .mt-table td:nth-child(2)::before{content:"来源 ";color:var(--dim2);font-size:11px}
+    .mt-table td:nth-child(3)::before{content:"关系 ";color:var(--dim2);font-size:11px}
+    .mt-table td:nth-child(4)::before{content:"记忆 ";color:var(--dim2);font-size:11px}
+    .mt-table td:nth-child(5)::before{content:"对话 ";color:var(--dim2);font-size:11px}
+    .mt-table td:nth-child(6)::before{content:"核心 ";color:var(--dim2);font-size:11px}
+    .mt-table td:nth-child(7)::before{content:"首次见到 ";color:var(--dim2);font-size:11px}
+
+    /* ---- 运行日志：消息换行，不要一条撑到屏幕外 ---- */
+    .log .line{flex-wrap:wrap;gap:2px 6px}
+    .log .line .m{flex:1 1 100%;min-width:0;word-break:break-word;white-space:normal}
+    .log .line .ex{flex:1 1 100%;white-space:normal;overflow:visible;text-overflow:clip;border-left:none;padding-left:0;margin-left:0}
+    .log .line .wh{margin-left:0;padding-left:0;flex:1 1 100%}
+
+    /* ---- 试聊：右侧面板在窄屏改上下堆叠，别固定 380px ---- */
+    .try-side{width:100%!important;max-width:100%!important;min-width:0!important}
+    .try-input{min-width:0}
   }
   .sched{font-size:12.5px;line-height:2.1;color:var(--dim)}
   .sched b{color:var(--text);font-weight:600}
@@ -1141,7 +1170,7 @@
       </div>
 
       <div class="card" style="padding:0;overflow:hidden">
-        <table style="width:100%;border-collapse:collapse">
+        <table class="mt-table" style="width:100%;border-collapse:collapse">
           <thead>
             <tr style="background:rgba(255,255,255,.03);text-align:left">
               <th class="mt-th">人</th>
