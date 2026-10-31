@@ -278,6 +278,13 @@
       border-radius:0;
     }
     #nav button .ico{width:18px;height:18px}
+    /* 选中态：桌面侧栏是竖线（inset 2px 0），底栏横着排要改成底部的横线 */
+    #nav button.on{box-shadow:none;border-radius:var(--r-sm) var(--r-sm) 0 0}
+    #nav button.on::after{
+      content:'';position:absolute;left:22%;right:22%;bottom:0;height:2px;
+      background:var(--blue);border-radius:2px 2px 0 0;
+    }
+    #nav button{position:relative}
     /* 竖屏底栏只放 5 个：仪表盘/自我/插件/对话/更多 */
     #nav .nav-sep,#nav .nav-btn-settings{display:none}
     /* 成员/日志 收进「更多」，底栏只留 5 个 */
