@@ -255,7 +255,7 @@ const FEATURES: Feature[] = [
   {
     名: '控制台',
     入口: 'src/console/server.ts',
-    触发: 'HTTP + SSE，6 组 13 页',
+    触发: 'HTTP + SSE，7 组 14 页',
     配置: [],
     模块: ['console/search.ts'],
     体检: 'audit-console + test-console-bugs',
@@ -291,6 +291,22 @@ const FEATURES: Feature[] = [
     配置: [],
     模块: [],
     体检: 'test-core-bugs',
+  },
+  {
+    名: '插件系统',
+    入口: 'src/plugins/host.ts',
+    触发: 'scanPlugins() → host.load() → ctx.registerTool() 注册工具 / ctx.send 发消息',
+    配置: [],
+    模块: ['plugins/registry.ts', 'plugins/manifest.ts', 'plugins/installer.ts', 'plugins/settings.ts', 'console/plugin-api.ts'],
+    体检: 'selfcheck-plugin-host + selfcheck-plugin-permissions + test-plugins-e2e',
+  },
+  {
+    名: 'NapCat 协议端',
+    入口: 'src/napcat/manager.ts',
+    触发: 'locate() 探测 / start() 启停 / wire() 自动指向反向 WS',
+    配置: [],
+    模块: ['napcat/locate.ts', 'napcat/wire.ts', 'napcat/install.ts'],
+    体检: 'test-chan-bugs',
   },
 ]
 
