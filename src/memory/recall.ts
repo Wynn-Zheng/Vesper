@@ -303,8 +303,18 @@ export function recall(opts: RecallOptions): Recalled {
     : []
 
   // 合并去重（faint 可能和 strong 重叠，虽然理论上不会）
+  //
+  // 除了完全相同，还要挡住"说法几乎一样的重复事实"——distill 有时会把
+  // 同一件事分两次写进来（「他十点有课」/「他十点钟上课」）。这类只留一条，
+  // 否则 8 个名额被同一件事占掉两个。
   const strongTexts = new Set(strong.map((f) => f.text))
-  const facts = [...strong, ...faint.filter((f) => !strongTexts.has(f.text))]
+  const facts: typeof strong = []
+  const seenFactTexts: string[] = []
+  for (const f of [...strong, ...faint.filter((x) => !strongTexts.has(x.text))]) {
+    if (seenFactTexts.some((t) => similarity(t, f.text) >= 0.85)) continue
+    seenFactTexts.push(f.text)
+    facts.push(f)
+  }
   // 给捞回来的老事实打个标记，渲染时说明"很久没提了"
   const faintTexts = new Set(faint.map((f) => f.text))
   for (const f of facts) if (faintTexts.has(f.text)) f.faint = true
@@ -366,11 +376,38 @@ export function recall(opts: RecallOptions): Recalled {
     .map((i) => {
       const t = Date.parse(`${i.date}T00:00:00`)
       const ref = Number.isNaN(t) ? now - 30 * DAY : t
-      return { item: i, score: scoreOf(ref, 0.02, i.text, 6, query, weights, now) }
+      let score = scoreOf(ref, 0.02, i.text, 6, query, weights, now)
+      // 洞察也补关键词分：它比 episode 短，一条常常就是一句判断，
+      // 关键词命中的信号比"语义相似"更准。
+      const bm = bm25(query, [i.text])[0] ?? 0
+      if (bm > 0) score += Math.min(1, bm) * 0.3
+      return { item: i, score }
     })
     .sort((a, b) => b.score - a.score)
 
   // 第一阶段捞得多一点（20 条），第二阶段再挑 —— 只取 limit 就没什么好挑的
+  /* ---- 关联链加权（1-hop 图扩展）----
+   *
+   * episode 的 `related` 字段记的是"这件事和哪几件事有关"
+   * （同一件事的不同片段、前后因果）。原来它只在"名额没满"时补位，
+   * 等于完全不参与排序。
+   *
+   * 但人想起一件事，经常是顺带想起和它连着的事。所以：
+   *   先看排前面几条都关联到谁 → 给那些关联对象加一笔分 → 重新排
+   *
+   * 幅度 0.18，比相关性（0.5 权重）小得多——保证"直接命中的永远优先",
+   * 关联只是让"顺带想起来的"能挤进名额。
+   */
+  {
+    const seedIds = new Set(
+      [...epScored.slice(0, 3)].flatMap((s) => s.item.related ?? []),
+    )
+    if (seedIds.size) {
+      for (const s of epScored) if (seedIds.has(s.item.id)) s.score += 0.18
+      epScored.sort((a, b) => b.score - a.score)
+    }
+  }
+
   const picked = rerank(query, epScored.filter((s) => s.score >= (opts.minScore ?? 0)), {
     limit,
     now,
