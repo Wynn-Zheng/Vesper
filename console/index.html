@@ -251,6 +251,14 @@
   .state-think{font-size:13.5px;line-height:1.9;color:var(--text);white-space:pre-wrap}
   /* ---- 移动端预留：后续要完整适配时从这里改 ---- */
   /* 断点：768px（手机）、1024px（平板）。现在只做"能用"，没做完整重排。 */
+  /* panel 插件的弹层：iframe 里跑插件自己的页面 */
+  .panel-mask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:950;display:flex;align-items:center;justify-content:center;padding:24px}
+  .panel-box{display:flex;flex-direction:column;width:min(900px,92vw);height:min(680px,86vh);background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex:none}
+  .panel-head b{font-size:14px;font-weight:600}
+  .panel-frame{flex:1;min-height:0;width:100%;border:0;background:var(--panel2)}
+
+
 /* ===== 手机端（≤768px）=====
      主框架从「左侧 200px 侧栏」变成「底部 tab 栏」：
      拇指可达区在屏幕下半；抽屉要点两下，tab 点一下。

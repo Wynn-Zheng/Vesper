@@ -332,6 +332,30 @@ export function createPluginService(options: {
         }
       }),
     },
+    /**
+     * panel 类型插件的前端调用入口。
+     *
+     * panel.html 在 iframe 里跑，fetch 到这里，转给插件的 `call` 导出。
+     * 路径带 id 是因为要区分不同插件；id 从 body 里读而不是路径里，
+     * 是为了跟其它路由的 handler(body) 形状一致。
+     */
+    {
+      path: '/call',
+      method: 'POST',
+      handler: safeHandler(async (body) => {
+        if (!isRecord(body)) return invalidBody('body')
+        const id = body['id']
+        const action = body['action']
+        if (typeof id !== 'string' || !id) return invalidBody('id')
+        if (typeof action !== 'string' || !action) return invalidBody('action')
+        try {
+          const data = await host.invoke(id, { action, payload: body['payload'] })
+          return { ok: true, data: data ?? null }
+        } catch (err) {
+          return { ok: false, error: errorMessage(err) }
+        }
+      }),
+    },
   ]
 
     /**

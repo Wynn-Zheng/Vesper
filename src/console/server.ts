@@ -655,6 +655,10 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     }
 
     // 鉴权：token 从 query 或 header 取
+    //
+    // 例外：panel 插件的静态页面。iframe 的 src 是浏览器自己发的 GET，
+    // 带不了自定义 header，所以只能用 query 传 token（前端拼在 src 上）。
+    // 这个页面本身不含任何数据，是插件自带的静态文件。
     const given = url.searchParams.get('token') ?? req.headers['x-console-token']
     if (opts.token && given !== opts.token) {
       // 浏览器直接打开时给一个人话页面 —— 裸 401 只会让人以为程序坏了。
@@ -1055,6 +1059,37 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           const svc = getPluginService()
           // 第一次请求可能赶在插件加载完成之前，等它一下
           if (pluginReady) await pluginReady
+
+          /* ---- panel 类型插件：它的前端页面 ----
+           *
+           * 用 iframe 加载（前端把 src 指到这里），插件的 HTML 在 iframe 里跑，
+           * 拿不到控制台的 window/document —— 这是最轻的隔离。
+           *
+           * 面板里要调后端，走 /api/plugins/<id>/call（见 plugin-api.ts），
+           * 面板本身是静态 HTML，不执行控制台的任何代码。
+           */
+          const panelMatch = /^\/panel\/([^/]+)$/.exec(sub)
+          if (req.method === 'GET' && panelMatch) {
+            const pid = decodeURIComponent(panelMatch[1]!)
+            const root = join('plugins', pid, 'panel.html')
+            try {
+              const html = readFileSync(root, 'utf8')
+              res.writeHead(200, {
+                'content-type': 'text/html; charset=utf-8',
+                // 面板是外部代码：不许它引控制台的样式/脚本，也不许被别的站嵌
+                'content-security-policy': "default-src 'self' 'unsafe-inline' data: blob:; frame-ancestors 'self'",
+                'x-content-type-options': 'nosniff',
+              })
+              res.end(html)
+            } catch {
+              json(res, 404, {
+                ok: false,
+                error: `插件 ${pid} 没有 panel.html（panel 类型插件需要这个文件）`,
+              })
+            }
+            return
+          }
+
           const route = pluginRoutes(svc).find((r) => r.path === sub && r.method === req.method)
           if (!route) {
             json(res, 404, { ok: false, error: '没有这个插件接口：' + sub })

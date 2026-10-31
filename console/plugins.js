@@ -258,6 +258,12 @@
       test.onclick = () => testPluginTool(p.tools[0])
       foot.appendChild(test)
     }
+    // panel 插件：打开它自己的页面（iframe 里跑，和主控制台隔离）
+    if (p.type === 'panel') {
+      const open = el('button', 't', '打开面板')
+      open.onclick = () => openPanel(p.id, p.name || p.id)
+      foot.appendChild(open)
+    }
     const reload = el('button', 't', '重载')
     reload.onclick = () => window.pluginReload?.(p.id)
     foot.appendChild(reload)
@@ -278,6 +284,46 @@
     } catch (e) {
       window.alert('测试失败：' + errText(e))
     }
+  }
+
+  /**
+   * panel 插件的页面：用 iframe 打开。
+   *
+   * 为什么是 iframe 而不是把它的 HTML 塞进主页面：
+   *   - 它拿不到控制台的 window/document，改不了主界面
+   *   - 它自己的 CSS 不会污染控制台（反过来也一样）
+   *   - 出错只坏它那一块，不影响整个控制台
+   *
+   * 面板里要数据就 fetch `/api/plugins/call`，后端转给插件的 call 导出。
+   */
+  function openPanel(id, name) {
+    const mask = el('div', 'panel-mask')
+    const box = el('div', 'panel-box')
+
+    const head = el('div', 'panel-head')
+    head.appendChild(el('b', '', name))
+    const sp = el('span', 'spacer')
+    head.appendChild(sp)
+    const close = el('button', 'mini-btn', '关闭')
+    close.onclick = () => mask.remove()
+    head.appendChild(close)
+    box.appendChild(head)
+
+    const frame = document.createElement('iframe')
+    frame.className = 'panel-frame'
+    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin')
+    // iframe 的 src 是浏览器自己发的 GET，带不了自定义 header —— token 只能走 query。
+    // 面板页面本身是插件自带静态文件，不含数据；数据要靠 /call，那边仍然校验 header。
+    const t = new URLSearchParams(location.search).get('token') || ''
+    frame.src = `/api/plugins/panel/${encodeURIComponent(id)}?token=${encodeURIComponent(t)}`
+    box.appendChild(frame)
+
+    mask.appendChild(box)
+    // 点遮罩关闭；点面板本体不关
+    mask.onclick = (e) => {
+      if (e.target === mask) mask.remove()
+    }
+    document.body.appendChild(mask)
   }
 
   function drawRows() {

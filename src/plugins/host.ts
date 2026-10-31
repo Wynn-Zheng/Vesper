@@ -102,6 +102,14 @@ type LoadedPlugin = {
   version: string
   ctx: PluginContext
   deactivate?: (ctx: PluginContext) => unknown
+  /**
+   * 插件的 `call` 导出（panel 类型用）。
+   *
+   * panel.html 里点按钮 → POST /api/plugins/<id>/call → 走到这里。
+   * 存模块引用而不是每次重新 import：重载后这个引用会换掉，
+   * 自然就跟上新代码了。
+   */
+  call?: (input: { action: string; payload?: unknown }) => Promise<unknown>
 }
 
 type KnownPlugin = {
@@ -402,7 +410,14 @@ export function createHost(options: {
       // 激活函数允许是 async，这里统一 await
       await (activate as (ctx: PluginContext) => unknown)(ctx)
 
-      loaded.set(id, { version: plugin.manifest.version, ctx, deactivate })
+      // panel 类型的插件靠 module 里导出的 call 接待前端请求
+      const rawCall = (mod as { call?: unknown }).call
+      const call =
+        typeof rawCall === 'function'
+          ? (rawCall as (input: { action: string; payload?: unknown }) => Promise<unknown>)
+          : undefined
+
+      loaded.set(id, { version: plugin.manifest.version, ctx, deactivate, ...(call ? { call } : {}) })
       return { ok: true }
     } catch (err) {
       const message = `载入插件失败：${errorMessage(err)}`
@@ -482,5 +497,19 @@ export function createHost(options: {
     return out
   }
 
-  return { load, unload, reload, list, errors, tools }
+  /**
+   * 把前端的调用转给插件的 `call` 导出（panel 类型用）。
+   *
+   * 插件没导出 call 时给一句人话，别让前端看到 "xxx is not a function"。
+   */
+  async function invoke(id: string, input: { action: string; payload?: unknown }): Promise<unknown> {
+    const plugin = loaded.get(id)
+    if (!plugin) throw new Error(`插件 ${id} 没在运行`)
+    if (!plugin.call) {
+      throw new Error(`插件 ${id} 没有导出 call（panel 类型需要在入口里 export function call({action,payload})）`)
+    }
+    return await plugin.call(input)
+  }
+
+  return { load, unload, reload, list, errors, tools, invoke }
 }
