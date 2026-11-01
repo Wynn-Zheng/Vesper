@@ -104,6 +104,24 @@ console.log('\n=== 3. 关着时：申请批准后才生效 ===')
   check('优点真的写进卡里', after?.traits.good === '会先听人说完', after?.traits.good)
 }
 
+console.log('\n=== 4. 称呼的优先级（它自己取 > 你填的 > 按阶段） ===')
+{
+  const { salutationOf } = await import('../src/relation/format.ts')
+  const { DEFAULTS } = await import('../src/core/config.ts')
+  const stage = DEFAULTS.关系.阶段[0]!
+
+  check('它自己取的排第一', salutationOf(DEFAULTS, stage, false, '阿鱼').includes('阿鱼'))
+  check(
+    '没有自己的称呼时用你填的',
+    salutationOf({ ...DEFAULTS, 关系: { ...DEFAULTS.关系, 昵称: '小满' } }, stage, false, '').includes('小满'),
+  )
+  check(
+    '两个都没有就按阶段给说明',
+    salutationOf({ ...DEFAULTS, 关系: { ...DEFAULTS.关系, 昵称: '' } }, stage, false, '').length > 0,
+  )
+  check('群里不渲染称呼', salutationOf(DEFAULTS, stage, true, '阿鱼') === '')
+}
+
 // 清理
 try {
   rmSync(dir, { recursive: true, force: true })

@@ -188,11 +188,38 @@ async function handlePeopleApiInner(
       事实: loadFacts(id).filter((f) => !f.faint),
       画像: loadProfile(id),
       印象: impressionOf(id),
+      // 它自己给这人起的称呼（反思时自己取）；下面是你填的建议
+      称呼: meta.callName || '',
+      称呼建议: meta.callNameSuggested || '',
       待问: loadOpen(id),
       经历: loadEpisodes()
         .filter((e) => accounts.some((a) => e.scope === `private:${a}`))
         .slice(-30),
     })
+    return true
+  }
+
+  /* ============ 它怎么称呼这个人：你填建议（它可以选择不用） ============ */
+  if (method === 'PUT' && path === '/api/person/callname') {
+    const raw = JSON.parse((await readBody(req)) || '{}') as unknown
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { id?: unknown; suggested?: unknown }) : {}
+    const id = String(body.id ?? '')
+    const { isValidPersonId, loadPerson, savePerson } = await import('../people/store.ts')
+    if (!isValidPersonId(id)) {
+      json(res, 400, { error: 'id 不对' })
+      return true
+    }
+    const meta = loadPerson(id)
+    if (!meta) {
+      json(res, 404, { error: '没有这个人的档案' })
+      return true
+    }
+    // 建议 = 你希望的叫法。它可能不采用，用自己想叫的；清空就删掉这条建议。
+    const suggested = String(body.suggested ?? '').trim().slice(0, 12)
+    if (suggested) meta.callNameSuggested = suggested
+    else delete meta.callNameSuggested
+    savePerson(meta)
+    json(res, 200, { ok: true, suggested })
     return true
   }
 

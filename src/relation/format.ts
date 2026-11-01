@@ -15,6 +15,13 @@ export interface RelationFormatOptions {
   inGroup?: boolean
   /** 认识多久了（毫秒时间戳）；有就加一句 */
   since?: number
+  /**
+   * 它自己给这个人起的称呼（people/<id>/meta.json 的 callName）。
+   *
+   * 优先级最高：它自己取的就用它自己的；没取才回落到 rules.yaml 的
+   * 关系.昵称（你填的），再没有就按关系阶段给说明。
+   */
+  callName?: string
 }
 
 /**
@@ -31,11 +38,23 @@ const LEGACY_SALUTATION: Record<string, string> = {
 /**
  * 称呼怎么叫。
  *
- * 优先用 rules.yaml 里配的 `关系.昵称`；没配就按阶段给"怎么叫"的说明。
+ * 优先级：**它自己取的**（callName）→ rules.yaml 的 `关系.昵称`（你填的）
+ * → 按阶段给"怎么叫"的说明。
+ *
+ * 为什么它自己取的排第一：你说"称呼由它自己取，哪怕我填了也可以不叫"。
+ * 你填的那条只是建议，它自己取的那条才是它真在用的。
+ *
  * **不能**把"昵称""专属"这种占位符直接塞给模型——它会字面照做，真的叫你"昵称"。
  */
-export function salutationOf(rules: Rules, stage: StageRule, inGroup: boolean): string {
+export function salutationOf(
+  rules: Rules,
+  stage: StageRule,
+  inGroup: boolean,
+  callName?: string,
+): string {
   if (inGroup) return ''
+  const own = (callName ?? '').trim()
+  if (own) return `叫他「${own}」`
   const custom = (rules.关系.昵称 ?? '').trim()
   if (custom) return `叫他「${custom}」`
   return LEGACY_SALUTATION[stage.称呼] ?? stage.称呼
@@ -56,7 +75,7 @@ export function buildRelationBlock(
   lines.push('关于你们的关系：')
   lines.push(`- 现在是「${stage.名}」`)
 
-  const salutation = salutationOf(rules, stage, opts.inGroup === true)
+  const salutation = salutationOf(rules, stage, opts.inGroup === true, opts.callName)
   if (salutation) lines.push(`- 称呼上：${salutation}`)
 
   // ⚠️ 这里**故意不写关系值和"离下一档还差几分"**。

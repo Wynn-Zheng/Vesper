@@ -2657,6 +2657,42 @@ function renderPersonDetail() {
     body.appendChild(card)
   }
 
+  if (PD_TAB === 'impression') {
+    // 它怎么称呼这个人（称呼由它自己取，你填的只是建议）
+    const c = el('div', 'card')
+    c.appendChild(el('div', 'op-t', '它怎么叫他'))
+
+    if (PD.称呼) {
+      c.appendChild(el('div', 'self-item', '它现在叫：「' + PD.称呼 + '」'))
+    } else {
+      c.appendChild(el('div', 'self-item muted', '它还没给他起称呼。下次自我反思时会想一个。'))
+    }
+
+    const row = el('div', 'self-field')
+    row.style.marginTop = '10px'
+    row.appendChild(el('label', '', '建议'))
+    const inp = el('input', 'self-input')
+    inp.value = PD.称呼建议 || ''
+    inp.placeholder = '你希望它怎么叫他（留空 = 不给建议）'
+    row.appendChild(inp)
+    const save = el('button', 'mini-btn', '保存建议')
+    save.onclick = async () => {
+      try {
+        await sendJson('/api/person/callname', { id: PD.id, suggested: inp.value.trim() }, 'PUT')
+        toast('建议已保存（它可能不采用）')
+        await loadPersonDetail(PD.id)
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+    row.appendChild(save)
+    c.appendChild(row)
+    c.appendChild(
+      el('div', 'hint', '称呼由它自己取；你填的只是建议，它完全可以叫自己想叫的。'),
+    )
+    body.appendChild(c)
+  }
+
   if (PD_TAB === 'profile' || PD_TAB === 'impression') {
     const isProfile = PD_TAB === 'profile'
     const card = el('div', 'card')

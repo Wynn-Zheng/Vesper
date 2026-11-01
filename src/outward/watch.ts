@@ -4,7 +4,6 @@ import { info, warnAt } from '../core/log.ts'
 import type { Rules } from '../core/config.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
-import { appendLife } from '../self/store.ts'
 import { effectiveWill } from '../self/will.ts'
 import { appendJsonl, writeAtomic } from '../store/fs.ts'
 import { detail, hot, humanDuration, type HotOptions } from './bili.ts'
@@ -38,11 +37,6 @@ export function watchedToday(): number {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
   return loadWatched().filter((w) => w.at >= start.getTime()).length
-}
-
-function today(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const PICK_SYSTEM = `你在决定"现在想看哪个视频"。只输出一个编号，不要解释。
@@ -178,7 +172,9 @@ export async function watchOne(opts: WatchOptions): Promise<WatchResult> {
   appendJsonl(join(ROOT, 'log.jsonl'), { at: rec.at, bvid: d.bvid, title: d.title, zone: d.zone, thought })
 
   if (thought) {
-    appendLife(today(), [`翻到个视频《${d.title.slice(0, 20)}》，我想到：${thought}`])
+    // 不再写进 life.md：视频观感是"今天看了什么"，不是"我自己那边的生活"。
+    // 记录已经在 watched.json + log.jsonl 里，控制台能看；塞进 life 会让
+    // 生活线变成"工作日志"（实测连续几天都是《标题》，我想到：……）。
     info(`它想到：${thought}`)
   } else {
     info('它翻到没什么感觉，没写')

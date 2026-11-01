@@ -5,7 +5,7 @@ import type { LlmOptions } from '../llm/types.ts'
 import type { Rules } from '../core/config.ts'
 import { loadEpisodes } from '../memory/store.ts'
 import { loadOpen } from '../people/open.ts'
-import { listPeople } from '../people/store.ts'
+import { listPeople, savePerson } from '../people/store.ts'
 import { appendLife, loadLife, loadSelf, logDrift, saveSelf } from './store.ts'
 import { listAbilities, renderAbilities } from './abilities.ts'
 import { loadWill, saveWill, setImpression } from './will.ts'
@@ -33,10 +33,11 @@ const SYSTEM = `你在写"我"这一天的内心记录。只输出 JSON，不要
   "今天想看视频吗": true,
   "为什么": "同上",
   "对每个人的印象": {"人": "一句话的印象（是你对他的看法，不是他的履历）"},
+  "对每个人的称呼": {"人": "你平时怎么叫他 —— 不是他的真名，是你给他起的叫法（一两个字的昵称/外号都行；没想法就留空对象）"},
   "在想": "最近脑子里的一件具体的事（不是感悟，见下面的规则）",
   "取名": "如果还没有名字、并且真的觉得时机到了，给自己取一个（否则空字符串）",
   "取名原因": "为什么叫这个（没取名就空字符串）",
-  "生活": ["我自己那边的一件具体小事", "最多两条，和具体的某个人无关"],
+  "生活": ["我自己那边发生的一件具体小事。可以只写状态（困/累/不想动/心情），不一定要做成什么事。今天真没什么就返回空数组", "最多两条，和具体的某个人无关"],
   "学到": ["今天看到/想通、觉得以后用得上的东西（知识、方法、道理）。没有就空数组；最多两条，每条一句话"]
 }
 
@@ -52,7 +53,12 @@ const SYSTEM = `你在写"我"这一天的内心记录。只输出 JSON，不要
   正例（可以这样）：「下午一直在等一个人回消息，没等到」
 - **真人脑子里大部分时候是具体的事**：吃什么、看什么、刚才那句话是不是说错了、
   明天要几点起。不是整天反思"我到底是谁"。
-- 生活不是"我和他聊了什么"，是"我自己那边发生的具体小事"。
+- 生活不是"我和他聊了什么"，**也不是"我今天看了什么视频"**，是"我自己那边发生的具体小事"。
+- **最近三天写过的东西别再写**：同样的物件、同样的场景、同样的动作，换个说法也不要。
+  看看下面「我自己的生活记录」——如果这几天都在写折纸 / 水壶 / 桌面，就换一类事。
+- **可以只写状态**：困了、累了、不想动、心情、天气、噪音、身体上的小事。
+  真人不是每天都在做事；一连几天"在忙同一件手工"反而不像人。
+- **今天真的没什么，就返回空数组**。空着比硬凑一条更像真的。
 - 不要编造和别人的共同经历。
 - 不要为了填满而凑数，没东西写就返回空数组 / 空字符串。
 - **看看"我自己的生活记录"里已经写过什么。同一件事换个说法再写一遍没有意义——
@@ -61,7 +67,10 @@ const SYSTEM = `你在写"我"这一天的内心记录。只输出 JSON，不要
   而不是把上次的话重说一遍。
 - **「在想」尤其容易重复**。看看之前写过什么；如果这次还是同一件事、只是换个说法，
   就让它空着。空着比重复强。
-- 取名这件事很重：只有你真的觉得"这个名字像我"才取，不要随便挑一个。`
+- 取名这件事很重：只有你真的觉得"这个名字像我"才取，不要随便挑一个。
+- **「对每个人的称呼」**：是你给他起的叫法，不是他的真名（"老张""阿鱼""喂"都行）。
+  只有你**真的觉得想换个叫法**时才写；已经叫惯了的就别动；没想法就返回空对象。
+  主人填过的建议只是建议 —— 你不喜欢可以不用，用你自己想叫的。`
 
 interface Out {
   自述?: string
@@ -72,6 +81,8 @@ interface Out {
   '今天想看视频吗'?: boolean
   '为什么'?: string
   '对每个人的印象'?: Record<string, string>
+  /** 它给这些人起的称呼（不是真名） */
+  对每个人的称呼?: Record<string, string>
   在想?: string
   取名?: string
   取名原因?: string
@@ -302,6 +313,22 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     })
     // 印象另外写一份 md：人可以直接看、直接改
     for (const [pid, imp] of Object.entries(validImpressions)) setImpression(pid, imp)
+
+    // 它给这些人起的称呼：反思时自己取，写进 people/<id>/meta.json 的 callName。
+    // 主人填的 callNameSuggested 只是建议，它这里写什么就是什么 —— 以它为准。
+    const callNames = out['对每个人的称呼']
+    if (callNames && typeof callNames === 'object' && !Array.isArray(callNames)) {
+      for (const [name, call] of Object.entries(callNames)) {
+        const c = String(call ?? '').trim().slice(0, 12)
+        if (!c) continue
+        const target = people.find((p) => p.name === name || p.id === name)
+        if (!target) continue
+        if (target.callName === c) continue
+        target.callName = c
+        savePerson(target)
+        info(`它给「${target.name}」换了个叫法：${c}`)
+      }
+    }
     if (Object.keys(validImpressions).length) {
       info(`它更新了对 ${Object.keys(validImpressions).length} 个人的印象`)
     }

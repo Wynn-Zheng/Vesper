@@ -67,6 +67,7 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
     profile: loadProfile(personId),
     relation: buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
       since: loadPerson(personId)?.firstSeen,
+      callName: loadPerson(personId)?.callName,
     }),
     memory: renderRecalled(recalled),
     userChars: text.length,

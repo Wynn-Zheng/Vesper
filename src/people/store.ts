@@ -21,6 +21,15 @@ export interface PersonMeta {
   role?: string
   /** 名字被用户锁住了：群名单同步时不要覆盖 */
   nameLocked?: boolean
+  /**
+   * 它给这个人起的称呼（不是真名）。
+   *
+   * 由自我反思时自己取。你填的 `callNameSuggested` 只是建议 ——
+   * 它可以不采用，用自己想叫的。群里不渲染称呼。
+   */
+  callName?: string
+  /** 你填的称呼建议（它可以选择不用） */
+  callNameSuggested?: string
 }
 
 /** 关系只允许这几档，别让模型或前端随手写别的 */

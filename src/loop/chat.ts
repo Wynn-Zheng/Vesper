@@ -264,6 +264,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
       buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
         inGroup: scope.startsWith('group:'),
         since: loadPerson(personId)?.firstSeen,
+        // 它自己给这人起的称呼（没有就回落到 rules.yaml 的 关系.昵称）
+        callName: loadPerson(personId)?.callName,
       }),
       groupBlock,
     ]

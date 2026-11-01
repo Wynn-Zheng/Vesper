@@ -245,7 +245,9 @@ console.log('\n=== 5. 措辞不夸大 ===')
   const watch = readFileSync('src/outward/watch.ts', 'utf8')
   check('watch 的 THINK_SYSTEM 说了"没看画面"', watch.includes('没看画面'))
   check('watch 不再写"看了个视频"', !watch.includes('看了个视频'))
-  check('watch 写的是"翻到个视频"', watch.includes('翻到个视频'))
+  // 2026-11-01：watch 不再把视频观感写进 life.md（那条文案随之删掉），
+  // 但「翻到」这个措辞要保留 —— 是"翻到"，不是"看了"（它只拿到标题和简介）。
+  check('watch 用"翻到"而不是"看了"', watch.includes('翻到') && !watch.includes('看了个视频'))
 }
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`)
