@@ -38,6 +38,8 @@ export type ImageFailReason =
   | 'download'
   /** 下载成功，但视觉模型调用失败/返回空 */
   | 'vision'
+  /** 不是可读的图片引用（既不是 http，也不是本地路径） */
+  | 'unsupported'
   /** 超过了整批预算，被放弃 */
   | 'timeout'
 
@@ -311,8 +313,14 @@ export async function describeImagesDetailed(
   opts: LlmOptions,
   budgetMs = DEFAULT_BUDGET_MS,
 ): Promise<VisionBatch> {
+  // 被过滤掉的（既不是 http 也不是本地路径）也要标成 failed：
+  // 否则模型只看到 [图片]，不知道自己没看成。
+  const dropped: ImageFailure[] = urls
+    .map((url, index) => ({ url, index }))
+    .filter((x) => !isImageUrl(x.url))
+    .map((x) => ({ index: x.index, url: x.url, reason: 'unsupported' as const }))
   const usable = urls.filter(isImageUrl).slice(0, MAX_IMAGES)
-  if (!usable.length) return { notes: [], failed: [] }
+  if (!usable.length) return { notes: [], failed: dropped }
   if (!opts.apiKey || !opts.baseUrl || !opts.model) {
     // 不报警：视觉开关关着是正常状态，调用方本来就不该走到这里。
     // 真走到这里说明代码路径写错了，但那是开发期该发现的，
@@ -323,8 +331,15 @@ export async function describeImagesDetailed(
   const budget = Number.isFinite(budgetMs) && budgetMs > 0 ? budgetMs : DEFAULT_BUDGET_MS
   const deadline = Date.now() + budget
 
+  // 用**原始下标**：usable 是过滤+截断后的数组，直接 map 的话
+  // index 会从 0 重排，`[对方发了 N 张图]` 里的 N 和"第几张"全错位。
+  const usableIndexed = urls
+    .map((url, index) => ({ url, index }))
+    .filter((x) => isImageUrl(x.url))
+    .slice(0, MAX_IMAGES)
+
   const slots = await Promise.all(
-    usable.map((url, index) =>
+    usableIndexed.map(({ url, index }) =>
       withDeadline<Slot>(describeOne(url, index, opts, deadline), deadline, {
         note: null,
         failure: { index, url, reason: 'timeout' },
