@@ -195,7 +195,17 @@ resolvePaths('E:/NapCat/NapCat.52230.Shell')
 
 ---
 
-## 七、常见问题
+## 七、三条红线（NapCat 出过永久封号事故）
+
+1. **只监听 `127.0.0.1`**，绝不 `0.0.0.0`
+2. **改掉默认 token `napcat`**，用随机长串
+3. **不把 WebUI / OneBot 端口暴露到公网**
+
+2025 年 9 月那批账号永久封禁，起因就是这三条没做。
+
+> 本项目的 `.env` 里 `ONEBOT_HOST=127.0.0.1` 就是第 1 条；`ONEBOT_TOKEN` 必须和 NapCat 里设的一致，且不要用 `napcat`。
+
+## 八、常见问题
 
 ### Q：控制台说「找不到 NapCat」
 

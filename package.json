@@ -18,9 +18,7 @@
     "check-data": "node scripts/check-data.ts",
     "check-config": "node scripts/check-config.ts",
     "check-all": "node scripts/check-all.ts",
-    "clean-snapshots": "node scripts/clean-snapshots.ts",
-    "persona": "node --env-file=.env scripts/persona-check.ts",
-    "migrate": "node --env-file=.env scripts/migrate-people.ts"
+    "persona": "node --env-file=.env scripts/persona-check.ts"
   },
   "dependencies": {
     "ws": "^8.18.0",

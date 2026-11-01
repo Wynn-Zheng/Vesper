@@ -1,8 +1,7 @@
 /**
  * 人格模块体检：情绪衰减 + 快照回滚。
  *
- * 第 6 轮 agenttree 的 #33 节点没产出任何文件（opencode 额度那时已经不稳），
- * 这个脚本是手动补的。
+ * 人格模块以前没有专门的边界回归，这个脚本是补上的。
  */
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

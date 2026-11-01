@@ -1,8 +1,7 @@
 /**
  * 控制台与主流程体检。
  *
- * opencode 免费额度用完了，agenttree 的 act 跑不动，
- * 这轮手动补 console/search + chat/prompt 的边界。
+ * 补 console/search + chat/prompt 的边界（这两块以前没有专门回归）。
  */
 let pass = 0
 let fail = 0

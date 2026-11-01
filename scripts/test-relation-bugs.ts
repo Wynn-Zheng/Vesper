@@ -1,8 +1,7 @@
 /**
  * 关系模块体检。
  *
- * agenttree 的 #31 改好了 evaluate.ts 和 store.ts 但没写出测试，
- * #32/#33 完全没产物。这个脚本手动补上三个模块的边界验证。
+ * 关系模块以前只有实现没有边界测试，这个脚本补上三个模块的边界验证。
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
