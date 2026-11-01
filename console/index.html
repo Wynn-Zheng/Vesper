@@ -2801,18 +2801,21 @@ function renderSelfCardPage(body, d) {
     row1.appendChild(nameI)
     form.appendChild(row1)
 
-    // 称呼：它平时自居的叫法。空 = 让它自己取；你填了就是你的，它想改只能提申请。
+    // 日常称呼：它平时自居的叫法。空 = 让它自己取；你填了就是你的，它想改只能提申请。
+    // 和「本名」是两个东西：本名在角色卡里（你定的，它不能改），
+    // 这个是它日常说"我是 XX"用的那个称呼。
+    // 「她怎么叫你」不在这里 —— 那是成员页/人物档案的事。
     const rowCall = el('div', 'self-field')
-    rowCall.appendChild(el('label', '', '称呼'))
+    rowCall.appendChild(el('label', '', '日常称呼'))
     const callI = el('input', 'self-input')
     callI.value = d.selfCallName || ''
-    callI.placeholder = '平时怎么叫它（留空 = 让它自己取）'
+    callI.placeholder = '它平时自称什么（留空 = 让它自己取）'
     rowCall.appendChild(callI)
-    const callSave = el('button', 'mini-btn', '保存称呼')
+    const callSave = el('button', 'mini-btn', '保存')
     callSave.onclick = async () => {
       try {
         await sendJson('/api/self/name', { name: callI.value.trim() }, 'PUT')
-        toast(callI.value.trim() ? '称呼已保存' : '称呼已清空，它以后可以自己取')
+        toast(callI.value.trim() ? '日常称呼已保存' : '已清空，它以后可以自己取')
         await loadSelfV2()
       } catch (e) {
         alert('失败：' + e.message)
@@ -2820,6 +2823,8 @@ function renderSelfCardPage(body, d) {
     }
     rowCall.appendChild(callSave)
     form.appendChild(rowCall)
+
+
 
     const row2 = el('div', 'self-field')
     row2.appendChild(el('label', '', '生日'))
