@@ -11,6 +11,7 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs'
 import { cardScopedPath } from './card.ts'
 import { writeAtomic } from '../store/fs.ts'
+import { similarity } from '../core/text.ts'
 
 // 学到的内容按角色卡隔离
 const LEGACY = 'persona/learnings.json'
@@ -57,7 +58,11 @@ export function addLearning(text: string, kind: LearningKind, source: 'itself' |
   const list = loadLearnings()
   const t = text.trim()
   // 去重：反思每 12 小时跑一次，同一条道理会被反复"学到"
-  const dup = list.find((x) => x.text === t || x.text.includes(t) || t.includes(x.text))
+  //
+  // 用相似度而不是双向 includes：后者会让短词吞掉长句——
+  // 「知识」已存在时，「知识就是力量」会被判成重复而永远学不进来
+  // （两者 similarity 只有 0.20）。0.9 是很严的门槛，只挡真正重复的。
+  const dup = list.find((x) => x.text === t || similarity(x.text, t) > 0.9)
   if (dup) return null
   const item: Learning = {
     id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
