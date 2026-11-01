@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 能力清单。
  *
  * 这份数据从**实际配置和注册表**读出来，不是写死的文案：
@@ -7,7 +7,6 @@
  * 用途是喂给自我反思——让它自己看"我现在接了这些"，然后用自己的话
  * 总结成"我能做什么"，写进 self.md。而不是由我们在 prompt 里替它写。
  */
-import { existsSync } from 'node:fs'
 import type { Rules } from '../core/config.ts'
 import { tools } from '../tools/registry.ts'
 import { loadWatched } from '../outward/watch.ts'

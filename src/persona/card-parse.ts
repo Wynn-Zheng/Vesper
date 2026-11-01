@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 角色卡文本解析：把用户从别处复制来的一段人设，认成结构化字段。
  *
  * 为什么要这个：角色卡信息常常是从别的平台（贴吧/character.ai/文档）复制来的，
@@ -15,7 +15,6 @@
  *   - 列表项（小动作/喜欢/讨厌）
  *   开心：xxx            （反应场景）
  */
-import { REACTIONS, type CharCard } from './card.ts'
 
 export interface ParsedCard {
   name?: string
