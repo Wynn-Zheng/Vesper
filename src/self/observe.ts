@@ -78,6 +78,13 @@ export interface ObserveOptions {
   days?: number
   /** 至少出现几次才算问题 */
   minCount?: number
+  /**
+   * 只看最近多少小时（默认 12）。
+   *
+   * 不加这个的话，**一次启动失败会挂在 prompt 里一整天**：旧进程抢端口失败的
+   * error 留在日志里，哪怕后来 WS 早就连上了，它也会跟用户说"我这边有个地方老报错"。
+   */
+  sinceHours?: number
 }
 
 /**
@@ -92,11 +99,20 @@ const NOISE = [
   /重试（第 \d+ 次）/,
   // 单条消息被跳过属于正常过滤
   /重复消息，已跳过/,
+  // 测试插件（scripts/_plugin-test-guard.ts 里那批）被禁用是预期行为
+  /\[plugin:(demo|edge-|probe-|e2e-)/,
+  // 看门狗关着是配置选择，不是故障 —— 别让它进 prompt 说"我这边老报错"
+  /看门狗未启用/,
+  // 启动早期 NapCat 还没连上时拉不到群成员是常态（后续会降级用缓存）。
+  // 旧日志的 msg 是纯"拉群成员失败"；新代码已经把"有缓存"降成 info，
+  // 只有"没有旧缓存"才 warn（那条 msg 带后缀，不会被这里吃掉）。
+  /^拉群成员失败$/,
 ]
 
 export function findIssues(opts: ObserveOptions = {}): Issue[] {
   const days = Math.min(14, Math.max(1, opts.days ?? 3))
   const minCount = Math.max(1, opts.minCount ?? 2)
+  const sinceMs = Date.now() - Math.max(1, opts.sinceHours ?? 12) * 3_600_000
 
   const buckets = new Map<string, Issue>()
 
@@ -106,6 +122,8 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
     for (const rec of readDayLog(dayKey(d))) {
       if (rec.level !== 'warn' && rec.level !== 'error') continue
       if (NOISE.some((re) => re.test(rec.msg))) continue
+      // 时间窗：太久以前的错误可能早就恢复了，不该一直挂在 prompt 里
+      if (Number(rec.ts) && Number(rec.ts) < sinceMs) continue
 
       // where 只认字符串；对象/数字当没有位置，免得拼出 "[object Object]" 这样的指纹
       const where = typeof rec.extra?.where === 'string' ? rec.extra.where : ''

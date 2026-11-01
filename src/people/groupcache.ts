@@ -173,11 +173,12 @@ export async function refreshGroupMembers(
       /* 同步失败不影响名单 */
     }
   } catch (err) {
-    warnAt('拉群成员失败', {
-      group: groupId,
-      err: String(err).slice(0, 80),
-      用了旧缓存: !!hit,
-    })
+    // 有旧缓存 = 降级成功，用 info：这是启动早期 NapCat 还没连上的常态，
+    // 记成 warn 会让它每天把"我这边老报错"挂进 prompt。
+    // 真没缓存（名单彻底拉不到）才值得 warn。
+    const extra = { group: groupId, err: String(err).slice(0, 80), 用了旧缓存: !!hit }
+    if (hit) info('拉群成员失败，用旧缓存', extra)
+    else warnAt('拉群成员失败（没有旧缓存）', extra)
   }
 }
 

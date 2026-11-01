@@ -558,7 +558,7 @@ export function startWatchdog(deps: WatchdogDeps): void {
   watchdogConfigOn = readWatchdogEnabled()
   watchdogEnabled = watchdogConfigOn
   if (!watchdogConfigOn) {
-    warnAt('NapCat 掉线看门狗未启用（rules.yaml 的 NapCat.掉线重启 = false）')
+    info('NapCat 掉线看门狗未启用（rules.yaml 的 NapCat.掉线重启 = false）')
   } else {
     info(
       `NapCat 掉线看门狗已启动：每 ${WATCHDOG_INTERVAL / 1000} 秒检查一次，` +
