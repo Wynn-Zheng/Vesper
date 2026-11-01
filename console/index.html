@@ -851,139 +851,6 @@
       <div class="group-tabs" id="group-tabs"></div>
         
 
-    <section class="view" id="v-overview">
-      <div class="hero">
-        <div class="hero-left">
-          <div class="hero-label">你们的关系</div>
-          <div class="hero-row">
-            <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
-              <circle class="ring-track" cx="60" cy="60" r="50" />
-              <circle class="ring-fill" id="ov-ring" cx="60" cy="60" r="50" />
-            </svg>
-            <div class="hero-num">
-              <div class="n" id="c-rel">-</div>
-              <div class="d" id="c-rel-s">-</div>
-            </div>
-          </div>
-        </div>
-        <div class="hero-stats">
-          <div class="hs">
-            <div class="hs-k">链路</div>
-            <div class="hs-v" id="c-link">-</div>
-            <div class="hs-s" id="c-link-s">-</div>
-          </div>
-          <div class="hs">
-            <div class="hs-k">今天</div>
-            <div class="hs-v" id="c-today">-</div>
-            <div class="hs-s" id="c-today-s">-</div>
-          </div>
-          <div class="hs">
-            <div class="hs-k">记忆</div>
-            <div class="hs-v" id="c-mem">-</div>
-            <div class="hs-s" id="c-mem-s">-</div>
-          </div>
-          <div class="hs">
-            <div class="hs-k">今日花费</div>
-            <div class="hs-v" id="c-cost">-</div>
-            <div class="hs-s" id="c-cost-s">-</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid2">
-        <div class="panel">
-          <h3>最近 7 天 <span class="r" id="trend-hint"></span></h3>
-          <div class="body">
-            <div class="trend-wrap">
-              <svg class="trend" id="trend-chart" viewBox="0 0 420 120" preserveAspectRatio="none"></svg>
-            </div>
-            <div class="trend-axis" id="trend-axis"></div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>最近的日志 <span class="r"><a href="#" onclick="showGroup('logs');return false">看全部</a></span></h3>
-          <div class="body"><div class="log mini" id="mini-log"></div></div>
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:var(--gap-card)">
-        <div class="panel">
-          <h3>定时任务 <span class="r">它自己什么时候会动</span></h3>
-          <div class="body"><div id="sched-info" class="sched"></div></div>
-        </div>
-        <div class="panel">
-          <h3>它现在怎么看你 <span class="r" id="rel-next"></span></h3>
-          <div class="body"><div id="rel-block" class="prose"></div></div>
-        </div>
-      </div>
-    </section>
-    <section class="view" id="v-state">
-      <div class="state-top">
-        <div class="state-face">
-          <div class="state-avatar" id="st-avatar">?</div>
-          <div class="state-name" id="st-name">还没有名字</div>
-          <div class="state-phase" id="st-phase">—</div>
-        </div>
-        <div class="state-mood">
-          <div class="sm-k">此刻的心情</div>
-          <div class="sm-v" id="st-mood-emotion">—</div>
-          <div class="sm-bar"><i id="st-mood-bar" style="width:0%"></i></div>
-          <div class="sm-s" id="st-mood-at"></div>
-        </div>
-        <div class="state-rel">
-          <div class="sm-k">和 <b id="st-who">你</b> 的关系</div>
-          <div class="sm-v"><span id="st-rel-num">0</span><small>/100</small></div>
-          <div class="sm-s" id="st-rel-stage">—</div>
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:var(--gap-card)">
-        <div class="panel">
-          <h3>它现在在想什么</h3>
-          <div class="body">
-            <div class="state-think" id="st-thinking">（还没想）</div>
-            <div class="hint" id="st-about" style="margin-top:14px"></div>
-          </div>
-        </div>
-        <div class="panel">
-          <h3>它自己那边 <span class="r">和对话无关的生活</span></h3>
-          <div class="body" style="max-height:200px;overflow:auto"><div id="st-life"></div></div>
-        </div>
-      </div>
-
-      <div class="panel" style="margin-top:var(--gap-card)">
-        <h3>它发现的问题 <span class="r">扫日志扫出来的 · 有位置就能直接去改</span></h3>
-        <div class="body"><div id="st-issues"></div></div>
-      </div>
-
-      <div class="panel" style="margin-top:var(--gap-card)">
-        <h3>它最近在看什么 <span class="r" id="st-watch-conf"></span></h3>
-        <div class="body"><div id="st-watched"></div></div>
-      </div>
-      <div class="grid2" style="margin-top:var(--gap-card)">
-        <div class="panel">
-          <h3>它变过吗 <span class="r">自我认识明显变化时记录</span></h3>
-          <div class="body"><div id="st-drift"></div></div>
-        </div>
-      </div>
-
-
-      <div class="grid2" style="margin-top:var(--gap-card)">
-        <div class="panel">
-          <h3>它记着要问你的事 <span class="r" id="st-open-n"></span></h3>
-          <div class="body"><div id="st-open"></div></div>
-        </div>
-        <div class="panel">
-          <h3>今天的活动</h3>
-          <div class="body"><div id="st-today" class="sched"></div></div>
-        </div>
-      </div>
-    
-      <div class="panel" style="margin-top:var(--gap-card)"><h3>成本 <span class="r">按 token 估，实际以账单为准</span></h3>
-        <div class="body"><div class="kv" id="cost-total"></div></div>
-      </div>
-    </section>
-
     <section class="view" id="v-logs">
 
       <div class="panel">
@@ -998,43 +865,6 @@
           </div>
           <div class="log tall" id="full-log"></div>
         </div>
-      </div>
-    </section>
-
-    <section class="view" id="v-chat">
-      <div class="panel"><h3>对话 <span class="r" id="chat-date"></span></h3>
-        <div class="body">
-          <div class="row" style="margin-top:0;margin-bottom:12px">
-            <input type="date" id="date-pick" class="btn" style="color-scheme:dark">
-            <button class="btn" onclick="loadChat()">查看这一天</button>
-          </div>
-          <div id="chat-list"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="view" id="v-desktop">
-      <div class="card" style="margin-bottom:var(--gap-card)">
-        <div class="row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <b style="font-size:15px">电脑操作</b>
-          <span id="dk-state" class="tag">—</span>
-          <button class="mini-btn" onclick="loadDesktop()">刷新</button>
-          <button class="mini-btn" onclick="showGroup('tools', 1)">← 返回</button>
-        </div>
-        <div class="hint" id="dk-hint" style="margin-top:6px"></div>
-      </div>
-
-      <div class="card" style="margin-bottom:var(--gap-card)">
-        <div class="op-t" style="margin-bottom:8px">待你点头的操作</div>
-        <div class="hint" style="margin-bottom:8px">
-          点击、打字、按键这类会改变电脑状态的操作，先排在这里。点「允许」才真执行。
-        </div>
-        <div id="dk-pending"></div>
-      </div>
-
-      <div class="card">
-        <div class="op-t" style="margin-bottom:8px">最近的操作</div>
-        <div id="dk-log"></div>
       </div>
     </section>
 
@@ -1396,84 +1226,6 @@
       <div class="card"><div id="dl-list"></div></div>
     </section>
 
-    <section class="view" id="v-people">
-      <div class="card" style="margin-bottom:var(--gap-card)">
-        <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input id="pp-q" placeholder="搜名字 / QQ 号" style="flex:1;min-width:180px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">
-          <button class="mini-btn" onclick="loadPeople()">刷新</button>
-        </div>
-        <div class="hint" id="pp-head" style="margin-top:8px">加载中…</div>
-      </div>
-
-      <div id="pp-list"></div>
-
-      <details id="pp-cand-wrap" style="margin-top:14px">
-        <summary style="cursor:pointer;padding:6px 0;font-weight:600" id="pp-cand-head">还没建档的人</summary>
-        <div class="hint" style="margin:6px 0 8px">这些人只在群名单里出现过，还没聊过。点「建档」才会开始记。</div>
-        <div id="pp-cand-list"></div>
-      </details>
-    </section>
-
-    <section class="view" id="v-person">
-      <div class="card" style="margin-bottom:var(--gap-card)">
-        <div class="row" style="display:flex;gap:10px;align-items:flex-start">
-          <span id="pd-av" style="width:44px;height:44px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff"></span>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <b id="pd-name" style="font-size:16px"></b>
-              <button class="mini-btn" id="pd-rename">改名</button>
-              <button class="mini-btn danger" id="pd-del">删除档案</button>
-            </div>
-            <div class="hint" id="pd-acc" style="margin-top:2px"></div>
-            <div class="hint" id="pd-groups" style="margin-top:2px"></div>
-          </div>
-          <button class="mini-btn" onclick="backToPeople()">← 返回</button>
-        </div>
-      </div>
-
-      <div class="group-tabs" id="pd-tabs" style="margin-bottom:12px"></div>
-      <div id="pd-body"></div>
-    </section>
-
-    <section class="view" id="v-memory">
-      <div class="panel" style="margin-bottom:12px"><h3>他是谁 <span class="r">画像，整理时更新</span></h3>
-        <div class="body"><div id="m-profile" style="font-size:13px;line-height:1.8;white-space:pre-wrap"></div></div>
-      </div>
-      <div class="cols2">
-        <div class="panel"><h3>事实 <span class="r" id="m-facts-n"></span></h3><div class="body"><div id="m-facts"></div></div></div>
-        <div class="panel"><h3>待办 / 待确认 <span class="r" id="m-open-n"></span></h3><div class="body"><div id="m-open"></div></div></div>
-      </div>
-      <div class="cols2" style="margin-top:12px">
-        <div class="panel"><h3>经历 <span class="r" id="m-ep-n"></span></h3><div class="body" style="max-height:420px;overflow:auto"><div id="m-ep"></div></div></div>
-        <div class="panel"><h3>洞察 <span class="r" id="m-in-n"></span></h3><div class="body" style="max-height:420px;overflow:auto"><div id="m-in"></div></div></div>
-      </div>
-    </section>
-
-        <section class="view" id="v-relation">
-      <div class="rel-hero">
-        <div class="rel-ring-wrap">
-          <svg class="ring big" viewBox="0 0 160 160">
-            <circle class="ring-track" cx="80" cy="80" r="68" stroke-width="11" />
-            <circle class="ring-fill" id="r-ring" cx="80" cy="80" r="68" stroke-width="11" />
-          </svg>
-          <div class="rel-ring-center">
-            <div class="rel-num" id="r-num">0</div>
-            <div class="rel-of">/ 100</div>
-          </div>
-        </div>
-        <div class="rel-side">
-          <div class="stages" id="r-stages"></div>
-          <div class="rel-hint" id="r-hint"></div>
-          <div class="rel-mood" id="r-mood"></div>
-        </div>
-      </div>
-      <div class="panel" style="margin-top:var(--gap-card)">
-        <h3>锚点 <span class="r">每次变化都有理由</span></h3>
-        <div class="body" style="max-height:460px;overflow:auto">
-          <div class="timeline" id="r-anchors"></div>
-        </div>
-      </div>
-    </section>
 <section class="view" id="v-self">
       <div class="group-tabs" id="self-tabs"></div>
       <div id="self-body"></div>
@@ -1481,18 +1233,6 @@
 
 
     
-
-    <section class="view" id="v-history">
-      <div class="panel"><h3>人格快照 <span class="r">改动后自动保存，最多 50 份</span></h3>
-        <div class="body">
-          <div class="row" style="margin-top:0">
-            <button class="btn" onclick="act('snapshot')">立即快照</button>
-            <span class="hint">回滚前会自动把当前状态也存一份</span>
-          </div>
-          <div id="hist-list" style="margin-top:14px"></div>
-        </div>
-      </div>
-    </section>
 
     <section class="view" id="v-qzone">
       <div class="panel">
@@ -1511,30 +1251,6 @@
       </div>
     </section>
 
-
-    <section class="view" id="v-core">
-      <div class="panel">
-        <h3>我一定不能弄错的 <span class="r" id="core-head"></span></h3>
-        <div class="body">
-          <div class="hint" style="margin-bottom:10px">
-            这个文件<b>只有你能改</b>。它只读，但可以<b>提申请</b>。
-            这是故意的：让它自己判断"什么该永远记住"会膨胀成一堆。
-          </div>
-          <div id="core-list"></div>
-          <div style="margin-top:12px;display:flex;gap:8px">
-            <input id="core-input" class="chip-input" style="flex:1" placeholder="加一条（例：他讨厌被追问感受）" autocomplete="off">
-            <select id="core-kind" style="background:var(--bg);color:var(--text);border:1px solid var(--line-2);border-radius:6px;padding:6px">
-              <option>身份</option><option>边界</option><option>诺言</option><option>偏好</option>
-            </select>
-            <button class="btn" onclick="coreAdd()">加</button>
-          </div>
-        </div>
-      </div>
-      <div class="panel" style="margin-top:var(--gap-card)">
-        <h3>它提的申请 <span class="r" id="core-req-head"></span></h3>
-        <div class="body"><div id="core-req-list"></div></div>
-      </div>
-    </section>
 
     <section class="view" id="v-groups">
       <div id="groups-body"></div>
@@ -1968,33 +1684,16 @@ function runLoaders(viewId) {
   // 健康检查挪到测试组的「工具连通性」页
   if (viewId === 'v-tools-test') { if (typeof loadHealth === 'function') loadHealth() }
   if (viewId === 'v-ability') loadAbility()
-  if (viewId === 'v-plugins') window.renderPlugins?.()
-  if (viewId === 'v-data') window.loadData?.()
-  if (viewId === 'v-model') window.loadModel?.()
-  if (viewId === 'v-about') window.loadAbout?.()
   if (viewId === 'v-tools-test') window.loadToolTests?.()
   if (viewId === 'v-recall-test') window.loadRecallTest?.()
-  if (viewId === 'v-state') { loadStatus(); loadState() }
-  if (viewId === 'v-overview') { loadStatus(); loadTrend() }
-  if (viewId === 'v-relation') loadRelation()
-  if (viewId === 'v-people') loadPeople()
   if (viewId === 'v-members') window.loadMembers?.()
-  if (viewId === 'v-desktop') loadDesktop()
-  if (viewId === 'v-person') renderPersonDetail()
-  if (viewId === 'v-memory') loadMemory()
   if (viewId === 'v-search') $('search-input')?.focus()
   if (viewId === 'v-groups') window.loadGroups2?.()
-  if (viewId === 'v-core') loadCore()
   if (viewId === 'v-logs') loadStatus()
   if (viewId === 'v-napcat') window.loadNapcatLogin?.()
   if (viewId === 'v-desktop-log') loadDesktopLog()
-  if (viewId === 'v-chat') loadChat()
-  if (viewId === 'v-trend') loadTrend()
   if (viewId === 'v-self') loadSelfV2()
   if (viewId === 'v-qzone') loadQzone()
-  if (viewId === 'v-rules') loadRules()
-  if (viewId === 'v-access') loadAccessPolicy()
-  if (viewId === 'v-history') loadHistory()
 }
 
 // 绑在 aside 上而不是 #nav：手机端「更多」面板在 aside 里、不在 #nav 里，
@@ -2404,8 +2103,6 @@ function sendJson(path, body, method = 'POST') {
     body: JSON.stringify(body),
   })
 }
-let PD = null               // 当前详情缓存
-let PD_TAB = 'overview'
 
 function fmtAgo(ts) {
   if (!ts) return '没说过话'
@@ -2419,7 +2116,9 @@ function fmtAgo(ts) {
 async function loadPeople() {
   try {
     PEOPLE = await api('/api/people')
-    renderPeople()
+    // v-people 页面已删，没有 pp-list 就只更新数据、不渲染
+    // （createPersonFromGroup 还会调这里，不能让它因为找不到 DOM 而失败）
+    if ($('pp-list')) renderPeople()
   } catch (e) {
     const h = $('pp-head')
     if (h) h.textContent = '加载失败：' + e.message
@@ -2509,280 +2208,18 @@ async function createPerson(accountId, name) {
   }
 }
 
-function backToPeople() {
-  PD = null
-  location.hash = ''
-  showGroup('people', 0)
-  loadPeople()
-}
-
-// 浏览器前进/后退也要能切人：
-// location.hash 是我们唯一的路由状态，不监听它的话，
-// 后退按钮会让地址栏变回列表但页面还停在详情。
-window.addEventListener('hashchange', () => {
-  const m = /^#person\/(.+)$/.exec(location.hash)
-  if (m) {
-    const id = decodeURIComponent(m[1])
-    if (PD?.id !== id) loadPersonDetail(id)
-  } else if (PD) {
-    PD = null
-    if (currentGroup === 'people') showGroup('people', 0)
-  }
-})
-
 function openPerson(id) {
-  location.hash = 'person/' + id
-  currentGroup = 'people'
-  showGroup('people', 1)
-  loadPersonDetail(id)
+  // 旧的 v-person 详情页已废弃：openPerson 原来设 hash + showGroup('people',1)，
+  // 但那只切到「群」页，v-person 根本显示不出来（点人名等于没反应）。
+  // 现在统一开右侧抽屉（members.js 的 openMemberDrawer），和成员页一致。
+  const row = (PEOPLE.people || []).find((p) => p.id === id) || { id, 名字: id, 账号: '', 来源: [] }
+  if (typeof window.openMemberDrawer === 'function') {
+    window.openMemberDrawer(row)
+    return
+  }
+  // 兜底：members.js 没加载时别静默什么都不发生
+  toast('成员面板还没加载好，刷新一下页面')
 }
-
-async function loadPersonDetail(id) {
-  // 先清空：请求要几百毫秒，这段时间里页面不能还挂着上一个人的数据。
-  // 请求失败时也必须清空——否则点 B 加载失败，看到的会是 A 的内容（踩过）。
-  PD = null
-  PD_TAB = 'overview'
-  const av = $('pd-av')
-  if (av) {
-    av.textContent = '…'
-    av.style.background = 'var(--panel2)'
-  }
-  const tabs = $('pd-tabs')
-  if (tabs) tabs.innerHTML = ''
-  const body = $('pd-body')
-  if (body) body.innerHTML = ''
-  const name = $('pd-name')
-  if (name) name.textContent = '加载中…'
-  const acc = $('pd-acc')
-  if (acc) acc.textContent = ''
-  const grp = $('pd-groups')
-  if (grp) grp.textContent = ''
-
-  try {
-    PD = await api('/api/person/detail?id=' + encodeURIComponent(id))
-    PD_TAB = 'overview'
-    renderPersonDetail()
-  } catch (e) {
-    if (name) name.textContent = '加载失败'
-    if (acc) acc.textContent = e.message
-    if (grp) grp.textContent = '点「← 返回」看别人'
-  }
-}
-
-function renderPersonDetail() {
-  if (!PD) return
-  const av = $('pd-av')
-  av.textContent = (PD.名字 || '?').slice(0, 1)
-  av.style.background = avatarColor(PD.id)
-
-  $('pd-name').textContent = PD.名字
-  $('pd-acc').textContent = `账号 ${PD.账号} · ${(PD.账号列表 || []).length} 个`
-  $('pd-groups').textContent =
-    (PD.在群 || []).length
-      ? '在群：' + PD.在群.map((g) => `${g.groupId}（${g.名片}）`).join(' · ')
-      : '不在任何群名单里'
-
-  const tabs = [
-    ['overview', '概览'],
-    ['facts', `事实 ${(PD.事实 || []).length}`],
-    ['relation', '关系'],
-    ['profile', '画像'],
-    ['impression', '印象'],
-    ['open', `待问 ${(PD.待问 || []).length}`],
-    ['episodes', `经历 ${(PD.经历 || []).length}`],
-  ]
-  const bar = $('pd-tabs')
-  bar.innerHTML = ''
-  for (const [key, label] of tabs) {
-    const b = el('button', 'gtab' + (key === PD_TAB ? ' on' : ''), label)
-    b.onclick = () => {
-      PD_TAB = key
-      renderPersonDetail()
-    }
-    bar.appendChild(b)
-  }
-
-  const body = $('pd-body')
-  body.innerHTML = ''
-
-  if (PD_TAB === 'overview') {
-    body.appendChild(el('div', 'card', `关系 ${PD.关系.值}（${PD.关系.阶段}）· ` +
-      Object.entries(PD.关系.维度 || {}).map(([k, v]) => `${k} ${v} 件`).join(' · ')))
-    body.appendChild(el('div', 'hint', `锚点 ${PD.关系.锚点数} 个`))
-  }
-
-  if (PD_TAB === 'facts') {
-    const box = el('div', 'card')
-    if (!PD.事实.length) box.appendChild(el('div', 'empty', '还没有事实'))
-    for (const f of PD.事实) {
-      const i = el('div', 'item')
-      i.appendChild(el('div', 'txt', f.text))
-      i.appendChild(el('div', 'sub', `${f.date} · 置信 ${f.confidence} · ${f.tier === 'major' ? '重要' : '平常'}`))
-      box.appendChild(i)
-    }
-    body.appendChild(box)
-    body.appendChild(el('div', 'hint', '要改事实，去「记忆 → 记忆」页（那里能改能删）'))
-  }
-
-  if (PD_TAB === 'relation') {
-    const card = el('div', 'card')
-    card.appendChild(el('div', 'op-t', `关系 ${PD.关系.值} — ${PD.关系.阶段}`))
-
-    const slider = el('input')
-    slider.type = 'range'
-    slider.min = '0'
-    slider.max = '100'
-    slider.value = String(PD.关系.值)
-    slider.style.cssText = 'width:100%;margin:12px 0'
-    const label = el('span', 'hint', String(PD.关系.值))
-    slider.oninput = () => (label.textContent = slider.value)
-    card.appendChild(slider)
-    card.appendChild(label)
-
-    const save = el('button', 'mini-btn', '保存关系')
-    save.style.marginTop = '10px'
-    save.onclick = async () => {
-      try {
-        await sendJson('/api/person/relation', { id: PD.id, closeness: Number(slider.value) }, 'PUT')
-        toast('已保存')
-        await loadPersonDetail(PD.id)
-      } catch (e) {
-        alert('失败：' + e.message)
-      }
-    }
-    card.appendChild(save)
-
-    card.appendChild(el('div', 'hint', '四维（信任/亲密/好奇/依赖）只记「发生过什么事」，没有分数，所以不能直接改。'))
-
-    body.appendChild(card)
-  }
-
-  if (PD_TAB === 'impression') {
-    // 它怎么称呼这个人（称呼由它自己取，你填的只是建议）
-    const c = el('div', 'card')
-    c.appendChild(el('div', 'op-t', '它怎么叫他'))
-
-    if (PD.称呼) {
-      c.appendChild(el('div', 'self-item', '它现在叫：「' + PD.称呼 + '」'))
-    } else {
-      c.appendChild(el('div', 'self-item muted', '它还没给他起称呼。下次自我反思时会想一个。'))
-    }
-
-    const row = el('div', 'self-field')
-    row.style.marginTop = '10px'
-    row.appendChild(el('label', '', '建议'))
-    const inp = el('input', 'self-input')
-    inp.value = PD.称呼建议 || ''
-    inp.placeholder = '你希望它怎么叫他（留空 = 不给建议）'
-    row.appendChild(inp)
-    const save = el('button', 'mini-btn', '保存建议')
-    save.onclick = async () => {
-      try {
-        await sendJson('/api/person/callname', { id: PD.id, suggested: inp.value.trim() }, 'PUT')
-        toast('建议已保存（它可能不采用）')
-        await loadPersonDetail(PD.id)
-      } catch (e) {
-        alert('失败：' + e.message)
-      }
-    }
-    row.appendChild(save)
-    c.appendChild(row)
-    c.appendChild(
-      el('div', 'hint', '称呼由它自己取；你填的只是建议，它完全可以叫自己想叫的。'),
-    )
-    body.appendChild(c)
-  }
-
-  if (PD_TAB === 'profile' || PD_TAB === 'impression') {
-    const isProfile = PD_TAB === 'profile'
-    const card = el('div', 'card')
-    card.appendChild(el('div', 'op-t', isProfile ? '画像（一段话）' : '我对他的印象'))
-
-    const ta = el('textarea')
-    ta.value = isProfile ? PD.画像 || '' : PD.印象 || ''
-    ta.rows = 8
-    ta.style.cssText = 'width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--text);font-size:13px;line-height:1.6;margin-top:8px'
-    card.appendChild(ta)
-
-    const save = el('button', 'mini-btn', '保存')
-    save.style.marginTop = '10px'
-    save.onclick = async () => {
-      try {
-        await sendJson(isProfile ? '/api/person/profile' : '/api/person/impression', { id: PD.id, text: ta.value }, 'PUT')
-        toast('已保存')
-        await loadPersonDetail(PD.id)
-      } catch (e) {
-        alert('失败：' + e.message)
-      }
-    }
-    card.appendChild(save)
-
-    body.appendChild(card)
-  }
-
-  if (PD_TAB === 'open') {
-    const box = el('div', 'card')
-    if (!PD.待问.length) box.appendChild(el('div', 'empty', '没有待问的事'))
-    for (const o of PD.待问) {
-      const i = el('div', 'item')
-      i.appendChild(el('div', 'txt', o.text))
-      i.appendChild(el('div', 'sub', o.at || ''))
-      box.appendChild(i)
-    }
-    body.appendChild(box)
-  }
-
-  if (PD_TAB === 'episodes') {
-    const box = el('div', 'card')
-    if (!PD.经历.length) box.appendChild(el('div', 'empty', '还没有经历'))
-    for (const e of PD.经历.slice().reverse()) {
-      const i = el('div', 'item')
-      i.appendChild(el('div', 'txt', `${e.title || '（没有标题）'}`))
-      i.appendChild(el('div', 'sub', `${e.date} · 重要度 ${e.importance}${e.emotion ? ' · ' + e.emotion : ''}`))
-      box.appendChild(i)
-    }
-    body.appendChild(box)
-  }
-}
-
-// 改名 / 删除
-document.addEventListener('DOMContentLoaded', () => {
-  const rn = $('pd-rename')
-  if (rn) {
-    rn.onclick = async () => {
-      if (!PD) return
-      const name = await askText('新的名字（全局名，群名片不受影响）', PD.名字)
-      if (name === null) return
-      const v = name.trim()
-      if (!v) return alert('名字不能空')
-      try {
-        await sendJson('/api/person/name', { id: PD.id, name: v }, 'PUT')
-        toast('改好了')
-        await loadPersonDetail(PD.id)
-        await loadPeople()
-      } catch (e) {
-        alert('失败：' + e.message)
-      }
-    }
-  }
-
-  const del = $('pd-del')
-  if (del) {
-    del.onclick = async () => {
-      if (!PD) return
-      if (!confirm(`删掉「${PD.名字}」的整个档案？\n\n事实、画像、印象、关系、待问、经历都会没。\n删之前会自动存一张快照，能回滚。`)) return
-      if (!confirm('再确认一次：真的删？')) return
-      try {
-        await api('/api/person?id=' + encodeURIComponent(PD.id), { method: 'DELETE' })
-        toast('已删除')
-        showGroup('people', 0)
-        await loadPeople()
-      } catch (e) {
-        alert('失败：' + e.message)
-      }
-    }
-  }
-})
 
 // ============================================================
 // 自我（7 个子栏）
@@ -5473,9 +4910,8 @@ async function loadDesktop() {
 // ---------- 群成员页跳转到人物详情 ----------
 function openPersonFromGroup(personId) {
   if (!personId) return
-  location.hash = 'person/' + personId
-  showGroup('people', 1)
-  loadPersonDetail(personId)
+  // v-person 页面已删，统一走抽屉
+  openPerson(personId)
 }
 
 async function createPersonFromGroup(accountId, name) {

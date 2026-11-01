@@ -5,7 +5,12 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const html = readFileSync('console/index.html', 'utf8')
-const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? ''
+// 匹配**所有**内联 <script> 块再拼起来。
+// 之前是非贪婪的单个 match，只取到第一个块（页面头部的配置），
+// 函数全在第三个块里，于是 5 个检查永远误报「缺少」。
+const script = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g))
+  .map((m) => m[1] ?? '')
+  .join('\n')
 
 /* ---------- 1. DOM id 引用 ---------- */
 const definedIds = new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g)).map((m) => m[1]!))

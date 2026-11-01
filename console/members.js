@@ -413,6 +413,56 @@
     }
 
     if (DRAW.tab === 'impression') {
+      // 它怎么称呼这个人：称呼由它自己取，你填的只是建议
+      {
+        const cc = document.createElement('div')
+        cc.className = 'card'
+        cc.style.marginBottom = '10px'
+        cc.appendChild(
+          Object.assign(document.createElement('div'), { className: 'op-t', textContent: '它怎么叫他' }),
+        )
+        const cur = document.createElement('div')
+        cur.style.cssText = 'font-size:13px;margin-top:6px'
+        if (DRAW.detail && DRAW.detail.称呼) {
+          cur.textContent = '它现在叫：「' + DRAW.detail.称呼 + '」'
+        } else {
+          cur.className = 'hint'
+          cur.textContent = '它还没给他起称呼。下次自我反思时会想一个。'
+        }
+        cc.appendChild(cur)
+
+        const row = document.createElement('div')
+        row.className = 'self-field'
+        row.style.marginTop = '10px'
+        row.appendChild(Object.assign(document.createElement('label'), { textContent: '建议' }))
+        const inp = document.createElement('input')
+        inp.className = 'self-input'
+        inp.value = (DRAW.detail && DRAW.detail.称呼建议) || ''
+        inp.placeholder = '你希望它怎么叫他（留空 = 不给建议）'
+        row.appendChild(inp)
+        const saveCall = document.createElement('button')
+        saveCall.className = 'mini-btn'
+        saveCall.textContent = '保存建议'
+        saveCall.onclick = async () => {
+          try {
+            await sendJson('/api/person/callname', { id: DRAW.person.id, suggested: inp.value.trim() }, 'PUT')
+            toast('建议已保存（它可能不采用）')
+            loadDrawerData().then(renderDrawerBody)
+          } catch (e) {
+            alert('失败：' + e.message)
+          }
+        }
+        row.appendChild(saveCall)
+        cc.appendChild(row)
+        cc.appendChild(
+          Object.assign(document.createElement('div'), {
+            className: 'hint',
+            textContent: '称呼由它自己取；你填的只是建议，它完全可以叫自己想叫的。',
+          }),
+        )
+        box.appendChild(cc)
+      }
+
       const d = DRAW.detail
       const c = document.createElement('div')
       c.className = 'card'
