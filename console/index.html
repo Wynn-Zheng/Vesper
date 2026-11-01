@@ -2859,7 +2859,11 @@ function renderSelfCardPage(body, d) {
     dI.oninput = syncBirthday
     form.appendChild(row2)
 
+    // 这里的 c 才是真正挂到页面的容器（见下面 body.appendChild(c)）。
+    // ⚠️ 别只往 form 里 append：form 是早期实现的残留容器，从来没被挂到 DOM，
+    //    往里加的东西不会显示（"日常称呼"就是这么丢的）。
     c.appendChild(row1)
+    c.appendChild(rowCall)
     c.appendChild(row2)
     c.dataset.save = 'name'
     card._el = c
