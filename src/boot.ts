@@ -193,6 +193,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
     replyTimes.set(scope, arr)
     return arr.length
   }
+
+  /** 距这个会话上一次回复多少秒；还没回过就是 undefined */
+  const lastReplyAgoSec = (scope: string): number | undefined => {
+    const arr = replyTimes.get(scope) ?? []
+    const last = arr[arr.length - 1]
+    return last === undefined ? undefined : (Date.now() - last) / 1000
+  }
   let consecutiveFailures = 0
 
 
@@ -305,6 +312,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
         text,
         idleMinutes: (Date.now() - lastTalkAt(m.from)) / 60_000,
         recentReplies: recentReplyCount(scopeOf(m.from)),
+        lastReplyAgoSec: lastReplyAgoSec(scopeOf(m.from)),
         talkValue: talkValueOf(rules),
       })
       if (Math.random() > score.probability) {
@@ -392,13 +400,25 @@ export function boot(transport: Transport, opts: BootOptions): void {
       info(`→ ${who}：${ids.length} 条`)
 
       if (opts.llm) {
-        evaluateTurn({
-          rules,
-          llm: opts.llm,
-          personId: personOfMessage(m),
-          userText: text,
-          selfText: reply.trim(),
-        })
+        // 评估是每条回复后一次模型调用（再叠加自评/自审，单条最多 4 次）。
+        // 给个每日额度：超了就跳过评估，心情保持原样——不影响回话，只是不再"长"。
+        const evalConf = rules.关系.评估
+        const evalPerson = personOfMessage(m)
+        if (evalConf?.开启 === false) {
+          /* 配置里关掉了 */
+        } else if (
+          allow(`eval:${evalPerson}`, Math.max(0, Number(evalConf?.每天最多 ?? 300)), 86_400_000)
+        ) {
+          evaluateTurn({
+            rules,
+            llm: opts.llm,
+            personId: evalPerson,
+            userText: text,
+            selfText: reply.trim(),
+          })
+        } else {
+          warnAt('关系/心情评估今日额度已用完，本轮跳过', { 对象: evalPerson })
+        }
         // 发完给自己这条打个分（异步，不挡后面的消息）。
         // 短回复没什么好评的，跳过省钱；可以用 rules.yaml 整体关掉。
         if (rules.行为.回复自评 !== false && reply.trim().length > 6) {

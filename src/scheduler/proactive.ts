@@ -19,6 +19,7 @@ import { loadSelf, recentLife } from '../self/store.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { effectiveWill } from '../self/will.ts'
 import { say } from '../channel/send.ts'
+import { maybeSendEmojiTo } from '../loop/chat.ts'
 
 /**
  * 主动消息。
@@ -38,6 +39,14 @@ import { say } from '../channel/send.ts'
  *      所以陌生阶段也不能完全闭嘴（原来 dailyMax=0 会造成永久死锁）。
  */
 
+/**
+ * 主动消息状态。
+ *
+ * ⚠️ 目前是**全局单份**，因为主动消息只对「主人私聊」一个 target 起调度
+ * （`src/index.ts` 的 `startProactive`）。**加第二个对象时必须改成
+ * `Record<targetId, {...}>`** —— 否则两个对象的每日额度、`noReply` 刹车
+ * 和"上次说了什么"会互相污染，而且到那时再改要迁移已有数据。
+ */
 interface ProactiveState {
   date: string
   count: number
@@ -234,6 +243,21 @@ export function computeUrge(i: UrgeInput): { score: number; reasons: string[] } 
   if (i.staleMajorFact) {
     score += 1
     reasons.push('记得他提过一件重要的事')
+  }
+
+  // 早晚问候：今天还没说过话的早上 / 深夜，给一个轻声开口的由头。
+  // 注意这是"由头"不是"定时任务"——仍然要过 minUrge 和 gap 门槛，
+  // 不会变成"每天 8 点准时发早安"的机器人。
+  const hour = i.now.getHours()
+  const dayStart = new Date(i.now)
+  dayStart.setHours(0, 0, 0, 0)
+  const spokeToday = i.lastTalkAt >= dayStart.getTime()
+  if (!spokeToday && hour >= 7 && hour < 10) {
+    score += 2
+    reasons.push('早上了，还没跟他说过话')
+  } else if (!spokeToday && (hour >= 23 || hour < 1)) {
+    score += 2
+    reasons.push('很晚了，他还没睡')
   }
 
   return { score: Math.min(10, score), reasons }
@@ -544,6 +568,8 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
 
   // 和正常回复走同一条发送路径：分句、条间延迟，手感才一致
   await say(opts.transport, opts.target, text, rules)
+  // 主动消息也配表情包：和被动回复同一个概率门（心情越强越容易发）
+  await maybeSendEmojiTo(opts.target, rules)
   saveState({ date: todayKey(), count: state.count + 1, lastAt: Date.now(), lastText: text, noReply: noReply + 1 })
   info('主动消息已发送', { text, 由头: urge.reasons.join('、'), 连续没回: noReply + 1 })
 

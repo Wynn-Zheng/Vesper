@@ -2,13 +2,13 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
-import type { Incoming } from '../core/types.ts'
+import type { Incoming, Target } from '../core/types.ts'
 import { sendImage, splitBySentence } from '../channel/send.ts'
 import { matchKeywordReactions, renderKeywordReactions } from './keyword.ts'
 import { pickEmoji } from '../emoji/pick.ts'
 import { createEmojiStore, type EmojiStore } from '../emoji/store.ts'
 import { chat } from '../llm/deepseek.ts'
-import { describeImages, renderImages } from '../llm/vision.ts'
+import { describeImagesDetailed, renderImages } from '../llm/vision.ts'
 import type { ChatMessage, LlmOptions, ToolSpec } from '../llm/types.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
 import { recall, renderRecalled, similarity } from '../memory/recall.ts'
@@ -175,7 +175,13 @@ async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<voi
  * 现在按概率决定，心情强时概率更高（心情本身就是"想表达"的信号）。
  * 概率 0 就等于完全关掉（不用改 `开启`）。
  */
-export async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
+/**
+ * 给任意会话发一个表情包。
+ *
+ * 抽出来是因为**主动消息也要能发**：原来只收 `Incoming`，主动消息没有入站对象，
+ * 于是主动那边永远只发纯文字（D9 那条"主动配表情包"其实是 0）。
+ */
+export async function maybeSendEmojiTo(to: Target, rules: Rules): Promise<void> {
   const limit = Math.max(0, Math.floor(rules.表情包.每条最多))
   if (!rules.表情包.开启 || limit === 0) return
 
@@ -196,7 +202,7 @@ export async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
     const item = pickEmoji(await store.list(), mood)
     if (!item) return
 
-    await sendImage(m.from, join(EMOJI_ROOT, item.file))
+    await sendImage(to, join(EMOJI_ROOT, item.file))
     await store.touch(item.id)
     info('发了表情包', { file: item.file, 心情: mood, 概率: chance.toFixed(2) })
   } catch (err) {
@@ -204,6 +210,11 @@ export async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
       err: err instanceof Error ? err.message : String(err),
     })
   }
+}
+
+/** 被动回复用：从入站消息里取会话 */
+export async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
+  return maybeSendEmojiTo(m.from, rules)
 }
 
 /** 一次完整回合：system(人格+关系+画像+记忆) + 历史 + 本轮 → 模型 → 记入会话 */
@@ -223,6 +234,12 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 组装前记下这次注入了哪些"待提的问题"，回复完就标记已提，
   // 免得同一件事每轮都挂在 prompt 里。
   const pendingIssueKeys = unmentionedIssues().map((i) => i.key)
+
+  // 距上一次说话多少小时（用会话里最后一条的时间）。
+  // 注意要在 pushTurn 本轮之前算，否则量到的就是 0。
+  const prevTurns = getTurns(key)
+  const prevAt = prevTurns.length ? prevTurns[prevTurns.length - 1]?.at : undefined
+  const gapHours = prevAt ? (m.at - prevAt) / 3_600_000 : null
 
   const recalled = recall({
     personId,
@@ -267,6 +284,12 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
         // 它自己给这人起的称呼（没有就回落到 rules.yaml 的 关系.昵称）
         callName: loadPerson(personId)?.callName,
       }),
+      // 隔了多久没说话：以前只有主动消息算这个，正常对话里它不知道
+      // "你们上次说话是 6 天前"，于是只会像刚才那样接话。
+      // 阈值 2 小时：刚聊完的间隔没必要说，说了反而奇怪。
+      gapHours !== null && gapHours >= 2
+        ? `距离上次说话：${Math.round(gapHours)} 小时（${gapHours >= 48 ? '隔了挺久' : '不算久'}）`
+        : '',
       groupBlock,
     ]
       .filter((s) => s.trim())
@@ -310,15 +333,23 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
 
   // 有图且有视觉模型：先"看"成文字，再混进这一轮的内容。
   // 主模型是纯文本的也照样能用——它读到的是描述，不是图。
+  //
+  // 几张图并发看，整批有总预算；没看成的（下载失败/超时）也要写进内容，
+  // 否则模型只看到 [图片]，会以为图好好的，答得跟真看见了一样。
   if (m.images?.length && opts.rules.视觉?.开启) {
     const visionModel = opts.rules.视觉.模型 || process.env.DEEPSEEK_VISION_MODEL || 'deepseek-v4-flash-vision-exp'
-    const notes = await describeImages(m.images.slice(0, opts.rules.视觉.最多张数), {
-      ...opts.llm,
-      model: visionModel,
-    })
-    if (notes.length) {
-      userContent += `\n${renderImages(notes)}`
-      info(`看了 ${notes.length} 张图`)
+    const batch = await describeImagesDetailed(
+      m.images.slice(0, opts.rules.视觉.最多张数),
+      {
+        ...opts.llm,
+        model: visionModel,
+      },
+      opts.rules.视觉.总预算毫秒,
+    )
+    if (batch.notes.length || batch.failed.length) {
+      userContent += `\n${renderImages(batch.notes, batch.failed)}`
+      if (batch.notes.length) info(`看了 ${batch.notes.length} 张图`)
+      if (batch.failed.length) info(`${batch.failed.length} 张图没看成，已在 prompt 里说明`)
     }
   }
 
@@ -402,7 +433,14 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     // 之前只在注册时按 rules 判断有没有这类工具，没判断是谁在调用：
     // 群里任何成员说一句「截屏发我」就能把主人的整屏发到群里。
     const LOCAL_TOOL = /^(screenshot|clipboard_|send_image|desktop_|mouse_|keyboard_|window_|open_)/
-    const isOwner = loadPerson(personId)?.role === '主人'
+    // 主人判定：档案里的角色，或直接命中 OWNER_QQ。
+    // 只认 role 不够稳：老数据的 role 是空的（历史 bug：建档时把「主人」当名字传了），
+    // 那种环境下本机类工具对主人也会拒绝。OWNER_QQ 是配置里明写的，按账号认人兜底。
+    // 注意：这里只放宽"谁算主人"，私聊限制仍然生效（群里照样不能截屏）。
+    const ownerQQ = String(process.env['OWNER_QQ'] ?? '').trim()
+    const isOwner =
+      loadPerson(personId)?.role === '主人' ||
+      (ownerQQ !== '' && String(m.senderId ?? '') === ownerQQ)
     const inPrivate = !scope.startsWith('group:')
     for (const c of res.toolCalls) {
       let content: string
@@ -454,6 +492,19 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   }
 
   const out = sendable
+  // 和最近几条说过的话太像：这次干脆不说（比复读一次好）。
+  //
+  // 之前只有 detectRepeat 的"提示"——把"你刚才说过类似的"塞进 prompt，
+  // 模不模型听不听是随缘。这里做硬拦截：宁可这轮沉默（boot 会记“无回复内容”），
+  // 也不发一句"我昨天就说过这个"。
+  // 两个保守条件：回复 ≥15 字（"嗯""好"本来就容易撞）、相似度 >0.85。
+  if (
+    out.trim().length >= 15 &&
+    prevTurns.some((t) => t.role === 'assistant' && similarity(t.content, out) > 0.85)
+  ) {
+    info('回复和最近太像，这次不说了', { 片段: out.slice(0, 30) })
+    return ''
+  }
   // 这轮把"待提的问题"注入过 prompt 了，标记一下，别让它每轮都挂在那儿
   // 只有真说出话（非空回复）才算"提过了"：模型选择沉默/空回复时
   // 之前也会标已提，之后这个问题永远不会再被问起。

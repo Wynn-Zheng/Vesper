@@ -144,9 +144,39 @@ export function splitBySentence(text: string, maxLen: number, maxParts: number):
   return sized.slice(0, partsMax)
 }
 
+/**
+ * 出站兜底：只拦「疑似泄漏凭据」，不改写正常回复。
+ *
+ * 为什么只拦凭据、不拦"自曝是 AI"：
+ *   `persona/rules.yaml` 的 `人格.不假装: true` 明确允许它承认自己不是人
+ *   （不知道就说不知道）。拦"我是 AI"会和这条设定打架。
+ *
+ * 为什么不拦脏话：入站 `消息过滤.屏蔽词` 是给"用户骂它"用的；
+ *   出站拦脏话很容易把"它复述用户的话"误杀，等有真需求再加。
+ *
+ * 命中就替换成 [已隐藏]，不整条丢弃 —— 一句话里夹了个 key，
+ * 不该让整句话消失（用户会以为它掉线了）。
+ */
+const LEAK_PATTERNS: RegExp[] = [
+  // OpenAI / DeepSeek 风格的 key
+  /\bsk-[A-Za-z0-9_-]{16,}/g,
+  // KEY=VALUE / api_key: value
+  /\b[A-Z][A-Z0-9_]*_?(?:API_?KEY|TOKEN|SECRET)\s*[:=]\s*\S+/gi,
+  // PEM 私钥
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+]
+
+export function redactSecrets(text: string): string {
+  let out = text
+  for (const re of LEAK_PATTERNS) out = out.replace(re, '[已隐藏]')
+  return out
+}
+
 /** 分句 + 间隔发送。返回实际发出的每条消息 id（平台支持时）。 */
 export async function say(t: Transport, to: Target, text: string, rules: Rules): Promise<string[]> {
-  const parts = splitBySentence(text, rules.说话.每条最多字数, rules.说话.每轮最多条数)
+  // 出站兜底：模型被套话时可能吐出 key / 私钥，发出去就收不回了
+  const safe = redactSecrets(text)
+  const parts = splitBySentence(safe, rules.说话.每条最多字数, rules.说话.每轮最多条数)
   const ids: string[] = []
   for (let i = 0; i < parts.length; i++) {
     if (i > 0) await sleep(rand(rules.说话.条间延迟))

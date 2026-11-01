@@ -1,4 +1,4 @@
-﻿import type { Rules } from '../core/config.ts'
+import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
@@ -211,7 +211,15 @@ async function evaluate(opts: EvaluateOptions): Promise<void> {
   )
 
   const data = parse(res.text)
-  if (!data) return
+  if (!data) {
+    // 静默跳过会让"关系/心情都不动"变得无法解释（用户看起来就是"它今天没反应"）。
+    // 至少留一条可查的日志；连续失败时控制台能看出来。
+    warnAt('关系/心情评估返回的不是 JSON，本轮跳过', {
+      对象: opts.personId,
+      片段: res.text.replace(/\s+/g, ' ').slice(0, 80),
+    })
+    return
+  }
 
   const state = loadRelation(opts.personId)
   let next = state

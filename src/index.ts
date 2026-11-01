@@ -13,7 +13,7 @@ import { loadAccess } from './core/access.ts'
 import { generateReply } from './loop/chat.ts'
 import { pruneSessions } from './loop/session.ts'
 import type { LlmOptions } from './llm/types.ts'
-import { ensurePerson, loadPerson, personIdOf } from './people/store.ts'
+import { ensurePerson, loadPerson, personIdOf, savePerson } from './people/store.ts'
 import { startCodeMapRefresher, startDistiller } from './scheduler/distiller.ts'
 import { startProactive } from './scheduler/proactive.ts'
 import { loadSelf } from './self/store.ts'
@@ -24,9 +24,132 @@ import { startSelfReflect } from './self/reflect.ts'
 import { startObserving } from './self/observe.ts'
 import { startWatching } from './outward/watch.ts'
 import { startEmojiTagger } from './scheduler/emoji-tagger.ts'
-import { watchFile } from 'node:fs'
+import { startWatchdog, watchdogStatus } from './napcat/manager.ts'
+import { mkdirSync, readFileSync, rmSync, watchFile, writeFileSync } from 'node:fs'
+import { hostname } from 'node:os'
 
 initLog()
+
+/* ============================================================
+ * 单实例锁
+ *
+ * 之前全库没有锁：第二个实例照样把控制台起起来，但 WS 端口被第一个占着，
+ * 它 listen 失败后进程还活着 —— 表现就是"能开控制台、收不到消息"。
+ * 现在启动第一件事就是抢锁：抢不到就明确报错退出（exit code 1）。
+ * ============================================================ */
+
+const PID_FILE = 'data/.pid'
+
+interface PidLock {
+  pid: number
+  startedAt: string
+  hostname?: string
+}
+
+/** 读锁文件；文件坏了/形状不对一律当"没有锁"（返回 null），由调用方按陈旧锁清掉 */
+function readPidLock(): PidLock | null {
+  try {
+    const raw = JSON.parse(readFileSync(PID_FILE, 'utf8')) as Partial<PidLock>
+    if (typeof raw.pid !== 'number' || !Number.isInteger(raw.pid) || raw.pid <= 0) return null
+    return {
+      pid: raw.pid,
+      startedAt: typeof raw.startedAt === 'string' ? raw.startedAt : '',
+      ...(typeof raw.hostname === 'string' ? { hostname: raw.hostname } : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
+/** pid 还活着吗。EPERM = 进程在但没权限动它，也算活着。 */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** 删锁。只删自己的：锁被别的实例换掉之后，退出时绝不能把它的锁删了。 */
+function releasePidLock(): void {
+  const cur = readPidLock()
+  if (cur && cur.pid !== process.pid) return
+  try {
+    rmSync(PID_FILE, { force: true })
+  } catch {
+    /* 删不掉就留给下次当陈旧锁处理 */
+  }
+}
+
+/**
+ * 抢单实例锁。
+ *
+ * 用 `wx` 原子创建，而不是"先 existsSync 再写"：两个实例同时启动时，
+ * 后者会拿到 EEXIST，而不是把前者的锁覆盖掉。
+ * 陈旧锁（pid 不存在 / 文件坏了 / pid 就是自己）会自动清掉再抢。
+ */
+function acquirePidLock(): { ok: true; warning?: string } | { ok: false; existing: PidLock | null } {
+  try {
+    mkdirSync('data', { recursive: true })
+  } catch {
+    /* 建不了目录的话下面写锁会失败，按"没有锁"处理，不挡启动 */
+  }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const body: PidLock = {
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+      hostname: hostname(),
+    }
+    try {
+      writeFileSync(PID_FILE, `${JSON.stringify(body, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+      return { ok: true }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'EEXIST') {
+        // 写不了锁文件（只读目录 / 权限）：单实例保护失效，但不该因此起不来
+        return { ok: true, warning: `写不了单实例锁 ${PID_FILE}：${String(err).slice(0, 120)}` }
+      }
+      const existing = readPidLock()
+      if (!existing) {
+        // 锁文件坏了 / 不是我们的格式：当陈旧锁清掉
+        try {
+          rmSync(PID_FILE, { force: true })
+        } catch {
+          /* ignore */
+        }
+        continue
+      }
+      // 活着的、不是自己的 → 真有第二个实例
+      if (existing.pid !== process.pid && pidAlive(existing.pid)) return { ok: false, existing }
+      // 陈旧锁：写锁的进程已经不在了（或者是被系统复用的本进程 pid）
+      try {
+        rmSync(PID_FILE, { force: true })
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return { ok: false, existing: readPidLock() }
+}
+
+const pidLock = acquirePidLock()
+if (!pidLock.ok) {
+  const who = pidLock.existing
+  errorAt(`已有实例在跑（pid ${who?.pid ?? '未知'}），本进程退出`, {
+    启动于: who?.startedAt ?? '',
+    主机: who?.hostname ?? '',
+    本进程: process.pid,
+    提示: '同一份数据只能跑一个实例。确认它没在跑的话，删掉 data/.pid 再启动',
+  })
+  process.exit(1)
+} else if (pidLock.warning) {
+  warnAt(pidLock.warning)
+} else {
+  // SIGINT/SIGTERM 的处理器最后会 process.exit(0)，'exit' 事件会跟着触发，锁能删掉
+  process.on('exit', releasePidLock)
+}
 
 // 老版本的 life/plays/jargon/mood 是全局文件；现在按角色卡隔离。
 // 启动时把当前卡对应的那份复制到 cards/<id>/ 下（只复制，不删原文件）。
@@ -153,8 +276,23 @@ let llm: LlmOptions | undefined
 let toolRegistry: ToolRegistry | null = null
 
 const ownerQQ = process.env['OWNER_QQ'] || undefined
-if (ownerQQ && !loadPerson(personIdOf('qq', ownerQQ))) {
-  ensurePerson('qq', ownerQQ, '主人')
+if (ownerQQ) {
+  // ensurePerson 的第三个参数是**名字**，不是角色。历史上这里被当成 role 传了，
+  // 所以新装环境下主人档案的 role 一直是空的 → 本机类工具（截图/桌面）对主人也拒绝。
+  //
+  // 这里只在 role **没写过**时补「主人」：
+  //   - 新建档：第一次就写对
+  //   - 老数据 role 缺失/空串：顺手修好（幂等，已经有了就不再写盘）
+  //   - role 是非空的别的值（用户在控制台手改过）：不动它，尊重用户的选择 ——
+  //     「主人能用本机工具」由 chat.ts 里 isOwner 的 OWNER_QQ 兜底，不靠强写 role。
+  const ownerId = personIdOf('qq', ownerQQ)
+  const person = loadPerson(ownerId) ?? ensurePerson('qq', ownerQQ, '主人')
+  if (!person.role) {
+    savePerson({ ...person, role: '主人' })
+    info(`主人档案已标记：${person.name}`, { 档案: person.id, 角色: '主人' })
+  } else if (person.role !== '主人') {
+    info(`主人档案的 role 是「${person.role}」（控制台手改过，不覆盖；本机工具靠 OWNER_QQ 兜底）`)
+  }
 }
 
 if (apiKey) {
@@ -399,10 +537,15 @@ await startConsole({
       transport,
       // 端口被占用时 WebSocketServer 不会 reject，start() 照样 resolve —— 
       // 把 startError 暴露给状态接口，控制台能显示"通道没起来"。
-      getChannelStatus: () => ({
-        connected: transport.connected === true,
-        startError: (transport as { startError?: string | null }).startError ?? null,
-      }),
+      getChannelStatus: () => {
+        const base: { connected: boolean; startError: string | null } = {
+          connected: transport.connected === true,
+          startError: (transport as { startError?: string | null }).startError ?? null,
+        }
+        // 看门狗状态一起上报：/api/status 的 channel.watchdog 里能看到
+        // 它有没有在计时、重启过几次、为什么压着不动手。
+        return Object.assign(base, { watchdog: watchdogStatus() })
+      },
       // 插件注册的工具（manifest 里 type: tool 的那些）挂进工具注册表，
       // 这样模型才能真正调用它们 —— 否则插件只是"装上了但用不上"。
       onPluginTools: (tools) => {
@@ -420,6 +563,14 @@ await startConsole({
 } catch (err) {
   warnAt('控制台启动失败，不影响聊天', { err: String(err) })
 }
+
+// NapCat 掉线看门狗：WS 连续几分钟没连上（NapCat/QQ 掉线）就自动重启 NapCat。
+// 判定依据、冷却策略见 src/napcat/manager.ts 的「掉线看门狗」一节；
+// 开关是 rules.yaml 的 NapCat.掉线重启（默认开，控制台改完不用重启进程就生效）。
+startWatchdog({
+  isConnected: () => transport.connected === true,
+  startError: () => (transport as { startError?: string | null }).startError ?? null,
+})
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {

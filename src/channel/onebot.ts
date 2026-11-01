@@ -160,23 +160,60 @@ export function extractText(message: OBEvent['message']): string {
 
 
 /**
- * 从 message 段里抽出图片地址。
- * OneBot 的 image 段一般有 url（临时链接，有时效）或 file（本地路径）。
- * 没有地址的（只给了 file 名的）就跳过，宁可当没图也别传个坏链接。
+ * 这个引用是不是本机文件路径（而不是 URL / base64）。
+ *
+ * OneBot 的 image 段里 `file` 大多数时候只是个文件名（`a1b2c3.jpg`），
+ * 那拼不出能读的路径，只能靠 `url`；但 NapCat 在本地缓存/下载过之后
+ * 会给绝对路径（`C:\...\nt_temp\x.jpg`、`/root/.../x.png`、`file:///...`），
+ * 这种能直接读，而且不像 QQ 的临时链接那样两小时就过期。
+ */
+function isLocalImageRef(ref: string): boolean {
+  const v = ref.trim()
+  if (!v) return false
+  if (/^file:\/\//i.test(v)) return true
+  // Windows 盘符要先判，不然会被当成 `c:` 这种 scheme
+  if (/^[a-zA-Z]:[\\/]/.test(v)) return true
+  // 其它带 scheme 的（http/ftp/base64/data…）不归本地读管
+  if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return false
+  if (v.startsWith('\\\\')) return true // UNC 路径
+  if (v.startsWith('/')) return true // POSIX 绝对路径
+  return /[\\/]/.test(v) // ./a.png、cache/a.png
+}
+
+/**
+ * 从 message 段里抽出图片引用（最多 4 条）。
+ *
+ * 每张图的顺序是**先本地、后 URL**：`file` 是本机路径就直接收，
+ * 紧跟其后才是 `url`（QQ 临时链接，两小时失效）。消费方按顺序尝试，
+ * 本地读不到（文件不在本机 / 已被清掉）还能退回 URL。
+ *
+ * 以前只认 http(s)，链接一过期这张图就彻底废了——用户发图那条路径
+ * 明明有本地原图，却被当成"没图"跳过。
+ *
+ * 只有文件名、没有路径的 `file` 仍然跳过：那不是能读的路径，
+ * 硬传下去只会得到一次失败请求。
  */
 export function extractImages(message: OBEvent['message']): string[] {
   const out: string[] = []
+  const push = (ref: string): void => {
+    const v = ref.trim()
+    if (!v || out.includes(v)) return
+    out.push(v)
+  }
   for (const seg of messageSegments(message)) {
     if (seg.type !== 'image') continue
-    const url = (seg.data['url'] ?? '').trim()
-    if (/^https?:\/\//i.test(url)) {
-      out.push(url)
-      continue
-    }
     const file = (seg.data['file'] ?? '').trim()
-    if (/^https?:\/\//i.test(file)) out.push(file)
+    const url = (seg.data['url'] ?? '').trim()
+    // 本地原图优先：不会过期，也不受防盗链影响。
+    //
+    // 每段只出**一个**引用：之前同时出「本地 + URL」两条，看着是"本地失败再兜 URL"，
+    // 但消费方（vision）是按引用下标逐个看的，一张图占两个名额 = 4 张图只能看 2 张。
+    // 本地读不到的概率远低于"多图只看一半"的确定损失，所以这里只取一个。
+    if (isLocalImageRef(file)) push(file)
+    else if (/^https?:\/\//i.test(url)) push(url)
+    else if (/^https?:\/\//i.test(file)) push(file)
   }
-  // 一次最多看几张：多了又慢又贵
+  // 一次最多 4 条引用，多了又慢又贵
   return out.slice(0, 4)
 }
 
@@ -605,7 +642,7 @@ export class OnebotTransport implements Transport {
       //
       // 光说「被过滤」没有用 —— 用户只会看到「它不理我」，然后去翻配置瞎猜。
       // 所以顺带把具体卡在哪一步也算出来。
-      if (ev.message_type === 'group' && isAddressed(ev)) {
+      if (ev.message_type === 'group' && isAddressed(ev, this.opts.botNames)) {
         warnAt('消息 @ 了我但被过滤', {
           群: ev.group_id,
           人: ev.user_id,
@@ -620,7 +657,7 @@ export class OnebotTransport implements Transport {
     const isPrivate = ev.message_type === 'private'
     const gid = String(ev.group_id ?? '')
     const uid = String(ev.user_id ?? '')
-    const addressed = isPrivate || isAddressed(ev)
+    const addressed = isPrivate || isAddressed(ev, this.opts.botNames)
     // 刚才正在跟它说话的人，不 @ 也算接着聊，不算"突然插话"
     const followUp = !isPrivate && !addressed && isRecentTalker(this.opts, gid, uid)
     if (!isPrivate) markTalker(this.opts, gid, uid)
@@ -656,9 +693,16 @@ export class OnebotTransport implements Transport {
     })
   }
 
-  /** 取一张表情包原图：先直接下 URL，不行再走 OneBot 的 get_image。 */
+  /** 取一张表情包原图：先读本地文件，再下 URL，最后走 OneBot 的 get_image。 */
   private async fetchEmojiImage(seg: { type: string; data?: Record<string, string> }): Promise<EmojiImage | null> {
     const data = seg.data ?? {}
+    // 本地路径优先：NapCat 缓存里的原图不会过期，也不受防盗链影响
+    for (const ref of [data['file'], data['url']]) {
+      const v = (ref ?? '').trim()
+      if (!v || !isLocalImageRef(v)) continue
+      const got = await readLocalImage(v)
+      if (got) return got
+    }
     for (const ref of [data['url'], data['file']]) {
       if (ref && /^https?:\/\//i.test(ref)) {
         const got = await downloadImage(ref)
@@ -830,8 +874,13 @@ export class OnebotTransport implements Transport {
 export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
   const text = extractText(ev.message)
   if (!text) return false
-  // 只有占位符（[图片]/[表情]/[语音]）的消息不触发模型
-  if (!text.replace(/\[[^\]]*\]/g, '').trim()) return false
+  // 只有占位符（[图片]/[表情]/[语音]）的消息一般不触发模型。
+  //
+  // 例外是**有图**的：图里的信息只能靠视觉模型看，以前「只发一张图、
+  // 不配字」在这里就被丢了，用户那边看到的就是"它收不到"。
+  // 纯表情 / 纯语音照旧丢（C3：刷表情包不该召唤它）。
+  const hasText = Boolean(text.replace(/\[[^\]]*\]/g, '').trim())
+  if (!hasText && extractImages(ev.message).length === 0) return false
 
   const isPrivate = ev.message_type === 'private'
   const userId = String(ev.user_id ?? '')
@@ -878,7 +927,7 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
  */
 export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   if (ev.message_type === 'private') return false
-  if (isAddressed(ev)) return false
+  if (isAddressed(ev, opts.botNames)) return false
 
   const gid = String(ev.group_id ?? '')
   const uid = String(ev.user_id ?? '')
@@ -889,6 +938,10 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
   if (names.some((n) => text.includes(n))) return false
 
+  // 纯图片（只发一张图、不配字）也会走到这里，而且这里**故意不放行**：
+  // 它已经被 shouldHandle 放进来了（能进历史），但没 @ 就是没叫它，
+  // 不能因为"发了图"就变成必回，否则群里一有人发图它就得接话。
+  // 要不要看图由业务层在真正生成那一轮决定，通道层不替它做主。
   const policy = opts.getPolicy?.()
   return policy ? policy.requireAt : opts.requireAt !== false
 }
@@ -906,7 +959,11 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
 export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   const text = extractText(ev.message)
   if (!text) return '没有文字（只有图片/表情/语音）'
-  if (!text.replace(/\[[^\]]*\]/g, '').trim()) return '只有占位符，没有实际内容'
+  // 判断顺序和 shouldHandle 保持一致：纯图片是被放行的，不算"只有占位符"。
+  // 只有既没有文字、也没有能看的图（纯表情/语音，或 file 只是个文件名）才拦。
+  if (!text.replace(/\[[^\]]*\]/g, '').trim() && extractImages(ev.message).length === 0) {
+    return '只有占位符（表情/语音），或图片只有文件名没有地址'
+  }
 
   const isPrivate = ev.message_type === 'private'
   const userId = String(ev.user_id ?? '')
@@ -930,7 +987,7 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
     const acc = checkAccess(p, gid, userId)
     // 白名单/黑名单的 reason 直接来自 checkAccess，和自己判断保持一致
     if (!acc.ok) return `${acc.reason ?? '权限拒绝'}（群 ${gid} / 人 ${userId}）`
-    if (mustAt && !isAddressed(ev) && !called && !isRecentTalker(opts, gid, userId)) {
+    if (mustAt && !isAddressed(ev, opts.botNames) && !called && !isRecentTalker(opts, gid, userId)) {
       return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
     }
     return '未知原因'
@@ -942,7 +999,7 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   if (opts.memberAllow?.length && !opts.memberAllow.includes(userId)) {
     return `人不在白名单（${userId}）`
   }
-  if (mustAt && !isAddressed(ev) && !called && !isRecentTalker(opts, gid, userId)) {
+  if (mustAt && !isAddressed(ev, opts.botNames) && !called && !isRecentTalker(opts, gid, userId)) {
     return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
   }
   return '未知原因'
@@ -966,10 +1023,21 @@ function markTalker(opts: OnebotOptions, groupId: string, userId: string): void 
 }
 
 /** 这条消息有没有 @ 它。数组格式和字符串 CQ 码格式都认。 */
-export function isAddressed(ev: OBEvent): boolean {
+export function isAddressed(ev: OBEvent, botNames: string[] = []): boolean {
   if (ev.message_type === 'private') return true
   const selfId = String(ev.self_id ?? '').trim()
-  // 连自己是谁都不知道，就别猜"@ 的是我"
-  if (!selfId) return false
-  return messageSegments(ev.message).some((s) => s.type === 'at' && (s.data['qq'] ?? '').trim() === selfId)
+  const segs = messageSegments(ev.message)
+  // 连自己是谁都不知道，就别猜"@ 的是我"（但名字判断不受影响）
+  if (selfId && segs.some((s) => s.type === 'at' && (s.data['qq'] ?? '').trim() === selfId)) {
+    return true
+  }
+  // 群里**直接叫它的名字**也算被叫到，和 @ 同级。
+  // 以前名字只参与 rejectReason 的"要不要 @ 才能说话"，不参与 addressed，
+  // 所以"小鲸鱼在吗"这种被当成普通群聊去打分，它可能装没看见。
+  const names = botNames.filter((n) => n && n !== '未定')
+  if (names.length) {
+    const text = extractText(ev.message)
+    if (names.some((n) => text.includes(n))) return true
+  }
+  return false
 }

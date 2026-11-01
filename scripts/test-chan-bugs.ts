@@ -225,7 +225,38 @@ console.log('\n=== 5. extractImages ===')
 {
   const img = (data: Record<string, string>) => ({ type: 'image', data })
 
-  check('只有 file 名、没有 url → 跳过', extractImages([img({ file: 'b.png' })]).length === 0)
+  // file 只有文件名 ≠ 本地路径：拼不出能读的地址，只能跳过
+  check('只有 file 名、没有路径 → 跳过', extractImages([img({ file: 'b.png' })]).length === 0)
+  // file 是本地路径：NapCat 给的原图路径，直接收（不依赖会过期的 URL）
+  check(
+    'file 是 Windows 绝对路径 → 收',
+    show(extractImages([img({ file: 'C:\\Users\\q\\nt_temp\\a.png' })])) === show(['C:\\Users\\q\\nt_temp\\a.png']),
+  )
+  check(
+    'file 是 POSIX 绝对路径 → 收',
+    show(extractImages([img({ file: '/root/.config/QQ/a.jpg' })])) === show(['/root/.config/QQ/a.jpg']),
+  )
+  check(
+    'file 是 file:// → 收',
+    show(extractImages([img({ file: 'file:///tmp/a.png' })])) === show(['file:///tmp/a.png']),
+  )
+  check(
+    'file 是相对路径 → 收',
+    show(extractImages([img({ file: './cache/a.png' })])) === show(['./cache/a.png']),
+  )
+  check(
+    '本地路径优先：有本地就只出本地（不再出 URL 兜底）',
+    show(extractImages([img({ url: 'https://x.com/a.jpg', file: 'C:\\tmp\\a.jpg' })])) ===
+      show(['C:\\tmp\\a.jpg']),
+  )
+  check(
+    '本地路径 + ftp url → 只收本地',
+    show(extractImages([img({ url: 'ftp://x.com/a.jpg', file: '/tmp/b.png' })])) === show(['/tmp/b.png']),
+  )
+  check(
+    '同一地址不会因为 url/file 重复收',
+    extractImages([img({ url: 'https://x.com/a.jpg', file: 'https://x.com/a.jpg' })]).length === 1,
+  )
   check('url 是 http → 收', show(extractImages([img({ url: 'http://x.com/a.jpg' })])) === show(['http://x.com/a.jpg']))
   check('url 是 https → 收', show(extractImages([img({ url: 'https://x.com/a.jpg' })])) === show(['https://x.com/a.jpg']))
   check('url 是 FTP → 不收', extractImages([img({ url: 'ftp://x.com/a.jpg' })]).length === 0)
@@ -241,6 +272,19 @@ console.log('\n=== 5. extractImages ===')
   const capped = extractImages(many)
   check('超过 4 张时截断到 4 张', capped.length === 4, show(capped.length))
   check('截断保留前 4 张且顺序不变', show(capped) === show(many.slice(0, 4).map((s) => s.data.url)), show(capped))
+
+  // 本地路径 + URL 成对出现时，仍是同一个 4 条上限（每条引用算一个名额）
+  const paired = Array.from({ length: 6 }, (_, i) =>
+    img({ url: `https://x.com/${i}.jpg`, file: `C:\\tmp\\${i}.jpg` }),
+  )
+  const pairedOut = extractImages(paired)
+  // 每段只出一条引用：4 张图都能被看到（之前成对输出会让 4 张图只占 2 个名额）
+  check('本地+URL 成对时 4 张图仍是 4 条引用', pairedOut.length === 4, show(pairedOut))
+  check(
+    '本地+URL 成对时顺序是「本地, 本地, 本地, 本地」',
+    show(pairedOut) === show(['C:\\tmp\\0.jpg', 'C:\\tmp\\1.jpg', 'C:\\tmp\\2.jpg', 'C:\\tmp\\3.jpg']),
+    show(pairedOut),
+  )
 
   check('文本段混在中间不影响', extractImages([
     { type: 'text', data: { text: '看' } },
@@ -284,15 +328,64 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
     ],
   })
 
+  const imageOnly = (ev: OBEvent, data: Record<string, string> = { url: 'https://x.com/a.jpg' }): OBEvent => ({
+    ...ev,
+    message: [{ type: 'image', data }],
+  })
+
   // 私聊
   check('私聊：主人 → 处理', shouldHandle(priv('1234567890'), { ...base, ownerQQ: '1234567890' }))
   check('私聊：陌生人 → 不处理', !shouldHandle(priv('999'), { ...base, ownerQQ: '1234567890' }))
   check('私聊：没设 ownerQQ → 处理', shouldHandle(priv('999'), base))
   check('私聊：isAddressed 恒为真', isAddressed(priv('999')))
-  check('私聊：只有图片 → 不处理（不触发模型）', !shouldHandle(
-    { ...priv('1234567890'), message: [{ type: 'image', data: {} }] },
-    { ...base, ownerQQ: '1234567890' },
-  ))
+
+  // 纯图片：以前在 shouldHandle 就被丢了，用户只发一张图等于"它收不到"。
+  // 现在放进来走一次视觉，回不回交给业务层判断。
+  check(
+    '私聊：只有图片（有地址）→ 处理，进视觉',
+    shouldHandle(imageOnly(priv('1234567890')), { ...base, ownerQQ: '1234567890' }),
+  )
+  check(
+    '私聊：只有图片（本地路径）→ 处理，进视觉',
+    shouldHandle(imageOnly(priv('1234567890'), { file: 'C:\\tmp\\a.jpg' }), { ...base, ownerQQ: '1234567890' }),
+  )
+  // 看不见的图（既无 url、file 又只是文件名）放进来也只会得到一句空洞的回复
+  check(
+    '私聊：只有图片但没有任何地址 → 不处理',
+    !shouldHandle(imageOnly(priv('1234567890'), {}), { ...base, ownerQQ: '1234567890' }),
+  )
+  check(
+    '私聊：只有图片、file 是纯文件名 → 不处理',
+    !shouldHandle(imageOnly(priv('1234567890'), { file: 'b.png' }), { ...base, ownerQQ: '1234567890' }),
+  )
+  // C3：纯表情包不触发模型
+  check(
+    '私聊：纯表情 → 不处理（C3 不变）',
+    !shouldHandle({ ...priv('1234567890'), message: [{ type: 'face', data: { id: '1' } }] }, {
+      ...base,
+      ownerQQ: '1234567890',
+    }),
+  )
+  check(
+    '私聊：纯语音 → 不处理',
+    !shouldHandle({ ...priv('1234567890'), message: [{ type: 'record', data: {} }] }, {
+      ...base,
+      ownerQQ: '1234567890',
+    }),
+  )
+  check(
+    '私聊：表情 + 图片 → 处理（图还是图）',
+    shouldHandle(
+      {
+        ...priv('1234567890'),
+        message: [
+          { type: 'face', data: { id: '1' } },
+          { type: 'image', data: { url: 'https://x.com/a.jpg' } },
+        ],
+      },
+      { ...base, ownerQQ: '1234567890' },
+    ),
+  )
 
   // 群里被 @
   check('群里 @ 了它 → 处理', shouldHandle(groupAt('123', '999'), { ...base, allowGroup: true }))
@@ -302,6 +395,29 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
   )
   check('群里 @ 了它但没开 allowGroup → 不处理', !shouldHandle(groupAt('123', '999'), base))
   check('群里被 @ 时 isAddressed 为真', isAddressed(groupAt('123', '999')))
+
+  // 群里的纯图片：@ 了 → 正常处理；没 @ → 能进历史，但仍然只记录不回复。
+  const groupImage = (withAt: boolean): OBEvent => ({
+    ...group('123', '999'),
+    message: [
+      ...(withAt ? [{ type: 'at', data: { qq: SELF } }] : []),
+      { type: 'image', data: { url: 'https://x.com/a.jpg' } },
+    ],
+  })
+  check(
+    '群里 @ 它 + 纯图片 → 处理且要回复',
+    shouldHandle(groupImage(true), { ...base, allowGroup: true }) &&
+      !isObserveOnly(groupImage(true), { ...base, allowGroup: true }),
+  )
+  check('群里没 @ 的纯图片 → 能进来（进历史）', shouldHandle(groupImage(false), { ...base, allowGroup: true }))
+  check(
+    '群里没 @ 的纯图片 → 仍然只记录不回复（不能变成必回）',
+    isObserveOnly(groupImage(false), { ...base, allowGroup: true }),
+  )
+  check(
+    '群里纯表情 → 不处理（C3 不变）',
+    !shouldHandle({ ...group('123', '999'), message: [{ type: 'face', data: { id: '1' } }] }, { ...base, allowGroup: true }),
+  )
 
   // 群里没 @：能进来（进历史、能学这个群怎么说话），但不回复
   check('群里没 @ → 默认只记录不回复', isObserveOnly(group('123', '999'), { ...base, allowGroup: true }))

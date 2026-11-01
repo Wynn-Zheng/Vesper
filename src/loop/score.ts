@@ -19,6 +19,8 @@ export interface ScoreParts {
   idleMinutes: number
   /** 最近 5 分钟它自己回了几次 */
   recentReplies: number
+  /** 距它上一次回复多少秒；没回过就是 undefined。用于"刚说完别追"的硬闸 */
+  lastReplyAgoSec?: number
   /** 当前时段的活跃度 0~1 */
   talkValue: number
 }
@@ -39,6 +41,12 @@ const SHORT_ACK = /^(嗯+|哦+|噢+|好+|行|收到|哈哈+|呵+|笑死|草|6+)[
 export function scoreReply(p: ScoreParts): ScoreResult {
   if (p.isPrivate || p.addressed) {
     return { score: 100, probability: 1, reasons: ['直接找它'] }
+  }
+
+  // 刚说完 20 秒内不追话：群聊里连发两条会像刷屏。
+  // 之前只有"最近 5 分钟回了 ≥2 次扣分"的软抑制，挡不住"两句挨着发"。
+  if (p.lastReplyAgoSec !== undefined && p.lastReplyAgoSec < 20) {
+    return { score: 0, probability: 0, reasons: ['刚说完，先别追'] }
   }
 
   const reasons: string[] = []
