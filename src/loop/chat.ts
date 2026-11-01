@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+﻿import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
@@ -84,6 +84,32 @@ export function detectRepeat(key: string): boolean {
  * 群聊里给"谁说的"加前缀。
  * 不加的话历史里全是「用户」，三条不同人的话它分不清。
  */
+
+/**
+ * 本机类工具：只允许「主人 + 私聊」。
+ *
+ * 之前用正则按前缀匹配（`screenshot|clipboard_|send_image|desktop_|mouse_|keyboard_|window_|open_`），
+ * 但桌面工具的真实名字是 `click`/`type_text`/`press_key`/`scroll`/`focus_window`/
+ * `list_windows`/`monitor_info` —— **7 个全不匹配**，等于群里任何人说一句
+ * 「列一下窗口」就能拿到主人的窗口标题（里面常有网页标题、文件名）。
+ *
+ * 现在改成显式集合：新增本机工具必须往这里加一条，测试会断言
+ * "注册表里每个 desktop 工具都在这个集合里"，避免再靠命名习惯漏掉。
+ */
+const LOCAL_TOOL = new Set([
+  'screenshot', 'list_windows', 'monitor_info', 'mouse_position', 'clipboard_read',
+  'click', 'type_text', 'press_key', 'scroll', 'focus_window',
+  'send_image',
+])
+
+/** 这个工具是不是"碰本机"的（截图/窗口/剪贴板/鼠标键盘/本地图片） */
+export function isLocalTool(name: string): boolean {
+  return LOCAL_TOOL.has(name)
+}
+
+/** 本机类工具全集（测试用） */
+export const LOCAL_TOOL_NAMES: readonly string[] = [...LOCAL_TOOL]
+
 export function formatUserText(scope: string, speaker: string | undefined, text: string): string {
   const name = (speaker ?? '').trim()
   return scope.startsWith('group:') && name ? `${name}：${text}` : text
@@ -432,7 +458,6 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     // 本机类工具（截图/剪贴板/发本地图片/鼠标键盘/窗口）只允许「主人 + 私聊」。
     // 之前只在注册时按 rules 判断有没有这类工具，没判断是谁在调用：
     // 群里任何成员说一句「截屏发我」就能把主人的整屏发到群里。
-    const LOCAL_TOOL = /^(screenshot|clipboard_|send_image|desktop_|mouse_|keyboard_|window_|open_)/
     // 主人判定：档案里的角色，或直接命中 OWNER_QQ。
     // 只认 role 不够稳：老数据的 role 是空的（历史 bug：建档时把「主人」当名字传了），
     // 那种环境下本机类工具对主人也会拒绝。OWNER_QQ 是配置里明写的，按账号认人兜底。
@@ -447,7 +472,7 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
       try {
         const tool = opts.tools?.get(c.name)
         if (!tool) throw new Error('没有这个工具：' + c.name)
-        if (LOCAL_TOOL.test(c.name) && !(isOwner && inPrivate)) {
+        if (LOCAL_TOOL.has(c.name) && !(isOwner && inPrivate)) {
           throw new Error('这个操作只能由主人私聊发起，在群里/别人那里不能做')
         }
         content = await tool.run(c.args ?? {}, ctx)

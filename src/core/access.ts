@@ -97,6 +97,10 @@ export interface AccessResult {
 
 /** 黑名单优先于白名单；白名单为空表示不限制 */
 export function checkAccess(p: AccessPolicy, groupId: string, userId: string): AccessResult {
+  // '*' 是 access.yaml 解析失败时的"全拒"哨兵（见 loadAccess 的 catch）。
+  // 不加这行的话它会落到下面的白名单判断，而白名单为空 = 不限制 ——
+  // 结果就是配置文件坏了反而全放行，和日志里那句"暂时拒绝所有群消息"正好相反。
+  if (p.groupDeny.includes('*')) return { ok: false, reason: '群黑名单' }
   if (p.groupDeny.includes(groupId)) return { ok: false, reason: '群黑名单' }
   if (p.memberDeny.includes(userId)) return { ok: false, reason: '成员黑名单' }
   if (p.groupAllow.length && !p.groupAllow.includes(groupId)) return { ok: false, reason: '不在群白名单' }

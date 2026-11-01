@@ -1,7 +1,7 @@
 import { OnebotTransport } from './channel/onebot.ts'
 import { createEmojiStore } from './emoji/store.ts'
 import { boot } from './boot.ts'
-import { ToolRegistry } from './tools/registry.ts'
+import { ToolRegistry, tools as globalTools } from './tools/registry.ts'
 import { codeTools } from './tools/code.ts'
 import { sendImageTool } from './tools/image.ts'
 import { requestChangeTool } from './tools/request.ts'
@@ -302,7 +302,11 @@ if (apiKey) {
     model: process.env['DEEPSEEK_MODEL'] ?? 'deepseek-chat',
   }
   // 它能读自己的代码了：这 4 个工具只读、只碰 src/ 下的 .ts
-  const registry = new ToolRegistry()
+  //
+  // 用**全局**注册表（`tools`）：`self/abilities.ts` 生成「我能做什么」时读的就是它。
+  // 以前这里 new 了一个局部实例，全局那个永远是空的 —— 于是能力清单里
+  // 永远列不出 read_code / screenshot / send_image，它自己都说"我没那个工具"。
+  const registry = globalTools
   toolRegistry = registry
   for (const tool of codeTools) registry.register(tool)
 

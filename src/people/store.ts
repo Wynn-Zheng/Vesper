@@ -100,9 +100,15 @@ function normalizeMeta(id: string, raw: unknown): PersonMeta | null {
     name: typeof r.name === 'string' && r.name.trim() ? r.name : id,
     accounts: Array.isArray(r.accounts) ? r.accounts.filter(isAccount) : [],
     firstSeen: typeof r.firstSeen === 'number' && Number.isFinite(r.firstSeen) ? r.firstSeen : 0,
-    // 这两个是用户手动设的，原样读回来；类型不对就当没写过，别把整份档案判坏。
+    // 这几个是用户/它自己设的，原样读回来；类型不对就当没写过，别把整份档案判坏。
     ...(typeof r.role === 'string' ? { role: r.role } : {}),
     ...(typeof r.nameLocked === 'boolean' ? { nameLocked: r.nameLocked } : {}),
+    // callName / callNameSuggested 之前漏在这里 —— 结果 reflect 写进 meta.json 的
+    // 称呼每次 loadPerson 都被丢掉，"它给每个人起称呼"整条链路等于没生效。
+    ...(typeof r.callName === 'string' && r.callName.trim() ? { callName: r.callName } : {}),
+    ...(typeof r.callNameSuggested === 'string' && r.callNameSuggested.trim()
+      ? { callNameSuggested: r.callNameSuggested }
+      : {}),
   }
 }
 

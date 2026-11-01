@@ -1,4 +1,4 @@
-﻿import type { Episode, Insight, RawTurn, Recalled, Scope } from './types.ts'
+import type { Episode, Insight, RawTurn, Recalled, Scope } from './types.ts'
 import { loadFacts, effectiveConfidence } from './facts.ts'
 import { loadEpisodes, loadInsights, readRaw, saveEpisode } from './store.ts'
 import { loadOpen, type OpenItem } from '../people/open.ts'
@@ -24,19 +24,34 @@ export { similarity }
  *   - **写**只写自己——控制台说的话不污染正式记忆
  * 写那边的隔离不靠这个函数，靠调用方传的 scope（永远是 private:console-xxx）。
  */
+/**
+ * 私聊 scope 归一化。
+ *
+ * 盘上同时存在两种拼写：`private:<QQ>`（现行，scopeOf 产出）和
+ * `private:qq-<QQ>`（历史 episodes 的 frontmatter）。不做归一化的话
+ * `visible()` 的全等比较会让当前私聊**一条旧经历都读不到**——
+ * 它想不起以前聊过什么，而且不会有任何报错。
+ */
+function normScope(s: Scope): string {
+  return s.replace(/^private:qq-/, 'private:')
+}
+
 export function visible(scope: Scope, current: Scope): boolean {
   const consoleMatch = /^private:console-(.+)$/.exec(current)
   if (consoleMatch) {
     const owner = consoleMatch[1]!
     // 主人私聊、控制台自己的历史、公共的，都读。
-    //
-    // 注意私聊 scope 是 `private:<QQ号>`，**没有 `qq-` 前缀**
-    // （见 memory/scope.ts 的 scopeOf）。以前这里写成 `private:qq-<owner>`，
-    // 跟实际存的对不上，控制台一条主人私聊的记忆都读不到。
-    return scope === 'shared' || scope === current || scope === `private:${owner}`
+    // 私聊 scope 的两种历史拼写都要认（见 normScope）。
+    return (
+      scope === 'shared' ||
+      scope === current ||
+      normScope(scope) === `private:${owner}` ||
+      normScope(scope) === `private:qq-${owner}`
+    )
   }
   if (current.startsWith('private:')) {
-    return scope === current || scope === 'shared'
+    // 两种历史拼写视为同一会话（见 normScope）
+    return scope === 'shared' || normScope(scope) === normScope(current)
   }
   return scope === 'shared' || scope === current
 }
