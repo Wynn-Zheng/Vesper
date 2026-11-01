@@ -1,4 +1,5 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
@@ -650,11 +651,24 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           : 'text/html; charset=utf-8'
       // 不加 no-cache 的话，改了 js/css 浏览器还用旧的 —— 排查半天以为是代码没生效。
       // 这些文件很小，每次都重新拉不心疼。
+      //
+      // ⚠️ 但有 no-cache 还不够：没 ETag/Last-Modified 的话浏览器没有"验证依据"，
+      // 某些情况下会直接拿内存里的旧副本（改完前端看不到更新，就是这个原因）。
+      // 加上内容哈希做 ETag + 文件的 mtime 做 Last-Modified，浏览器就会真的重新验证。
       const body = readFileSync(full, 'utf8')
+      const etag = '"' + createHash('sha1').update(body).digest('hex').slice(0, 16) + '"'
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, { etag, 'cache-control': 'no-cache' })
+        res.end()
+        return
+      }
+      const mtime = statSync(full).mtime.toUTCString()
       res.writeHead(200, {
         'content-type': type,
         'content-length': String(Buffer.byteLength(body)),
         'cache-control': 'no-cache, no-store, must-revalidate',
+        etag,
+        'last-modified': mtime,
       })
       res.end(body)
       return
