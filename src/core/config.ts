@@ -252,6 +252,15 @@ export interface Rules {
     开启: boolean
     每条最多: number
     库存上限: number
+    /**
+     * 文字回复后配一张表情包的概率（0-1）。
+     *
+     * 为什么要有：原来是无条件每句都补一张——真人不会这样，
+     * 而且会和文字内容完全无关。0.35 是"偶尔会发"的感觉。
+     */
+    概率: number
+    /** 心情越强，发的概率越高。这个值是加成上限（0-1），加到概率上 */
+    心情加成: number
   }
 }
 
@@ -373,6 +382,8 @@ export const DEFAULTS: Rules = {
     开启: true,
     每条最多: 1,
     库存上限: 200,
+    概率: 0.35,
+    心情加成: 0.4,
   },
 }
 
@@ -480,11 +491,15 @@ function applyEnvOverrides(rules: Rules): Rules {
     readClampedNumberEnv('EMOJI_MAX_PER_REPLY', DEFAULTS.表情包.每条最多, 0, 3) ?? rules.表情包.每条最多
   const libraryCap =
     readClampedNumberEnv('EMOJI_LIBRARY_CAP', DEFAULTS.表情包.库存上限, 1, 5000) ?? rules.表情包.库存上限
+  const emojiChance =
+    readClampedNumberEnv('EMOJI_CHANCE', DEFAULTS.表情包.概率, 0, 1) ?? rules.表情包.概率
+  const emojiMoodBoost =
+    readClampedNumberEnv('EMOJI_MOOD_BOOST', DEFAULTS.表情包.心情加成, 0, 1) ?? rules.表情包.心情加成
 
   return {
     ...rules,
     上下文压缩: { 摘要阈值: summaryThreshold, 保留最近: keepRecent },
-    表情包: { 开启: enabled, 每条最多: maxPerReply, 库存上限: libraryCap },
+    表情包: { 开启: enabled, 每条最多: maxPerReply, 库存上限: libraryCap, 概率: emojiChance, 心情加成: emojiMoodBoost },
   }
 }
 

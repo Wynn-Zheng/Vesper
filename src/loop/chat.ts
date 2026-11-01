@@ -109,6 +109,13 @@ function currentEmotion(): string {
   return decayedMood(loadMood())?.emotion.trim() || 'neutral'
 }
 
+/** 当前心情强度 0-1。没有心情就是 0（不该因为"没心情"就多发表情包） */
+function moodStrength(): number {
+  const m = decayedMood(loadMood())
+  const v = Number(m?.intensity)
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0
+}
+
 /**
  * 历史超过阈值时压一次。失败只记 warn，旧摘要和本轮回复都不受影响。
  * 每轮最多调一次 compressHistory，不会递归触发。
@@ -156,22 +163,40 @@ async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<voi
   }
 }
 
-/** 回复后按当前情绪挑一张表情包发出去；失败不影响文字回复 */
+/**
+ * 回复后按当前情绪挑一张表情包发出去；失败不影响文字回复。
+ *
+ * ⚠ 不是每句都发。原来是无条件补一张，那个行为有两个问题：
+ *   1. 太机械——真人不会每条文字后面都跟一张图
+ *   2. 和图库内容无关——不管聊什么都是同一张
+ *
+ * 现在按概率决定，心情强时概率更高（心情本身就是"想表达"的信号）。
+ * 概率 0 就等于完全关掉（不用改 `开启`）。
+ */
 export async function maybeSendEmoji(m: Incoming, rules: Rules): Promise<void> {
   const limit = Math.max(0, Math.floor(rules.表情包.每条最多))
   if (!rules.表情包.开启 || limit === 0) return
+
+  // 概率门：心情越强越容易发
+  const mood = currentEmotion()
+  const base = Math.min(1, Math.max(0, Number(rules.表情包.概率) || 0))
+  const boost = Math.min(1, Math.max(0, Number(rules.表情包.心情加成) || 0))
+  const moodIntensity = moodStrength()
+  const chance = Math.min(1, base + boost * moodIntensity)
+  if (chance <= 0) return
+  if (Math.random() >= chance) return
 
   try {
     // 没有索引说明库还不存在。先判断再建 store，避免顺手写一个空索引到 persona/。
     if (!existsSync(join(EMOJI_ROOT, 'index.json'))) return
 
     const store = getEmojiStore(rules.表情包.库存上限)
-    const item = pickEmoji(await store.list(), currentEmotion())
+    const item = pickEmoji(await store.list(), mood)
     if (!item) return
 
     await sendImage(m.from, join(EMOJI_ROOT, item.file))
     await store.touch(item.id)
-    info('发了表情包', { file: item.file })
+    info('发了表情包', { file: item.file, 心情: mood, 概率: chance.toFixed(2) })
   } catch (err) {
     warnAt('表情包发送失败，不影响文字回复', {
       err: err instanceof Error ? err.message : String(err),
