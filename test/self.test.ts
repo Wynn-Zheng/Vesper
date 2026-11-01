@@ -9,6 +9,9 @@ import { DEFAULTS } from '../src/core/config.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'qqbot-self-'))
 setSelfFiles(join(dir, 'self.md'), join(dir, 'life.md'))
+// 挪到临时目录：否则 buildSelfBlock 会读到项目里真实的角色卡，
+// 卡名会盖掉"还没有名字"/rules.yaml 名字这两条路径，测试就跟本机状态绑死了。
+process.chdir(dir)
 
 process.on('exit', () => {
   try {

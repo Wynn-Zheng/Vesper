@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULTS, loadRules, stageOf, talkValueOf } from '../src/core/config.ts'
+import { DEFAULTS, loadRules, resolveDebounce, stageOf, talkValueOf } from '../src/core/config.ts'
 import { buildSystem, replyBudget } from '../src/loop/prompt.ts'
 import { sanitize } from '../src/loop/chat.ts'
 import { phaseOf } from '../src/self/format.ts'
@@ -105,6 +105,52 @@ test('活跃度：跨夜的时段也能匹配', () => {
   assert.equal(talkValueOf(rules, at(23)), 0.05)
   assert.equal(talkValueOf(rules, at(1)), 0.05)
   assert.equal(talkValueOf(rules, at(3)), 0.5)
+})
+
+test('防抖：四个档位各自一套值', () => {
+  const d = (档位: string) => ({ ...DEFAULTS.行为.防抖, 档位: 档位 as '自然' })
+
+  const fast = resolveDebounce(d('快速'))!
+  assert.equal(fast.安静, 1, '快速档安静 1 秒')
+  assert.equal(fast.活跃, 3)
+  assert.equal(fast.同人续发, 1)
+  assert.equal(fast.换人, 0.5)
+
+  const natural = resolveDebounce(d('自然'))!
+  assert.equal(natural.安静, 2)
+  assert.equal(natural.活跃, 5)
+  assert.equal(natural.同人续发, 2)
+  assert.equal(natural.换人, 0.5)
+
+  const steady = resolveDebounce(d('沉稳'))!
+  assert.equal(steady.安静, 4)
+  assert.equal(steady.活跃, 7)
+  assert.equal(steady.同人续发, 4, '沉稳档给补话留更多时间')
+  assert.equal(steady.换人, 2)
+})
+
+test('防抖：关闭档返回 null，调用方直接处理不聚合', () => {
+  assert.equal(resolveDebounce({ ...DEFAULTS.行为.防抖, 档位: '关闭' }), null)
+})
+
+test('防抖：自定义档用填的数字', () => {
+  const r = resolveDebounce({
+    档位: '自定义',
+    安静: 9,
+    活跃: 8,
+    同人续发: 7,
+    换人: 6,
+    被at最多: 5,
+    批次上限: 4,
+  })!
+  assert.equal(r.安静, 9)
+  assert.equal(r.活跃, 8)
+  assert.equal(r.批次上限, 4)
+})
+
+test('防抖：档位写错时按自然走，不抛', () => {
+  const r = resolveDebounce({ ...DEFAULTS.行为.防抖, 档位: '瞎写' as '自然' })!
+  assert.equal(r.安静, 2, '写错不该让机器人收不了消息')
 })
 
 test('sanitize 去掉引号与 markdown', () => {

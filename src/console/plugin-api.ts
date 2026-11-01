@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { errorAt, info as logInfo, warnAt } from '../core/log.ts'
 import { getPluginConfig, removePluginConfig, setPluginConfig } from '../plugins/settings.ts'
 import { createHost } from '../plugins/host.ts'
+import type { NetPolicy } from '../plugins/net.ts'
 import { checkUpdates, inspectPlugin, installPlugin, setEnabled, uninstallPlugin } from '../plugins/installer.ts'
 import { scanPlugins } from '../plugins/registry.ts'
 
@@ -97,6 +98,8 @@ export function createPluginService(options: {
   settingsFile?: string
   /** 发消息的实现（只有声明 message 权限的插件才拿得到） */
   send?: (target: { kind: 'private' | 'group'; id: string }, text: string) => Promise<void>
+  /** 插件网络出口策略（域名白名单、是否允许内网）。不传就是默认：禁内网 */
+  netPolicy?: NetPolicy
 }) {
   const pluginsRoot = options.pluginsRoot
   const dataRoot = options.dataRoot
@@ -108,6 +111,7 @@ export function createPluginService(options: {
       dataRoot,
       settingsFile,
       ...(options.send === undefined ? {} : { send: options.send }),
+      ...(options.netPolicy === undefined ? {} : { netPolicy: options.netPolicy }),
       // 插件里 ctx.log() 打到业务日志（data/logs/*.jsonl），
       // 不然只会落在进程控制台，用户在控制台里看不到。
       logger: (level, message) => {

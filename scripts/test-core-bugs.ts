@@ -242,7 +242,8 @@ console.log('\n=== 5. config merge ===')
     '嵌套对象：其他分支不受影响',
     rules.说话.每轮最多条数 === 2 && rules.说话.每条最多字数 === DEFAULTS.说话.每条最多字数,
   )
-  check('深合并没有污染 DEFAULTS', DEFAULTS.行为.防抖.安静 === 5 && DEFAULTS.说话.每轮最多条数 === 3)
+  // 断言的是"合并没把默认值改掉"，所以拿当前默认值（防抖档位「自然」的安静值）当基准
+  check('深合并没有污染 DEFAULTS', DEFAULTS.行为.防抖.安静 === 2 && DEFAULTS.说话.每轮最多条数 === 3)
   check('深合并不产生未知键警告', !warnings.some((w) => w.includes('忽略未知')), show(warnings))
 }
 

@@ -8,6 +8,7 @@ import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { scanPlugins } from './registry.ts'
 import { getPluginConfig } from './settings.ts'
+import { createSafeFetch, DEFAULT_NET_POLICY, type NetPolicy } from './net.ts'
 
 export type PluginLogger = (level: 'info' | 'warn' | 'error', message: string) => void
 
@@ -155,12 +156,20 @@ export function createHost(options: {
    * 传进来的这个函数就是唯一的出口。
    */
   send?: (target: { kind: 'private' | 'group'; id: string }, text: string) => Promise<void>
+  /**
+   * 插件网络出口的策略（域名白名单/黑名单、是否允许内网、超时）。
+   *
+   * 不传就是默认策略：域名不限，但内网、回环、链路本地一律打不进去。
+   * 插件拿到的 ctx.fetch 是这层包装过的，不是裸 fetch。
+   */
+  netPolicy?: NetPolicy
 }) {
   const pluginsRoot = options.pluginsRoot
   const dataRoot = options.dataRoot
   const settingsFile = options.settingsFile ?? join('persona', 'plugins.yaml')
   const logger = options.logger ?? defaultLogger
   const sendFn = options.send
+  const netPolicy = options.netPolicy ?? DEFAULT_NET_POLICY
 
   const errors: { id: string; message: string }[] = []
   /** 已成功激活的插件 */
@@ -247,7 +256,8 @@ export function createHost(options: {
       // 按 permissions 挂能力：没声明就不给这个入口
       ...(permissions.includes('net')
         ? {
-            fetch: (url: string, init?: RequestInit) => fetch(url, init),
+            // 不是裸 fetch：会拦内网地址、限制协议、自己跟重定向（见 plugins/net.ts）
+            fetch: createSafeFetch(netPolicy, id),
           }
         : {}),
       ...(permissions.includes('message') && sendFn

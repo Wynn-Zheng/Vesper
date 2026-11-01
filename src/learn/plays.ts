@@ -1,4 +1,5 @@
-import { copyFileSync, existsSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { info } from '../core/log.ts'
 import { similarity } from '../core/text.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -38,6 +39,16 @@ function FILE(): string {
 }
 const MAX_KEEP = 60
 
+/**
+ * 一行经验的正则。
+ *
+ * 抽出来给两处共用：读的时候解析，写的时候判断"文件里到底有没有真内容"。
+ * 分开写是踩过的坑——判断有效性用的是"以 `- ` 开头"，而空模板里
+ * `- （还没有）` 也以它开头，于是每次保存都以为文件坏了、备份一遍，
+ * persona/learned/ 里堆了几百个 .bad 文件。
+ */
+const LINE_RE = /^-\s+\[(\d+)分\](★?)\s+他说「(.+?)」→\s*我回「(.+?)」\s*（(\d{4}-\d{2}-\d{2})）\s*$/
+
 function today(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -59,7 +70,7 @@ export function loadPlays(): Play[] {
   const out: Play[] = []
   for (const line of text.split(/\r?\n/)) {
     // ★ 表示人工精选过；有没有它都要能读
-    const m = /^-\s+\[(\d+)分\](★?)\s+他说「(.+?)」→\s*我回「(.+?)」\s*（(\d{4}-\d{2}-\d{2})）\s*$/.exec(line.trim())
+    const m = LINE_RE.exec(line.trim())
     if (!m) continue
     const score = Number(m[1])
     // 文件被手改坏时跳过，别让 NaN 混进渲染
@@ -79,6 +90,33 @@ function formatLine(p: Play): string {
   return `- [${p.score}分]${star} 他说「${p.scene}」→ 我回「${p.reply}」（${p.date}）`
 }
 
+/**
+ * 备份一份"解析不了"的文件，只留最近 3 个。
+ *
+ * 只留 3 个：真出问题时看最近那份就够了；这个函数以前没上限，
+ * 一次误判就堆几百个文件，把 persona/learned/ 撑爆。
+ */
+function backupBad(): void {
+  try {
+    copyFileSync(FILE(), `${FILE()}.bad-${Date.now()}`)
+    const dir = dirname(FILE())
+    const base = basename(FILE())
+    const olds = readdirSync(dir)
+      .filter((f) => f.startsWith(base + '.bad-'))
+      .sort()
+      .slice(0, -3)
+    for (const f of olds) {
+      try {
+        unlinkSync(join(dir, f))
+      } catch {
+        /* 删不掉就算了 */
+      }
+    }
+  } catch {
+    /* 备份失败也继续写：不能因为备份不了就不保存 */
+  }
+}
+
 /** 人工标记/取消精选。改完立刻落盘。 */
 export function toggleChecked(scene: string, checked: boolean): boolean {
   const items = loadPlays()
@@ -92,13 +130,17 @@ export function toggleChecked(scene: string, checked: boolean): boolean {
 export function savePlays(items: Play[]): void {
   // 现有文件里如果有解析不了的正文，先备份再覆盖 —— 
   // 之前是"解析出几条就写几条"，格式手改坏一次，历史就被 1 条盖掉。
+  //
+  // 判断"有正文"必须用完整的行格式，不能用"以 - 开头"：
+  // 空模板里的 `- （还没有）` 也以 - 开头，导致每次保存都备份一份，
+  // 几百个 .bad 文件堆在 persona/learned/ 里。
   try {
     if (existsSync(FILE())) {
       const raw = readFileSync(FILE(), 'utf8')
-      const parsed = raw.split(/\r?\n/).filter((l) => l.trim().startsWith('- ')).length
+      const parsed = raw.split(/\r?\n/).filter((l) => LINE_RE.test(l.trim())).length
       const usable = loadPlays().length
       if (parsed > 0 && usable === 0) {
-        copyFileSync(FILE(), FILE + '.bad-' + Date.now())
+        backupBad()
       }
     }
   } catch {

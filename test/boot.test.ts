@@ -46,10 +46,11 @@ const rules = (patch?: Partial<Rules>): Rules => ({
   ...DEFAULTS,
   ...patch,
   说话: { ...DEFAULTS.说话, 回复前延迟: [0, 0], 条间延迟: [0, 0], ...patch?.说话 },
-  // 测试里把防抖压到 0，"偶尔不回"关掉，否则断言时序不可控
+  // 测试里把防抖压到 0（档位设「自定义」才用下面这几个数），
+  // "偶尔不回"关掉，否则断言时序不可控
   行为: {
     ...DEFAULTS.行为,
-    防抖: { 安静: 0, 同人续发: 0, 换人: 0, 被at最多: 0, 批次上限: 0 },
+    防抖: { 档位: '自定义', 安静: 0, 活跃: 0, 同人续发: 0, 换人: 0, 被at最多: 0, 批次上限: 0 },
     发言频率: 1,
     偶尔不回概率: 0,
     ...patch?.行为,
@@ -113,4 +114,61 @@ test('reply 抛错不会让进程崩', async () => {
   t.push(msg('4', '在吗'))
   await tick()
   assert.equal(t.sent.length, 0)
+})
+
+/* ---------------- 防抖档位 ---------------- */
+
+/** 换防抖档位用：其它行为参数保持测试用的那套（不回退、必回） */
+const withDebounce = (防抖: Partial<Rules['行为']['防抖']>): Rules =>
+  rules({
+    行为: {
+      ...DEFAULTS.行为,
+      防抖: { ...DEFAULTS.行为.防抖, ...防抖 },
+      发言频率: 1,
+      偶尔不回概率: 0,
+    },
+  })
+
+test('防抖关闭时，连发的两条各自成一轮（不合并）', async () => {
+  const t = new FakeTransport()
+  let calls = 0
+  boot(t, {
+    getRules: () => withDebounce({ 档位: '关闭' }),
+    reply: () => {
+      calls++
+      return '好的'
+    },
+  })
+  t.push(msg('a', '第一句'))
+  t.push(msg('b', '第二句'))
+  await tick(200)
+  assert.equal(calls, 2, '关掉防抖后不该合并成一轮')
+})
+
+test('防抖开着时，同一人连发会被合并成一轮', async () => {
+  const t = new FakeTransport()
+  let calls = 0
+  // 所有等待都压到 0.05 秒：够两条消息落进同一批，又快到测试不用等太久。
+  // 注意 安静 也要给——第一条消息没有历史，"上一条距今"算无穷远，走的是安静档。
+  boot(t, {
+    getRules: () =>
+      withDebounce({
+        档位: '自定义',
+        安静: 0.05,
+        活跃: 0.05,
+        同人续发: 0.05,
+        换人: 0.05,
+        被at最多: 0.05,
+        批次上限: 1,
+      }),
+    reply: () => {
+      calls++
+      return '好的'
+    },
+  })
+  t.push(msg('c', '第一句'))
+  t.push(msg('d', '第二句'))
+  await tick(300)
+  assert.equal(calls, 1, '两条连发应该合成一轮')
+  assert.equal(t.sent.length, 1)
 })

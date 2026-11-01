@@ -1,6 +1,6 @@
 import { rand, say, sleep } from './channel/send.ts'
 import type { Rules } from './core/config.ts'
-import { talkValueOf } from './core/config.ts'
+import { talkValueOf, resolveDebounce } from './core/config.ts'
 import { scoreReply } from './loop/score.ts'
 import { decideQuote, QUOTE_THRESHOLD } from './loop/quote.ts'
 import { decayedMood, loadMood } from './persona/mood.ts'
@@ -169,8 +169,15 @@ interface Buffer {
   addressed: boolean
   /** 第一条到达时间，用于批次上限 */
   firstAt: number
-  /** 上一条到达时间，用于判断"安静"还是"活跃" */
+  /** 上一条到达时间（本批次内），用于算批次跨度 */
   lastAt: number
+  /**
+   * 这个会话**上一批**最后一条消息的时间。
+   *
+   * 有时候是 0（第一次说话）。判断"安静还是活跃"看的是它，
+   * 不是 lastAt —— lastAt 在本批次内永远是刚到的那个时间。
+   */
+  prevAt: number
   lastSender: string
   timer: NodeJS.Timeout
 }
@@ -561,6 +568,10 @@ export function boot(transport: Transport, opts: BootOptions): void {
     }
 
     appendRaw({ ts: m.at, scope: scopeOf(m.from), role: 'user', text: displayText, ...(m.senderId ? { senderId: m.senderId } : {}) })
+    // 先取再写：这个值就是"上一条消息距今多久"，是判断安静/活跃的依据。
+    // 之前放在下面 schedule 里读 lastTalk，读到的已经是刚写进去的新值，
+    // 算出来永远是 0，"安静"那一档从来没生效过。
+    const prevTalkAt = lastTalk.get(`${m.from.kind}:${m.from.id}`) ?? 0
     lastTalk.set(`${m.from.kind}:${m.from.id}`, m.at)
     // 后面用的都是替换过的文本（聚合、生成、日志）
     m.text = displayText
@@ -572,17 +583,46 @@ export function boot(transport: Transport, opts: BootOptions): void {
     const key = scopeOf(m.from)
     const now = Date.now()
     const addressed = !(m.passive ?? false)
+
+    // 档位是「关闭」：不聚合，每条立刻处理。
+    if (resolveDebounce(rules.行为.防抖) === null) {
+      const single: Buffer = {
+        texts: [m.text],
+        senders: [senderKey],
+        last: m,
+        passive: m.passive ?? false,
+        addressed,
+        firstAt: now,
+        lastAt: now,
+        prevAt: prevTalkAt,
+        lastSender: senderKey,
+        timer: setTimeout(() => {}, 0),
+      }
+      buffers.set(key, single)
+      void flush(key)
+      return
+    }
+
     const schedule = (buf: Buffer): void => {
       clearTimeout(buf.timer)
-      const d = rules.行为.防抖
-      const quiet = now - buf.lastAt > 30_000
-      const sameSender = (m.senderId ?? m.from.id) === buf.lastSender
+      const d = resolveDebounce(rules.行为.防抖)
+      if (!d) return
 
-      // 被 @ 优先；安静时多等一会儿；同人续发给补话时间；换人马上处理
-      let waitSec = d.同人续发
-      if (addressed) waitSec = d.被at最多
-      else if (quiet) waitSec = d.安静
-      else if (!sameSender) waitSec = d.换人
+      const sameSender = (m.senderId ?? m.from.id) === buf.lastSender
+      // 安静/活跃看的是**上一条消息**距今多久，不是本批次内。
+      // 批次内最后一条永远是刚到的，用它算这个值永远是 0。
+      const quiet = now - prevTalkAt > 30_000
+
+      // 第一条：群里是冷是热，决定"多留一会儿看有没有人接话"。
+      // 后面又来消息：同人给补话的时间，换人马上处理。
+      let waitSec: number
+      if (buf.texts.length <= 1) {
+        waitSec = quiet ? d.安静 : d.活跃
+      } else {
+        waitSec = sameSender ? d.同人续发 : d.换人
+      }
+      // 被 @ 是上限不是替换：本来该等 0.5 秒的，被 @ 了也不用等更久
+      if (addressed) waitSec = Math.min(waitSec, d.被at最多)
 
       // 一批从第一条起最多等这么久，不能因为一直有新消息无限延后
       const elapsed = now - buf.firstAt
@@ -613,6 +653,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       addressed,
       firstAt: now,
       lastAt: now,
+      prevAt: prevTalkAt,
       lastSender: m.senderId ?? m.from.id,
       timer: setTimeout(() => {}, 0),
     }

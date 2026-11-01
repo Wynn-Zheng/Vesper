@@ -712,7 +712,10 @@
 /* 学到的说话方式 */
 .self-play{padding:7px 0;border-bottom:1px solid rgba(255,255,255,.04)}
 .self-play:last-child{border-bottom:0;padding-bottom:0}
-.self-play-scene{font-size:11px;color:var(--dim2);margin-bottom:2px}
+.self-play-scene{font-size:11px;color:var(--dim2);margin-bottom:2px;display:flex;align-items:center;gap:8px}
+.self-play-count{font-size:10.5px;color:var(--dim3)}
+.self-star{cursor:pointer;font-size:14px;color:var(--dim2);line-height:1;padding:0 2px;transition:color .16s var(--ease)}
+.self-star:hover{color:var(--blue)}
 
 /* 版本对比 */
 .self-select{background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:6px 9px;color:var(--text);font-size:12.5px;font-family:inherit;outline:none;transition:border-color .16s var(--ease)}
@@ -3936,6 +3939,43 @@ function renderSelfLearnPage(body, d) {
     }
     body.appendChild(c)
   }
+
+  // 群里的说法（从群聊里学到的、能自己用的表达）
+  {
+    const exprs = d.expressions || []
+    const c = selfCard('群里的说法', exprs.length ? exprs.length + ' 条' : '')
+    if (!exprs.length) {
+      c.appendChild(
+        selfEmpty(
+          '还没学到。它在群里聊天时会留意大家反复用的说法（比如把「确实」说成「属实」），学到之后说话会带上这个群的口音。',
+        ),
+      )
+    } else {
+      const all = SELF_MORE.expr ? exprs : exprs.slice(0, 8)
+      for (const x of all) {
+        const row = el('div', 'self-play')
+        const head = el('div', 'self-play-scene')
+        head.appendChild(el('span', '', `「${x.text}」`))
+        if (x.count > 1) head.appendChild(el('span', 'self-play-count', `见过 ${x.count} 次`))
+        const star = el('span', 'self-star', x.checked ? '★' : '☆')
+        star.title = x.checked ? '取消精选' : '标记精选（只用精选时只带星的会用到）'
+        star.onclick = () => toggleExpression(x.text, !x.checked)
+        head.appendChild(star)
+        row.appendChild(head)
+        if (x.scene) row.appendChild(el('div', 'self-item', x.scene))
+        c.appendChild(row)
+      }
+      if (exprs.length > 8) c.appendChild(selfMoreBtn('expr', exprs.length))
+      c.appendChild(
+        el(
+          'div',
+          'hint',
+          '这些是从群友的话里学的，不是教科书词。只在群聊里会用上，私聊里不会带出来。',
+        ),
+      )
+    }
+    body.appendChild(c)
+  }
 // 它对自己的理解（self.md 的「我·xxx」）
   // 这是它在相处中慢慢长出来的，不是你设的（你设的是角色卡）；
   // 只读展示，因为它由「自我反思」写入。
@@ -5614,6 +5654,15 @@ async function togglePlay(scene, checked) {
   try {
     await sendJson('/api/action', { action: 'togglePlay', payload: { scene, checked } })
     loadFeatures()
+  } catch (e) { alert('失败：' + e.message) }
+}
+
+// 群里的说法：标/取消精选。改完重新拉一次自我页，星标立刻变
+async function toggleExpression(text, checked) {
+  try {
+    await sendJson('/api/action', { action: 'toggleExpression', payload: { text, checked } })
+    SELF_DATA = null
+    await loadSelfV2()
   } catch (e) { alert('失败：' + e.message) }
 }
 

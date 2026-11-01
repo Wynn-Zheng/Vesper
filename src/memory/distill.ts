@@ -10,6 +10,7 @@ import { appendInsights, loadEpisodes, nextEpisodeId, saveEpisode } from './stor
 import { appendLife, loadSelf, saveSelf } from '../self/store.ts'
 import { refreshProfile } from '../persona/profile.ts'
 import { learnJargon } from '../learn/jargon.ts'
+import { learnExpressions } from '../learn/expression.ts'
 
 /** 时间戳 → 本地日期 yyyy-mm-dd */
 function dateOf(ts: number): string {
@@ -480,10 +481,15 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
     }
   }
 
-  // 群聊整理时顺带学黑话：这时候正好有一整段对话在手
+  // 群聊整理时顺带学黑话和说法：这时候正好有一整段对话在手。
+  //
+  // 两件事分开学，因为学的东西不一样：
+  //   - 黑话：这个词在这个群里是什么意思（听懂）
+  //   - 说法：这个群平时怎么说话（会说）
   if (opts.scope.startsWith('group:')) {
     const gid = opts.scope.slice('group:'.length)
     void learnJargon(opts.turns, opts.llm, gid).catch(() => {})
+    void learnExpressions(opts.turns, opts.llm, gid, opts.rules).catch(() => {})
   }
 
   info('整理完成', { person: opts.personId, scope: opts.scope, ...result })

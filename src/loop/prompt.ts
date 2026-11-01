@@ -14,11 +14,20 @@ export interface PromptParts {
   /** 它已经提了、还在等主人批的修改申请（没批之前不算数） */
   requests?: string
   /** 这一轮是不是在控制台里聊（不是 QQ） */
+  /** 关键词反应：命中关键词后给模型的提示（空串 = 没命中） */
+  keyword?: string
   consoleMode?: boolean
   /** 核心记忆（只能人改的那部分），优先级最高 */
   core?: string
   /** 说话习惯（从它自己说过的话统计出来的） */
   speech?: string
+  /**
+   * 在这个群里学到的说法（从群友嘴里捞的、能自用的表达）。
+   *
+   * 和 speech 的区别：speech 是"它说话什么形状"（长度、问句比例），
+   * 是统计出来的；这个学的是这个群的口音，是可以拿来用的词和说法。
+   */
+  expression?: string
   /** 成长的痕迹：它以前怎么看自己、现在怎么看 */
   growth?: string
   /**
@@ -118,6 +127,9 @@ export function buildSystem(parts: PromptParts): string {
     )
   }
   lines.push('')
+
+  // 关键词反应：这条消息里有值得注意的地方（"早上好"→ 愉快打招呼）
+  if (parts.keyword?.trim()) lines.push(parts.keyword.trim())
 
   // 角色卡 = 你设定的人设，优先级最高（它是"这个人的底子"）。
   if (parts.card?.trim()) {
@@ -316,6 +328,12 @@ export function buildSystem(parts: PromptParts): string {
   if (repeatHint) {
     lines.push('')
     lines.push('你刚才已经说过类似的话了。别重复，换个说法，或者干脆别说。')
+  }
+
+  // 群里学到的说法：学的是这个群的口音，和下面统计出来的"说话习惯"挨着放。
+  // 放前面是因为——先知道这个群怎么说，再谈长度和句式的分寸。
+  if (parts.expression) {
+    lines.push('', parts.expression)
   }
 
   // 说话习惯：长度、问句比例、口头禅。没信号时不占篇幅。

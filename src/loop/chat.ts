@@ -4,6 +4,7 @@ import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { Incoming } from '../core/types.ts'
 import { sendImage, splitBySentence } from '../channel/send.ts'
+import { matchKeywordReactions, renderKeywordReactions } from './keyword.ts'
 import { pickEmoji } from '../emoji/pick.ts'
 import { createEmojiStore, type EmojiStore } from '../emoji/store.ts'
 import { chat } from '../llm/deepseek.ts'
@@ -23,6 +24,7 @@ import { decayedMood, loadMood } from '../persona/mood.ts'
 import { loadProfile } from '../persona/profile.ts'
 import { renderGroupContext } from '../people/group.ts'
 import { explainJargon, renderJargon } from '../learn/jargon.ts'
+import { pickExpressions, renderExpressions } from '../learn/expression.ts'
 import { relevantPlays, renderPlays } from '../learn/plays.ts'
 import { buildRelationBlock } from '../relation/format.ts'
 import { loadRelation } from '../relation/store.ts'
@@ -247,6 +249,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     : ''
 
   const system = buildSystem({
+    // 关键词反应：命中关键词就给模型一句"该怎么反应"的提示
+    keyword: renderKeywordReactions(matchKeywordReactions(opts.rules, text)),
     rules: opts.rules,
     card: cardPromptBlock(loadCard()),
     actionDesc: loadCard()?.actionDesc === true,
@@ -278,6 +282,11 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     requests: renderPendingForPrompt(),
     // 说话习惯（长度/问句比例/口头禅），从它自己说过的话里统计
     speech: renderSpeechHabit(),
+    // 这个群里学到的说法（"属实""抽象"这种）：只往群聊里放，
+    // 私聊里带一堆某个群的黑话会很怪。
+    expression: scope.startsWith('group:')
+      ? renderExpressions(pickExpressions(text, 3, opts.rules.表达学习?.只用精选 ?? false))
+      : '',
     // 成长的痕迹（以前怎么看自己 vs 现在）
     growth: renderGrowth(),
     // 电脑操作开了没：决定 prompt 里说"能看屏幕"还是"不能"

@@ -463,6 +463,16 @@ async function runAction(
       return { ok, scene, checked }
     }
 
+    // 群里的说法：标/取消精选。和 togglePlay 分开，因为 key 是「说法」本身，不是场景
+    case 'toggleExpression': {
+      const text = String(payload['text'] ?? '').trim()
+      const checked = payload['checked'] === true
+      if (!text) throw new Error('缺少 text')
+      const { toggleExpressionChecked } = await import('../learn/expression.ts')
+      const ok = toggleExpressionChecked(text, checked)
+      return { ok, text, checked }
+    }
+
     case 'restore': {
       const id = String(payload['id'] ?? '')
       if (!id) throw new Error('缺少快照 id')
@@ -1522,6 +1532,19 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           /* 没有 */
         }
 
+        // 群里的说法：从群聊里学到的、能自用的表达
+        let expressions: Array<{ text: string; scene: string; count: number; date: string; checked: boolean }> = []
+        try {
+          const { loadExpressions } = await import('../learn/expression.ts')
+          expressions = loadExpressions()
+            .slice()
+            .reverse()
+            .slice(0, 40)
+            .map((e) => ({ text: e.text, scene: e.scene, count: e.count, date: e.date, checked: e.checked === true }))
+        } catch {
+          /* 还没学到东西 */
+        }
+
         const traits = Object.entries(self.traits ?? {}).filter(([, v]) => v && String(v).trim())
 
         // 「我的记忆」：它自己的经历和洞察。
@@ -1596,6 +1619,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           issues,
           codemap,
           plays,
+          expressions,
           episodes,
           insights,
           // 「只属于我自己的记忆」：scope === 'shared' 的那些。
@@ -1950,7 +1974,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         try {
           const { loadPlays } = await import('../learn/plays.ts')
           const plays = loadPlays()
-          out.expression = {
+          const expression: Record<string, unknown> = {
             审核: rules.表达学习?.审核 ?? false,
             只用精选: rules.表达学习?.只用精选 ?? false,
             总数: plays.length,
@@ -1959,6 +1983,19 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             低分: plays.filter((x) => x.score <= 3).length,
             最近: plays.slice(-6).map((x) => ({ score: x.score, scene: x.scene, reply: x.reply, date: x.date, checked: !!x.checked })),
           }
+          // 群里的说法（从群友的话里学的，和上面「学到的说话方式」不是一回事）
+          try {
+            const { loadExpressions } = await import('../learn/expression.ts')
+            const exprs = loadExpressions()
+            expression.说法 = {
+              总数: exprs.length,
+              已精选: exprs.filter((x) => x.checked).length,
+              最近: exprs.slice(-5).map((x) => ({ text: x.text, scene: x.scene, count: x.count })),
+            }
+          } catch {
+            expression.说法 = { 总数: 0, 已精选: 0, 最近: [] }
+          }
+          out.expression = expression
         } catch (e) {
           out.expression = { 错误: String(e).slice(0, 80) }
         }
@@ -2124,6 +2161,17 @@ function getPluginService(): ReturnType<typeof createPluginService> {
         if (!t) throw new Error('控制台还没拿到通道，发不了')
         await t.send(target, text)
       },
+      // 插件网络出口：默认禁内网，白名单/黑名单按 rules.yaml 的 插件.网络 来
+      netPolicy: (() => {
+        const net = consoleOpts?.getRules().插件?.网络
+        return {
+          白名单: net?.白名单 ?? [],
+          黑名单: net?.黑名单 ?? [],
+          允许内网: net?.允许内网 ?? false,
+          超时: net?.超时 ?? 20,
+          最多跳转: net?.最多跳转 ?? 5,
+        }
+      })(),
     })
     // 首次创建时后台把「已启用」的插件都加载起来。
     // createHost 只有单个 load(id)，没人调的话 loaded 永远全是 false。
