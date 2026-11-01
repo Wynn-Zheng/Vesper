@@ -10,7 +10,7 @@ import { checkAccess } from '../core/access.ts'
 import type { Rules } from '../core/config.ts'
 import type { Incoming, Target } from '../core/types.ts'
 import { MAX_EMOJI_BYTES, type EmojiStore } from '../emoji/store.ts'
-import { isEmojiCandidate } from '../emoji/detect.ts'
+import { EMOJI_MAX_SIZE, isEmojiCandidate } from '../emoji/detect.ts'
 import { setImageTransport, type OutgoingSegment } from './send.ts'
 
 export interface OnebotOptions {
@@ -372,7 +372,25 @@ export async function captureEmojiSegments(
       height: toNumber(data['height']),
     }
     const seg = { type: rawSeg.type, data }
-    if (!isEmojiCandidate(seg, meta)) continue
+    if (!isEmojiCandidate(seg, meta)) {
+      /*
+       * 没通过。区分两种原因，别让它们在日志里混成一种：
+       *
+       *   1) 明确是大图 / 普通照片 → 正常，不收（常见，不用记）
+       *   2) 缺宽高 → 判不出来。NapCat 的表情包一般带 subType=1，
+       *      那条路已经收了；这里只记"看着小但没宽高"的，
+       *      方便以后排查「为什么表情包没进库」。
+       */
+      const small = typeof meta.size === 'number' && meta.size > 0 && meta.size <= EMOJI_MAX_SIZE
+      const noDims = !meta.width || !meta.height
+      if (small && noDims) {
+        info('一张小图缺宽高，判不准是不是表情包，跳过', {
+          size: meta.size,
+          file: (data['file'] ?? '').slice(0, 40),
+        })
+      }
+      continue
+    }
 
     try {
       const image = await opts.getImage(seg)

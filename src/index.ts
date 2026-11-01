@@ -1,4 +1,5 @@
 import { OnebotTransport } from './channel/onebot.ts'
+import { createEmojiStore } from './emoji/store.ts'
 import { boot } from './boot.ts'
 import { ToolRegistry } from './tools/registry.ts'
 import { codeTools } from './tools/code.ts'
@@ -126,6 +127,16 @@ const transport = new OnebotTransport({
   // 连续对话窗口：刚才在跟它说话的人，不 @ 也能接着聊
   recentTalkers: new Map<string, number>(),
   followUpWindowMs: 2 * 60_000,
+  /*
+   * 表情包收集（群友发的小图存进库，以后它自己也能发）。
+   *
+   * ⚠ 这个字段以前**没传**，所以 `onEvent` 里那句
+   * `if (this.opts.emojiStore && rules)` 永远为假 ——
+   * captureEmojiSegments 写得很完整，但一次都没被调用过，库所以一直是空的。
+   *
+   * 这里传一个指向 persona/emoji 的 store，采集链路才真正接上。
+   */
+  emojiStore: createEmojiStore(),
 })
 
 const apiKey = (process.env['DEEPSEEK_API_KEY'] ?? '').trim()

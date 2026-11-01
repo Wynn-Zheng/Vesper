@@ -1071,6 +1071,22 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           const panelMatch = /^\/panel\/([^/]+)$/.exec(sub)
           if (req.method === 'GET' && panelMatch) {
             const pid = decodeURIComponent(panelMatch[1]!)
+
+            /* 显式校验插件 id 的格式。
+             *
+             * 光靠「路径必须以 panel.html 结尾」也能挡住大部分遍历
+             * （`..%2f..%2fpackage.json` 会变成 `package.json/panel.html`，
+             * 而它不是目录 → ENOENT），但那是**隐式**的：
+             * 只要目标目录里恰好有个 panel.html 就读得到。
+             *
+             * 插件 id 本来就只能是 [a-z0-9-_]（见 manifest 校验），
+             * 这里再卡一道，不依赖任何路径巧合。
+             */
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(pid)) {
+              json(res, 400, { ok: false, error: '插件 id 不合法' })
+              return
+            }
+
             const root = join('plugins', pid, 'panel.html')
             try {
               const html = readFileSync(root, 'utf8')
