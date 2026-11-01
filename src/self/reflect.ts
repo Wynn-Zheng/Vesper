@@ -3,7 +3,7 @@ import { similarity } from '../core/text.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import type { Rules } from '../core/config.ts'
-import { loadEpisodes } from '../memory/store.ts'
+import { recentRaw, loadEpisodes } from '../memory/store.ts'
 import { loadOpen } from '../people/open.ts'
 import { listPeople, savePerson } from '../people/store.ts'
 import { appendLife, loadLife, loadSelf, logDrift, saveSelf } from './store.ts'
@@ -121,6 +121,36 @@ export interface SelfReflectOptions {
   personId?: string
 }
 
+/**
+ * 从最近的原话里认出"主人给它改名"这件事。
+ *
+ * 只在**主人说的**那几条里找，认这几种说法：
+ *   「以后叫你小鱼」「你叫小鱼吧」「就叫你小鱼」「以后叫小鱼」
+ * 认出来就返回新名字；没有返回空字符串。
+ *
+ * 为什么不交给模型判断：实测把原话喂进去、prompt 也写了"主人说了就照办"，
+ * 它仍然返回空字符串 —— 这种事不该靠概率。
+ */
+function detectRenameFromRecent(turns: Array<{ role: string; text: string }>): string {
+  // 只要用户说的；从新到旧找第一条命中的
+  const users = turns.filter((t) => t.role === 'user')
+  for (let i = users.length - 1; i >= 0; i--) {
+    const t = users[i]!.text.replace(/\s+/g, ' ')
+    const m =
+      /(?:以后|就|那就)?叫(?:你|它)?\s*[「"']?([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]{0,7}?)(?=[吧啊呀呢了哦嘛，。！？\s]|$)/.exec(
+        t,
+      )
+    if (m) {
+      // 兜底再剥一次句末语气词："小鱼吧" → "小鱼"
+      const cand = m[1]!.replace(/[吧啊呀呢了哦嘛]$/, '').trim()
+      // 挡掉疑问词和代词："你叫什么"→什么、"那你叫我什么"→我什么
+      if (/(什么|啥|谁|哪|怎么|多少)/.test(cand)) continue
+      if (/^(我|你|他|她|它|人|一声|一下|一声声)$/.test(cand)) continue
+      if (cand.length >= 1) return cand
+    }
+  }
+  return ''
+}
 export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
   const doc = loadSelf()
   // 只在开关打开时才读角色卡：关着的时候连读都不读，省一次 IO
@@ -150,7 +180,15 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     // 上次写的思考要标清楚"已经写过了"。
     // 不标的话模型会顺着上次的话题继续想——实测会连着几天都在琢磨同一件事，
     // 然后那件事又进了自己的记录，越滚越窄。
-    `\n# 我上次写下的想法（已经写过，除非真的有新进展，否则换一件事）\n${doc.thinking || '（还没有）'}`,
+    `\n# 我最近想的事（已经写过，除非真的有新进展，否则换一件事）\n${doc.thinking || '（还没有）'}`,
+    // 最近的对话：反思必须能看到"主人最近跟我说了什么"。
+    // 之前这里只有经历/生活/角色卡，**没有原话** —— 所以主人在对话里说
+    // "以后叫你小鱼"，反思根本看不到，也就不会去改「取名」。
+    `\n# 最近跟人说的话（原话，别复述，但你要知道发生过什么）\n${
+      recentRaw(40)
+        .map((t) => `${t.role === 'user' ? '他' : '我'}：${t.text.replace(/\s+/g, ' ').slice(0, 80)}`)
+        .join('\n') || '（还没有）'
+    }`,
     `\n# 我有没有名字\n${doc.name ? `叫「${doc.name}」，因为${doc.nameReason}` : '还没有名字'}`,
     life.length ? `\n# 我自己的生活记录（最近，这些也都写过了，别重复）\n${life.map((e) => e.lines.map((l) => `- ${l}`).join('\n')).join('\n')}` : '',
     `\n# 最近发生过的事\n${episodes.map((e) => `- ${e.date}｜${e.title}`).join('\n') || '（没有）'}`,
@@ -192,15 +230,20 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     //
     // 以前条件写死 `!doc.name`：一旦有了名字，主人在对话里说"你叫小鱼"
     // 它也不会动 —— 表现为"我跟它说了它还是叫大肥鱼"。
-    const wantedName = (out.取名 ?? '').trim()
+    //
+    // 而且**不能只靠模型**：实测把原话放进材料、prompt 也写了"主人说了就照办"，
+    // 它照样返回空字符串。所以主人在原话里明确说的，这里直接认，确定性优先。
+    const wantedName =
+      (out.取名 ?? '').trim() || detectRenameFromRecent(recentRaw(60))
     if (wantedName && wantedName !== doc.name) {
       // 自己取（没名字时）或主人明确改名，两种都收；理由分开记
+      const byOwner = !(out.取名 ?? '').trim()
       doc.name = wantedName
       doc.nameReason =
         (out.取名原因 ?? '').trim() ||
-        (doc.name ? '主人给改的' : '在整理记忆的时候，觉得这个名字像我')
+        (byOwner ? '主人给改的' : '在整理记忆的时候，觉得这个名字像我')
       touched = true
-      info(`它改名了：${doc.name}`, { 原因: doc.nameReason })
+      info(`它改名了：${doc.name}`, { 原因: doc.nameReason, 来源: byOwner ? '原话识别' : '模型' })
     }
     // 用户写了「我是谁」就锁住 —— 否则他刚改完、下一次反思就被模型版本盖掉，
     // 看起来就像"刚才写的东西被清空了"。
