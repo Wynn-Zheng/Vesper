@@ -202,13 +202,43 @@ export function loadCodeMap(): string | null {
   }
 }
 
-/** 精简版：从缓存里抠出模块那一段（没有缓存就现场扫） */
+/**
+ * 从已落盘的 codemap.md 里解析出精简版。
+ *
+ * 为什么要解析而不是重扫：`loadCodeMapBrief()` 在 `loop/chat.ts` 里**每轮对话**
+ * 都会调一次。原来它无视缓存直接 `scanModules()`，而 scanModules 会 readFileSync
+ * 每个 .ts 的全文 —— 等于每轮对话读 118 个文件、约 1 MB，纯浪费。
+ * 缓存文件就 5.5 KB，解析比扫盘便宜两个数量级。
+ */
+function parseBriefFromMap(text: string): string | null {
+  const head = /一共\s*\*\*(\d+)\*\*\s*个文件、\s*\*\*(\d+)\*\*\s*行、\s*\*\*(\d+)\*\*\s*个模块/.exec(text)
+  if (!head) return null
+
+  const lines: string[] = [`- 一共 ${head[1]} 个文件、${head[2]} 行，分 ${head[3]} 块：`]
+  // 表格行：| `src/channel/` | 和 QQ 打交道… | 2 | 1265 | onebot: … |
+  const rowRe = /^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|/gm
+  let m: RegExpExecArray | null
+  let count = 0
+  while ((m = rowRe.exec(text))) {
+    const raw = m[1]!
+    const dir = raw === 'src/' ? '' : raw.replace(/^src\//, '')
+    lines.push(`  · ${dir || 'src/'}（${m[3]} 个文件）— ${m[2]}`)
+    count++
+  }
+  // 一行模块都没解析出来说明格式变了，交给调用方回退
+  return count > 0 ? lines.join('\n') : null
+}
+
+/** 精简版：优先从缓存解析，缓存没有/不可读才现场扫一次并落盘 */
 export function loadCodeMapBrief(): string {
   const cached = loadCodeMap()
   if (cached) {
-    // 缓存里有完整的表格；这里重新扫一遍比解析表格更省事，也保证是对的
+    const brief = parseBriefFromMap(cached)
+    if (brief) return brief
   }
-  return renderCodeMapBrief(scanModules())
+  const mods = scanModules()
+  saveCodeMap(mods)
+  return renderCodeMapBrief(mods)
 }
 
 /**
