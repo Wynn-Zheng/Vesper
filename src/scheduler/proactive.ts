@@ -206,7 +206,7 @@ export interface UrgeInput {
  * 每一项都是**具体的事**，不是"该联系了"这种感觉——
  * 后者是人给自己找的理由，模型拿到只会说"好久没聊了"。
  */
-export function computeUrge(i: UrgeInput): { score: number; reasons: string[] } {
+export function computeUrge(i: UrgeInput): { score: number; reasons: string[]; greeting: boolean } {
   const budget = proactiveBudgetOf(i.rules, i.stageName)
   const reasons: string[] = []
   let score = 0
@@ -246,21 +246,27 @@ export function computeUrge(i: UrgeInput): { score: number; reasons: string[] } 
   }
 
   // 早晚问候：今天还没说过话的早上 / 深夜，给一个轻声开口的由头。
-  // 注意这是"由头"不是"定时任务"——仍然要过 minUrge 和 gap 门槛，
-  // 不会变成"每天 8 点准时发早安"的机器人。
+  //
+  // ⚠️ 光加 2 分是不够的：问候只在"今天没说过话"时成立（gap < 24h），
+  // 而间隔门要求 minGapHours×0.3（朋友 36h×0.3 = 10.8h）—— 永远等不到。
+  // 所以额外把 greeting 标出来，让调用方把间隔压到 8 小时内。
+  // 窗口也要避开静默时段（默认 23:30–08:30），否则 7:00–8:29 那段根本走不到。
   const hour = i.now.getHours()
   const dayStart = new Date(i.now)
   dayStart.setHours(0, 0, 0, 0)
   const spokeToday = i.lastTalkAt >= dayStart.getTime()
-  if (!spokeToday && hour >= 7 && hour < 10) {
+  let greeting = false
+  if (!spokeToday && hour >= 8 && hour < 11) {
     score += 2
     reasons.push('早上了，还没跟他说过话')
-  } else if (!spokeToday && (hour >= 23 || hour < 1)) {
+    greeting = true
+  } else if (!spokeToday && (hour >= 22 || hour < 1)) {
     score += 2
     reasons.push('很晚了，他还没睡')
+    greeting = true
   }
 
-  return { score: Math.min(10, score), reasons }
+  return { score: Math.min(10, score), reasons, greeting }
 }
 
 /* ---------------- 相似度 ---------------- */
@@ -301,6 +307,8 @@ export interface GateInput {
   openCount: number
   /** 这次"想说话"的由头分 0-10 */
   urge: number
+  /** 这次是由头里的「早晚问候」（今天还没说过话）—— 会把间隔压到 8 小时内 */
+  greeting?: boolean
   /** 连续几次主动后对方没回 */
   noReply: number
   /**
@@ -326,7 +334,12 @@ export function shouldProactive(i: GateInput): GateResult {
 
   // 连续没回：3 次就彻底停，等对方先开口；2 次时抬高门槛、拉长间隔
   if (i.noReply >= 3) return { ok: false, reason: `连续 ${i.noReply} 次没回，等对方先开口` }
-  const urgeNeeded = budget.minUrge + (i.noReply >= 2 ? 2 : 0)
+  // 早晚问候只有 2 分，而"朋友"档的 minUrge 是 3 —— 不降门槛的话它永远不合格。
+  // 降 2 分不是放水：问候本身是"今天还没说过话"才成立的由头，门槛该按这个场景算。
+  const urgeNeeded = Math.max(
+    0,
+    budget.minUrge - (i.greeting ? 2 : 0) + (i.noReply >= 2 ? 2 : 0),
+  )
   if (i.urge < urgeNeeded) return { ok: false, reason: `由头不够（${i.urge} < ${urgeNeeded}）` }
 
   /* ---- 由头足够硬时，可以突破间隔 ----
@@ -348,6 +361,11 @@ export function shouldProactive(i: GateInput): GateResult {
 
   const gapH = (i.now.getTime() - Math.max(i.lastTalkAt, i.lastProactiveAt)) / 3_600_000
   let needH = budget.minGapHours * gapScale * (i.noReply >= 2 ? 1.5 : 1)
+
+  // 早晚问候只在"今天还没说过话"时成立（gap < 24h），而间隔门要
+  // minGapHours×0.3（朋友 36h×0.3 = 10.8h）—— 不压的话永远等不到。
+  // 8 小时是折中：早上没说话、晚上想起他，中间隔了半天才像人。
+  if (i.greeting) needH = Math.min(needH, 8)
 
   /* 由头够硬时，最长等多久。
    *
@@ -483,6 +501,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   })
 
   const gate = shouldProactive({
+    greeting: urge.greeting,
     rules,
     now,
     stageName: stage.名,
