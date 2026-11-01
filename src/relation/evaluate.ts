@@ -10,6 +10,8 @@ import { sharedBigrams } from '../core/text.ts'
 // 不带名字就看不出是谁说的。实现在 people/store（原来这里抄了一份）。
 import { displayNameOfAccount } from '../people/store.ts'
 import type { Dimension } from './types.ts'
+import { visible } from '../memory/recall.ts'
+import type { Scope } from '../memory/types.ts'
 
 const SYSTEM = `你在判断一轮聊天有没有改变两个人的关系。只输出 JSON，不要解释，不要代码块。
 
@@ -135,11 +137,18 @@ export interface EvaluateOptions {
  *
  * 所以两块拼起来：最近的经历（提炼过的）+ 最近的原话（没提炼的）。
  */
-function recentContext(personId: string, userText: string, limit = 3): string {
+function scopeOfPerson(personId: string): Scope {
+  const m = /^qq-(.+)$/.exec(personId)
+  return m ? (`private:${m[1]}` as Scope) : 'shared'
+}
+
+function recentContext(scope: Scope, userText: string, limit = 3): string {
   const parts: string[] = []
 
   try {
-    const eps = loadEpisodesSafe()
+    // 按 scope 过滤：以前读全量，给 A 评估时会混进 B 的私聊经历和别群原话 ——
+    // 既判断错人（"他第三次说这件事"），也是隐私泄漏。
+    const eps = loadEpisodesSafe().filter((e) => visible(e.scope, scope))
     if (eps.length) {
       // 1. 按共同 bigram 数排，>= 2 个才算"话题相关"，最多 2 条
       const byTopic = eps
@@ -172,6 +181,7 @@ function recentContext(personId: string, userText: string, limit = 3): string {
   // 最近几轮原话：用来判断"这事他说过没有"
   try {
     const recent = recentRawTurns(6)
+      .filter((t) => visible(t.scope, scope))
       .filter((t) => t.role === 'user' && t.text.trim())
       .slice(-4)
     if (recent.length) {
@@ -195,7 +205,7 @@ function recentContext(personId: string, userText: string, limit = 3): string {
 }
 
 async function evaluate(opts: EvaluateOptions): Promise<void> {
-  const past = recentContext(opts.personId, opts.userText)
+  const past = recentContext(scopeOfPerson(opts.personId), opts.userText)
   const userBlock = [
     `他：${opts.userText}`,
     // 回复前调用的那次没有 selfText：写"还没回"比留空更像一轮真实对话，
