@@ -33,6 +33,7 @@ import { handleMemberApi } from './member-api.ts'
 import { handleSettingsApi } from './settings-api.ts'
 import { handleTestApi } from './test-api.ts'
 import { createPluginService, pluginRoutes } from './plugin-api.ts'
+import { handleEmojiApi } from './emoji-api.ts'
 import { recordConsoleTurn } from './activity.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
@@ -1053,6 +1054,9 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           json(res, r.ok ? 200 : 400, r.ok ? { ok: true, data: { detail: r.detail } } : { ok: false, error: r.detail })
           return
         }
+
+        // 表情包库（看/删/取图）。放在 plugins 之前，路径不冲突但读起来顺。
+        if (await handleEmojiApi(req, res, path, json, readJson)) return
 
         if (path.startsWith('/api/plugins/')) {
           const sub = path.slice('/api/plugins'.length)

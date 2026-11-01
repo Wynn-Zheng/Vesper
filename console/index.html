@@ -4957,6 +4957,113 @@ function svgIcon(name) {
   return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>'
 }
 
+/**
+ * 表情包库管理：看库里有什么、删掉不想要的。
+ *
+ * 为什么是弹层不是新页面：低频操作（偶尔清一次），不值得占一个导航位。
+ */
+async function openEmojiLibrary() {
+  const mask = el('div', 'panel-mask')
+  const box = el('div', 'panel-box')
+  box.style.cssText += ';width:min(860px,94vw);height:min(640px,88vh)'
+
+  const head = el('div', 'panel-head')
+  head.appendChild(el('b', '', '表情包库'))
+  const cnt = el('span', 'hint', '')
+  head.appendChild(cnt)
+  head.appendChild(el('span', 'spacer'))
+
+  const clean = el('button', 'mini-btn', '清掉 30 天没用的')
+  clean.onclick = async () => {
+    try {
+      const raw = await api('/api/emoji/list')
+      const d = raw && raw.data ? raw.data : raw
+      const items = d.items || []
+      const old = items.filter((x) => Date.now() - x.lastUsedAt > 30 * 86400000)
+      if (!old.length) {
+        toast('没有 30 天没用过的')
+        return
+      }
+      if (!confirm('要删掉 ' + old.length + ' 张超过 30 天没用的吗？')) return
+      for (const it of old) await sendJson('/api/emoji/remove', { id: it.id })
+      toast('删了 ' + old.length + ' 张')
+      void load()
+    } catch (e) {
+      alert('失败：' + e.message)
+    }
+  }
+  head.appendChild(clean)
+
+  const close = el('button', 'mini-btn', '关闭')
+  close.onclick = () => mask.remove()
+  head.appendChild(close)
+  box.appendChild(head)
+
+  const body = el('div')
+  body.style.cssText = 'flex:1;min-height:0;overflow-y:auto;padding:14px 16px'
+  box.appendChild(body)
+
+  mask.appendChild(box)
+  mask.onclick = (e) => {
+    if (e.target === mask) mask.remove()
+  }
+  document.body.appendChild(mask)
+
+  async function load() {
+    body.innerHTML = '<div class="hint">加载中…</div>'
+    try {
+      const raw = await api('/api/emoji/list')
+      const d = raw && raw.data ? raw.data : raw
+      const items = d.items || []
+      const tk = new URLSearchParams(location.search).get('token') || ''
+      cnt.textContent = items.length + ' / ' + (d.cap || '?')
+      body.innerHTML = ''
+      if (!items.length) {
+        body.innerHTML =
+          '<div class="empty">库还是空的。群里有人发表情包时会自动收进来（前提是它连上了 QQ）。</div>'
+        return
+      }
+      const grid = el('div')
+      grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px'
+      for (const it of items) {
+        const cell = el('div')
+        cell.style.cssText =
+          'position:relative;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--panel2)'
+
+        const img = document.createElement('img')
+        img.src = '/api/emoji/image/' + encodeURIComponent(it.id) + '?token=' + encodeURIComponent(tk)
+        img.style.cssText = 'width:100%;height:110px;object-fit:contain;display:block;background:rgba(255,255,255,.02)'
+        img.loading = 'lazy'
+        cell.appendChild(img)
+
+        const del = el('button', '', '×')
+        del.style.cssText =
+          'position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;font-size:14px;line-height:1'
+        del.onclick = async () => {
+          if (!confirm('删掉这张？')) return
+          try {
+            await sendJson('/api/emoji/remove', { id: it.id })
+            cell.remove()
+            void load()
+          } catch (e) {
+            alert('失败：' + e.message)
+          }
+        }
+        cell.appendChild(del)
+
+        const meta = el('div', '', it.size < 1024 ? it.size + ' B' : (it.size / 1024).toFixed(0) + ' KB')
+        meta.style.cssText = 'font-size:10px;color:var(--dim2);padding:3px 6px;text-align:center'
+        cell.appendChild(meta)
+        grid.appendChild(cell)
+      }
+      body.appendChild(grid)
+    } catch (e) {
+      body.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
+    }
+  }
+  await load()
+}
+
 function abilityCard(c) {
   const card = el('div')
   card.style.cssText =
@@ -5049,6 +5156,14 @@ function abilityCard(c) {
   foot.appendChild(el('span', 'hint', usage)).style.fontSize = '11px'
 
   const tb = el('button', 'mini-btn', '测试')
+
+  // 表情包有库要管：看里面有什么、删掉不想要的
+  if (c.id === 'emoji') {
+    const mg = el('button', 'mini-btn', '管理')
+    mg.style.cssText += ';margin-left:6px;font-size:11px;padding:1px 8px'
+    mg.onclick = () => openEmojiLibrary()
+    foot.appendChild(mg)
+  }
   tb.style.cssText += ';margin-left:auto;font-size:11px;padding:1px 8px'
   tb.onclick = async () => {
     tb.textContent = '跑…'
