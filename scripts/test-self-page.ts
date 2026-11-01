@@ -48,10 +48,14 @@ check('有 tab 容器', html.includes('id="self-tabs"'))
 check('默认停在角色卡', /let SELF_TAB = 'card'/.test(html))
 
 console.log('\n=== 3. 保留的功能函数 ===')
-for (const fn of ['decideRequest', 'selfSec', 'selfCard', 'selfEmpty', 'renderSelfCardPage']) {
+for (const fn of ['decideRequest', 'selfCard', 'selfEmpty', 'renderSelfCardPage']) {
   check(`有 ${fn}`, html.includes(fn))
 }
 check('有 renderSelfV2', html.includes('function renderSelfV2()'))
+// selfSec() / loadSelf() 是 6-tab 时代的遗留，2026-11-01 清理时删掉了：
+// 前者 0 调用，后者被 loadSelfV2 取代。这里反向守着，防止又被加回来。
+check('已删 selfSec', !html.includes('function selfSec('))
+check('已删 loadSelf（旧版）', !html.includes('async function loadSelf()'))
 
 console.log('\n=== 3b. 状态与经历（分页后）===')
 check('有「它想干什么」', html.includes('它想干什么'))

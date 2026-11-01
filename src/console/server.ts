@@ -622,7 +622,8 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 只允许 console/ 下的 .js/.css，路径里不许有 ..，其余一律 404。
     //
     // 二维码图片也在这里放行：`<img src>` 同样带不了 header。
-    // 它只在**未登录**时存在，而且服务只听 127.0.0.1，没有额外暴露面。
+    // 它只在**未登录**时存在；默认只监听 127.0.0.1，配了 CONSOLE_HOST=0.0.0.0
+    // （手机访问）时这张图也会被同网段看到，这是那个开关本身的取舍。
     if (
       (req.method === 'GET' && /^\/(?:vendor\/)?[\w.-]+\.(js|css)$/.test(path)) ||
       (req.method === 'GET' && path === '/api/napcat/qrcode.png') ||
