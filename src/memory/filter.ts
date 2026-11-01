@@ -36,6 +36,15 @@ const COMMIT_RE =
   /答应|说好|约定|一定|别忘|记得|不许|不准|不要|讨厌|不喜欢|受不了|以后别|下次别|我保证/
 
 /**
+ * 情绪 / 状态词：短句里有这些就**不该**当废话丢。
+ *
+ * "我好累""分手了""她走了""我病了" 都只有 3 个字，按 `length < 4` 扣 3 分 +
+ * 不相干加 2 分 = -1，正好压到 NOISE_FLOOR 上被砍 —— 而这恰恰是最该记住的那些话。
+ */
+const EMOTION_RE =
+  /累|困|难受|开心|难过|哭|难受|疼|病|分手|走了|离婚|辞职|失业|吵架|生气|烦|焦虑|害怕|紧张|失眠|睡不着|压力|崩溃|委屈|孤独|想哭/
+
+/**
  * 一句话值不值得提炼。
  *
  * 分数只用来**排序**，不做硬阈值——最终留多少由调用方决定。
@@ -63,8 +72,10 @@ export function worthDistilling(turn: SinceRawTurn, existingTexts: string[]): nu
   //    "哈哈哈哈哈哈" 长度够，但一个字的信息都没有
   if (FILLER_RE.test(text)) score -= 5
 
-  // 4. 太短的基本是"嗯""好""哈哈"
-  if (text.length < 4) score -= 3
+  // 4. 太短的基本是"嗯""好""哈哈" —— 但情绪句除外
+  //    "我好累""分手了""她走了" 只有 3 个字，却是最该记住的那类
+  if (EMOTION_RE.test(text)) score += 2
+  else if (text.length < 4) score -= 3
   else if (text.length < 8) score -= 1
 
   return score

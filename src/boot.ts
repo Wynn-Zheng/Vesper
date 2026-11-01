@@ -1,4 +1,4 @@
-import { rand, say, sleep } from './channel/send.ts'
+﻿import { rand, say, sleep } from './channel/send.ts'
 import type { Rules } from './core/config.ts'
 import { talkValueOf, resolveDebounce } from './core/config.ts'
 import { scoreReply } from './loop/score.ts'
@@ -356,7 +356,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       // 原来评估在回复**之后**异步跑，结果是"被怼的那一句还笑着回，下一句才生气"
       // —— 这是最影响体验的那类 bug。代价是回复前多等一次小调用（几百毫秒到 1-2 秒），
       // 换"这一句的情绪是对的"。群聊普通闲聊不走这条，仍然发完之后异步评。
-      if (opts.llm && !(m.passive ?? false) && rules.关系.评估?.开启 !== false) {
+      if (opts.llm && !passive && rules.关系.评估?.开启 !== false) {
         const earlyPerson = personOfMessage(m)
         if (
           allow(`eval:${earlyPerson}`, Math.max(0, Number(rules.关系.评估?.每天最多 ?? 300)), 86_400_000)
@@ -397,7 +397,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       const scopeNow = scopeOf(m.from)
       const lastQuote = lastQuoteAt.get(scopeNow) ?? Number.NEGATIVE_INFINITY
       const qd = shouldQuote(rules, m.from.kind, batch, m, {
-        addressed: !(m.passive ?? false),
+        addressed: !passive,
         targetLen: text.length,
         reply,
         moodIntensity: currentMoodIntensity(),
@@ -429,7 +429,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
         // 所以这里跳过它们，避免同一条消息评估两次。
         const evalConf = rules.关系.评估
         const evalPerson = personOfMessage(m)
-        if (m.passive) {
+        if (passive) {
           if (evalConf?.开启 === false) {
             /* 配置里关掉了 */
           } else if (

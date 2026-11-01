@@ -468,8 +468,12 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
         touched = true
       }
     }
-    if (s?.在想 && s.在想.trim()) {
-      doc.thinking = s.在想.trim()
+    // 「在想」要判等：不判的话每次整理都 touched=true → 每批都重写 self.md
+    // 并压一版历史。实测 self-history 已满 60 版、最近 6 版间隔 2–5 分钟、
+    // 其中 5 版字节完全相同 —— 真实的人格历史被无变化的快照挤掉了。
+    const nextThinking = (s?.在想 ?? '').trim()
+    if (nextThinking && nextThinking !== doc.thinking) {
+      doc.thinking = nextThinking
       touched = true
     }
     if (touched) saveSelf(doc)
