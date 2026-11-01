@@ -208,21 +208,6 @@ function driftLogFile(): string {
   return cardScopedPath(join('self-history', 'drift.jsonl'), DRIFT_LOG_LEGACY)
 }
 
-/**
- * 和上一版比，自述变了多少。
- * 相似度低于 0.45 视为"明显变了"——不是不让你变，是变的时候留个记号。
- */
-export function detectDrift(): { changed: boolean; from: string; to: string; sim: number } | null {
-  const versions = listSelfVersions(2)
-  if (versions.length < 2) return null
-  const cur = loadSelf()
-  const prev = loadSelfVersion(versions[1]!.id)
-  if (!prev || !prev.about || !cur.about) return null
-  if (prev.about === cur.about) return { changed: false, from: prev.about, to: cur.about, sim: 1 }
-  const sim = similarity(prev.about, cur.about)
-  return { changed: sim < 0.45, from: prev.about, to: cur.about, sim }
-}
-
 /** 记一条漂移事件，控制台能看到"它什么时候变了个样" */
 export function logDrift(to: string, from: string, sim: number): void {
   appendJsonl(driftLogFile(), { at: Date.now(), from: from.slice(0, 200), to: to.slice(0, 200), sim })

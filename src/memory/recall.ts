@@ -1,26 +1,10 @@
-import type { Episode, Insight, RawTurn, Recalled, Scope } from './types.ts'
+﻿import type { Episode, Insight, RawTurn, Recalled, Scope } from './types.ts'
 import { loadFacts, effectiveConfidence } from './facts.ts'
 import { loadEpisodes, loadInsights, readRaw, saveEpisode } from './store.ts'
 import { loadOpen, type OpenItem } from '../people/open.ts'
-import { listPeople } from '../people/store.ts'
-
-/**
- * 从 QQ 号查显示名。
- *
- * 为什么要查：raw 里只存 senderId（精确），但渲染给模型看时
- * 一串「他：」「他：」分不清是谁说的 —— 群里两个人对话后突然 @ 你，
- * 你必须知道上一句是谁说的。查不到就返回空，渲染时回落到"他"。
- */
-function nameOfAccount(account: string): string {
-  try {
-    for (const person of listPeople()) {
-      if (person.accounts.some((a) => a.id === account)) return person.name?.trim() ?? ''
-    }
-  } catch {
-    /* 查不到就算了 */
-  }
-  return ''
-}
+// 从 QQ 号查显示名：raw 里只存 senderId，渲染给模型看时要能对上人，
+// 否则一串「他：」分不清谁说的。实现在 people/store（原来这里抄了一份）。
+import { displayNameOfAccount } from '../people/store.ts'
 
 import { bm25, parseTimeHint, sharedBigrams, similarity } from '../core/text.ts'
 import { rerank } from './rerank.ts'
@@ -481,7 +465,7 @@ export function recall(opts: RecallOptions): Recalled {
     // 直接渲染出来会变成一串「他：」——分不清是谁说的。
     .map((t) => {
       if (t.role !== 'user' || !t.senderId) return t
-      const name = nameOfAccount(t.senderId)
+      const name = displayNameOfAccount(t.senderId)
       return name ? { ...t, speakerName: name } : t
     })
 

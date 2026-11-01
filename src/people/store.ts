@@ -293,3 +293,23 @@ export function syncPersonName(platform: Platform, accountId: string, name: stri
   cache.set(key, hit)
   return true
 }
+
+/**
+ * 按账号 ID 找显示名（跨平台匹配）。
+ *
+ * 用途：raw 里只存 senderId（精确），但渲染给模型看时要能对上人——
+ * 群里两个人对话后突然 @ 你，必须知道上一句是谁说的。
+ *
+ * 查不到就返回空串，调用方回落到「他」。
+ * 原来 `memory/recall.ts` 和 `relation/evaluate.ts` 各抄了一份逐行相同的实现。
+ */
+export function displayNameOfAccount(accountId: string): string {
+  try {
+    for (const person of listPeople()) {
+      if (person.accounts.some((a) => a.id === accountId)) return person.name?.trim() ?? ''
+    }
+  } catch {
+    /* 查不到就算了 */
+  }
+  return ''
+}

@@ -334,7 +334,8 @@ export function renderCoreForPrompt(): string {
   const items = loadCore()
   if (!items.length) return ''
 
-  const order: CoreKind[] = ['身份', '边界', '诺言', '偏好']
+  // 顺序就是 KINDS 的顺序（身份 → 边界 → 诺言 → 偏好），别在这里再抄一份数组。
+  const order = KINDS
   const lines: string[] = ['【我一定不能弄错的】']
 
   for (const kind of order) {

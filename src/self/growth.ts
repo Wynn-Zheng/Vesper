@@ -12,43 +12,7 @@
  * 怎么用：只在真的变过（有 >= 2 条 drift）时才注入，而且只说**最早和现在**，
  * 不列全部——列全部会变成流水账，反而看不出变化。
  */
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { cardScopedPath } from '../persona/card.ts'
-
-const DRIFT_LEGACY = 'persona/self-history/drift.jsonl'
-/** 按角色卡：每张卡有自己的成长记录 */
-function driftPath(): string {
-  return cardScopedPath(join('self-history', 'drift.jsonl'), DRIFT_LEGACY)
-}
-
-interface Drift {
-  at: number
-  from: string
-  to: string
-  sim: number
-}
-
-function loadDrift(): Drift[] {
-  if (!existsSync(driftPath())) return []
-  const out: Drift[] = []
-  try {
-    for (const line of readFileSync(driftPath(), 'utf8').split('\n')) {
-      if (!line.trim()) continue
-      try {
-        const j = JSON.parse(line) as Partial<Drift>
-        if (typeof j.from === 'string' && typeof j.to === 'string' && typeof j.at === 'number') {
-          out.push({ at: j.at, from: j.from, to: j.to, sim: Number(j.sim) || 0 })
-        }
-      } catch {
-        /* 坏行跳过 */
-      }
-    }
-  } catch {
-    return []
-  }
-  return out
-}
+import { loadDrifts } from './store.ts'
 
 /** 多少天前 */
 function ago(at: number, now = Date.now()): string {
@@ -62,7 +26,9 @@ function ago(at: number, now = Date.now()): string {
 }
 
 export function renderGrowth(now = Date.now()): string {
-  const all = loadDrift()
+  // 读全部并恢复成正序（loadDrifts 是给控制台用的，返回最近的 N 条倒序）。
+  // 原来这里自己抄了一份 drift.jsonl 的解析，与 store.ts 的重复。
+  const all = loadDrifts(Number.MAX_SAFE_INTEGER).reverse()
   // 只变过一次说明还没形成"轨迹"，说了反而奇怪
   if (all.length < 2) return ''
 
