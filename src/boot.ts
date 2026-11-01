@@ -194,7 +194,6 @@ export function boot(transport: Transport, opts: BootOptions): void {
     }
   }
 
-  const lastTalkAt = (t: { kind: string; id: string }): number => lastTalk.get(`${t.kind}:${t.id}`) ?? 0
   const recentReplyCount = (scope: string): number => {
     const now = Date.now()
     const arr = (replyTimes.get(scope) ?? []).filter((x) => now - x < 5 * 60_000)
