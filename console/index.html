@@ -2822,33 +2822,6 @@ async function decideRequest(id, action, grant) {
 
 
 
-/** 切换「我是谁」归谁写：me = 用户锁住原文，it = 它自己写 */
-async function setAboutOwner(owner) {
-  try {
-    await sendJson('/api/self/owner', { owner }, 'PUT')
-    toast(owner === 'me' ? '已锁住：原文只有你能改，它只能补充' : '已交给它自己写')
-    await loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
-
-/** 保存「我是谁」的正文（接口会顺带把所有权设成「我写」） */
-async function saveSelfText(text) {
-  const t = String(text || '').trim()
-  if (!t) {
-    alert('正文不能空')
-    return
-  }
-  try {
-    await sendJson('/api/self/text', { text: t }, 'PUT')
-    toast('正文已保存')
-    await loadSelfV2()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
-
 async function saveTalkStyle() {
   const val = (id) => $(id)?.value ?? ''
   const body = {
@@ -4229,76 +4202,6 @@ function renderSelfTalkPage(body, d) {
     c.appendChild(
       el('div', 'self-item muted', '这里改的是它「怎么说话」的默认规则，跟某个人、某个群无关。针对具体某人只在成员页。'),
     )
-    body.appendChild(c)
-  }
-
-  /* ---- 我是谁：两种所有权模式 ---- */
-  {
-    const owner = d.aboutOwner === 'me' ? 'me' : 'it'
-    const c = selfCard(
-      '我是谁',
-      owner === 'me' ? '你写的原文锁死，它只能往补充区里加' : '它自己写，每次反思可能改写',
-    )
-
-    // 分段开关。默认「我写」：用户是原文的主人，它只能提申请来补充。
-    const bar = el('div', 'self-cards')
-    for (const [v, label, title] of [
-      ['me', '我写', '原文锁死；它想改只能提申请，你批准后进「它补充的」'],
-      ['it', '它写', '它自己改，每次反思都可能重写这段'],
-    ]) {
-      const on = owner === v
-      const b = el('button', 'self-card-chip' + (on ? ' on' : ''), label)
-      b.title = title
-      if (!on) b.onclick = () => setAboutOwner(v)
-      bar.appendChild(b)
-    }
-    c.appendChild(bar)
-
-    if (owner === 'me') {
-      const ta = el('textarea', 'self-input')
-      ta.value = d.selfText || ''
-      ta.rows = 6
-      ta.placeholder = '写它是谁 —— 这段只有你能改'
-      ta.style.cssText = 'width:100%;min-height:96px;resize:vertical;line-height:1.75;margin-top:10px'
-      c.appendChild(ta)
-
-      const acts = el('div', 'self-acts')
-      const save = el('button', 'btn pri', '保存正文')
-      save.onclick = () => saveSelfText(ta.value)
-      acts.appendChild(save)
-      c.appendChild(acts)
-
-      // 「它补充的」用虚线框 + 淡蓝底：和用户写的正文一眼能区分开
-      const extraText = (d.aboutExtra || '').trim()
-      if (extraText) {
-        const box = el('div')
-        box.style.cssText =
-          'margin-top:14px;padding:10px 12px;border:1px dashed rgba(88,166,255,.35);border-radius:8px;background:rgba(88,166,255,.05)'
-        box.appendChild(el('div', 'self-kv-k', '它补充的（它想加的，只读）'))
-        const t = el('div', 'self-item')
-        t.textContent = extraText
-        t.style.cssText = 'white-space:pre-wrap;line-height:1.75'
-        box.appendChild(t)
-        c.appendChild(box)
-      } else {
-        c.appendChild(
-          el(
-            'div',
-            'self-item muted',
-            '它还没补充过。它想改你写的这段时，会通过「申请」提给你；你批准后写在这里。',
-          ),
-        )
-      }
-    } else {
-      const box = el('div', 'self-item')
-      box.textContent = d.selfText || '（还没写过）'
-      box.style.cssText = 'white-space:pre-wrap;line-height:1.8;margin-top:10px'
-      c.appendChild(box)
-      c.appendChild(
-        el('div', 'self-item muted', '这段是它自己写的。切到「我写」可以锁住原文，只让它补充。'),
-      )
-    }
-
     body.appendChild(c)
   }
 
