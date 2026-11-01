@@ -1,4 +1,4 @@
-﻿import { existsSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
@@ -262,8 +262,11 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   const pendingIssueKeys = unmentionedIssues().map((i) => i.key)
 
   // 距上一次说话多少小时（用会话里最后一条的时间）。
-  // 注意要在 pushTurn 本轮之前算，否则量到的就是 0。
-  const prevTurns = getTurns(key)
+  //
+  // ⚠️ 必须**拷贝**：`getTurns` 返回的是 `session.turns` 的同一个数组引用，
+  // 后面 pushTurn(本轮回复) 会改它。用引用的话，下面的防复读硬拦截会拿
+  // "本轮回复"和它自己比（相似度 1 > 0.85）→ 把每一条 ≥15 字的回复都拦掉。
+  const prevTurns = [...getTurns(key)]
   const prevAt = prevTurns.length ? prevTurns[prevTurns.length - 1]?.at : undefined
   const gapHours = prevAt ? (m.at - prevAt) / 3_600_000 : null
 
