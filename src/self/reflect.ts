@@ -9,6 +9,8 @@ import { listPeople } from '../people/store.ts'
 import { appendLife, loadLife, loadSelf, logDrift, saveSelf } from './store.ts'
 import { listAbilities, renderAbilities } from './abilities.ts'
 import { loadWill, saveWill, setImpression } from './will.ts'
+import { applyCardField, loadCard, renderCard, saveCard, SELF_EDITABLE_FIELDS } from '../persona/card.ts'
+import { addIntent } from '../memory/intent.ts'
 
 /**
  * 自我反思：一天一次，把"我是谁 / 我在想什么 / 我自己的事"往前推一格。
@@ -75,7 +77,19 @@ interface Out {
   取名原因?: string
   生活?: string[]
   学到?: string[]
+  /** 只在「它能自改角色卡」打开时才有 */
+  角色卡修改?: Array<{
+    字段?: string
+    新值?: string
+    多想改?: number
+    为什么?: string
+  }>
 }
+
+/** 每 12 小时最多真的改几项 */
+const MAX_CARD_CHANGES = 2
+/** 「非常想改」的门槛：没排上但 >= 这个分，就转成「想做的事」留到下次 */
+const CARRY_OVER_SCORE = 7
 
 function parse(text: string): Out | null {
   const m = /\{[\s\S]*\}/.exec(text)
@@ -97,6 +111,9 @@ export interface SelfReflectOptions {
 
 export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
   const doc = loadSelf()
+  // 只在开关打开时才读角色卡：关着的时候连读都不读，省一次 IO
+  const canEditCard = Boolean(opts.rules.人格.它能自改角色卡)
+  const card = canEditCard ? loadCard() : null
   const life = loadLife().slice(-5)
   const episodes = loadEpisodes()
     .sort((a, b) => (a.date < b.date ? 1 : -1))
@@ -127,6 +144,16 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     `\n# 最近发生过的事\n${episodes.map((e) => `- ${e.date}｜${e.title}`).join('\n') || '（没有）'}`,
     `\n# 我认识的人\n${known || '（还没有）'}`,
     `\n${renderAbilities(listAbilities(opts.rules))}`,
+    card
+      ? `\n# 你现在的角色卡（这是主人给你定的底子，你在它上面活）\n${renderCard(card).trim()}\n\n` +
+        `# 你可以改自己的角色卡\n` +
+        `从上面挑你真想改的，想改的程度打 1-10 分。每 12 小时最多真的改 ${MAX_CARD_CHANGES} 项，` +
+        `剩下的如果你打了 ${CARRY_OVER_SCORE} 分以上，会变成「想做的事」留到下次；其余就放下。\n` +
+        `能改的字段只有：${SELF_EDITABLE_FIELDS.join('、')}。\n` +
+        `名字、生日、外貌、身份 不要动 —— 那是主人定的，你只能提申请。\n` +
+        `在 JSON 里用 "角色卡修改" 输出，例如：\n` +
+        `[{"字段":"核心特质","新值":"更愿意先听完再开口","多想改":8,"为什么":"发现自己老抢话"}]`
+      : '',
     '\n请按上面的格式，写下"我"今天的内心记录。',
   ]
     .filter(Boolean)
@@ -181,6 +208,36 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
       doc.abilities = newAbilities.slice(0, 300)
       touched = true
     }
+    // 角色卡：只在「它能自改角色卡」打开时处理。
+    // 按「多想改」排序，最多真的改 2 项；>=7 分但没排上的转成「想做的事」，其余丢弃。
+    if (canEditCard && card && Array.isArray(out.角色卡修改)) {
+      const allowed = new Set(SELF_EDITABLE_FIELDS as readonly string[])
+      const changes = out.角色卡修改
+        .map((c) => ({
+          field: String(c?.字段 ?? '').trim(),
+          value: String(c?.新值 ?? '').trim(),
+          score: Number(c?.多想改) || 0,
+          why: String(c?.为什么 ?? '').trim(),
+        }))
+        .filter((c) => allowed.has(c.field) && c.value)
+        .sort((a, b) => b.score - a.score)
+
+      const applied = changes.slice(0, MAX_CARD_CHANGES)
+      for (const c of applied) applyCardField(card, c.field, c.value)
+      if (applied.length) {
+        saveCard(card)
+        info('它改了自己的角色卡', {
+          改动: applied.map((c) => `${c.field}→${c.value.slice(0, 20)}`).join('；'),
+        })
+      }
+
+      for (const c of changes.slice(MAX_CARD_CHANGES)) {
+        if (c.score < CARRY_OVER_SCORE) continue
+        addIntent(`想改自己的${c.field}：${c.value.slice(0, 60)}`, '我自己想到的')
+        info('它把没改成的想法记成待办', { 字段: c.field, 想改分数: c.score })
+      }
+    }
+
     // 意愿：今天想不想说话、想不想看视频、对每个人的印象
     const wantTalk = Boolean(out['今天想说话吗'])
     const wantWatch = Boolean(out['今天想看视频吗'])

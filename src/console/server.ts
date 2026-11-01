@@ -1356,6 +1356,36 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         return
       }
 
+      // 它能不能自己改角色卡（rules.yaml 的 人格.它能自改角色卡）
+      if (req.method === 'PUT' && path === '/api/self/autonomy') {
+        const body = await readJson(req) as { on?: boolean }
+        const on = Boolean(body.on)
+        const { readFileSync } = await import('node:fs')
+        const { setConfigPath } = await import('./config-write.ts')
+        const { writeAtomic } = await import('../store/fs.ts')
+        const YAML = (await import('yaml')).default
+        try {
+          const raw = readFileSync(RULES_FILE, 'utf8')
+          const r = setConfigPath(raw, '人格.它能自改角色卡', on)
+          if (!r.ok) {
+            json(res, 400, { error: r.error ?? '改不了' })
+            return
+          }
+          // 和 callyou 一样：写完先解析一遍，避免下次启动 loadRules() 直接抛错
+          try {
+            YAML.parse(r.text)
+          } catch {
+            json(res, 400, { error: '这个值会让配置变成非法 YAML' })
+            return
+          }
+          writeAtomic(RULES_FILE, r.text)
+          json(res, 200, { ok: true, on })
+        } catch (e) {
+          json(res, 500, { error: String(e) })
+        }
+        return
+      }
+
       // 说话方式：写 rules.yaml 的 行为.回复（延迟用秒收，存毫秒）
       if (req.method === 'PUT' && path === '/api/talk-style') {
         const body = await readJson(req) as Record<string, unknown>
@@ -1582,6 +1612,14 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           selfText: self.about || '',
           aboutOwner: self.aboutOwner,
           aboutExtra: self.aboutExtra || '',
+          // 它能不能自己改角色卡（人格.它能自改角色卡）
+          allowSelfEditCard: (() => {
+            try {
+              return Boolean(loadRules().rules.人格.它能自改角色卡)
+            } catch {
+              return false
+            }
+          })(),
           life,
           intent: loadIntent(),
           mood,

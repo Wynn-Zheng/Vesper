@@ -153,6 +153,7 @@ const STEPS: Step[] = [
   { name: '群名单并发', cmd: 'node --env-file-if-exists=.env scripts/test-group-concurrent.ts', expect: /通过 \d+ \/ 失败 0/ },
 
   // 插件系统（阶段 3+4）
+  { name: '它能自改角色卡', cmd: 'node scripts/test-autonomy.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '插件注册表', cmd: 'node scripts/selfcheck-plugin-registry.ts', expect: /全部通过/ },
   { name: '插件宿主', cmd: 'node scripts/selfcheck-plugin-host.ts', expect: /全部通过/ },
   { name: '插件权限', cmd: 'node scripts/selfcheck-plugin-permissions.ts', expect: /全部通过/ },

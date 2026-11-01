@@ -14,13 +14,14 @@ import type { Tool } from './types.ts'
 
 // person 的 apply 还没实现（apply.ts 里写死返回失败），先不暴露给模型：
 // 提了也批不了，而失败时又不会出队（server.ts 有意为之），会永久堵住这个名额。
-// traits 也去掉了：性格/说话方式/喜好现在归角色卡管，不再走 self.md 的申请。
-const TARGETS: RequestTarget[] = ['name', 'about']
+// traits 已去掉：性格/说话方式/喜好现在归角色卡；想改角色卡用 card。
+const TARGETS: RequestTarget[] = ['name', 'about', 'card']
 
 export const requestChangeTool: Tool = {
   name: 'request_change',
   description:
-    '你想改某个关于自己的设定，但它被主人锁着（比如名字、自述），就用这个提申请。' +
+    '你想改某个关于自己的设定，但它被主人锁着（比如名字、自述、角色卡里的性格/说话方式/喜好），就用这个提申请。' +
+    '角色卡要写成「字段：新值」，比如「核心特质：更愿意先听完再开口」。' +
     '只在**确实想改**的时候用，不要为了讨好或试探而提。' +
     '提了不会立刻生效，要等主人批。' +
     '如果你只是想跟主人商量，直接在聊天里说就行，不一定要用这个。',

@@ -7,6 +7,7 @@
 import { info } from '../core/log.ts'
 import { saveEpisode, nextEpisodeId, today } from '../memory/store.ts'
 import type { Episode } from '../memory/types.ts'
+import { applyCardField, loadCard, saveCard, SELF_EDITABLE_FIELDS } from '../persona/card.ts'
 import { labelOf, type ChangeRequest } from './requests.ts'
 import { loadSelf, saveSelf } from './store.ts'
 
@@ -53,6 +54,27 @@ export function applyRequest(r: ChangeRequest, grant = false): ApplyResult {
 
       saveSelf({ ...doc, about: text })
       return { ok: true, detail: '自述已更新' }
+    }
+
+    case 'card': {
+      // 「它能自改角色卡」关着时走这条路：它提申请，你批准才真的改。
+      // 格式：「字段：新值」，比如「核心特质：更愿意先听完再开口」
+      const m = /^(.{1,10}?)[：:]\s*(.+)$/.exec(r.content.trim())
+      const field = (m?.[1] ?? '').trim()
+      const value = (m?.[2] ?? '').trim()
+      if (!field || !value) return { ok: false, detail: '看不明白要改哪一项，写成「字段：新值」' }
+      if (!(SELF_EDITABLE_FIELDS as readonly string[]).includes(field)) {
+        return {
+          ok: false,
+          detail: `「${field}」不在它能改的范围里（只能改 ${SELF_EDITABLE_FIELDS.join('、')}）`,
+        }
+      }
+      const card = loadCard()
+      if (!card) return { ok: false, detail: '还没有角色卡' }
+      if (!applyCardField(card, field, value)) return { ok: false, detail: '这个值用不了' }
+      saveCard(card)
+      info('批准了它改角色卡', { 字段: field, 新值: value.slice(0, 40) })
+      return { ok: true, detail: `改了自己的${field}：${value.slice(0, 30)}` }
     }
 
     case 'person': {

@@ -13,8 +13,21 @@ import { join } from 'node:path'
 import { writeAtomic } from '../store/fs.ts'
 import { warnAt } from '../core/log.ts'
 
-const DIR = 'persona/cards'
-const CURRENT = join(DIR, 'current.txt')
+// 角色卡目录。用 let 是为了测试能指向临时目录（和 setPeopleRoot / setMemoryRoot 一致），
+// 生产环境永远是 'persona/cards'。
+let DIR = 'persona/cards'
+let CURRENT = join(DIR, 'current.txt')
+
+/** 测试用：把角色卡根目录指到别处 */
+export function setCardsRoot(p: string): void {
+  DIR = p
+  CURRENT = join(p, 'current.txt')
+}
+
+/** 当前角色卡根目录（给测试/诊断看） */
+export function cardsRoot(): string {
+  return DIR
+}
 
 /** 反应场景（顺序就是页面里的顺序） */
 export const REACTIONS = [
@@ -188,6 +201,89 @@ export function renderCard(card: CharCard): string {
   sec('反应', reactionLines)
 
   return parts.join('\n')
+}
+
+/* ---------------- 它自己能改哪些字段 ---------------- */
+
+/**
+ * 允许它自己改的角色卡字段。
+ *
+ * 名字 / 生日 / 外貌 / 身份 **不在**这里 —— 那是主人定的底子，
+ * 无论「它能自改角色卡」开着还是关着都不许它动。
+ */
+export const SELF_EDITABLE_FIELDS = [
+  '核心特质',
+  '优点',
+  '缺点',
+  '语气',
+  '口头禅',
+  '小动作',
+  '喜欢',
+  '讨厌',
+  '反应',
+] as const
+
+/** 把 "a、b、c" / "a,b,c" / 换行分隔 拆成数组 */
+function splitList(v: string): string[] {
+  return v
+    .split(/[、,，\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+}
+
+/**
+ * 把一条「字段 + 新值」合并进角色卡（原地改）。
+ *
+ * @returns 字段不在白名单里（或值不合法）时返回 false，调用方据此跳过。
+ */
+export function applyCardField(card: CharCard, field: string, value: string): boolean {
+  const v = value.trim()
+  if (!v) return false
+  switch (field) {
+    case '核心特质':
+      card.traits.core = v
+      return true
+    case '优点':
+      card.traits.good = v
+      return true
+    case '缺点':
+      card.traits.bad = v
+      return true
+    case '语气':
+      card.speech.tone = v
+      return true
+    case '口头禅':
+      card.speech.catchphrase = v
+      return true
+    case '小动作': {
+      const list = splitList(v)
+      if (!list.length) return false
+      card.actions = list
+      return true
+    }
+    case '喜欢': {
+      const list = splitList(v)
+      if (!list.length) return false
+      card.likes = list
+      return true
+    }
+    case '讨厌': {
+      const list = splitList(v)
+      if (!list.length) return false
+      card.dislikes = list
+      return true
+    }
+    case '反应': {
+      // 格式：「开心：笑出声」
+      const m = /^(.{1,10}?)[：:]\s*(.+)$/.exec(v)
+      if (!m?.[1] || !m[2]) return false
+      card.reactions[m[1].trim()] = m[2].trim().slice(0, 120)
+      return true
+    }
+    default:
+      return false
+  }
 }
 
 /* ---------------- 读写 ---------------- */

@@ -4196,6 +4196,40 @@ function renderSelfTalkPage(body, d) {
     body.appendChild(c)
   }
 
+  /* ---- 它能不能自己改自己的设定（角色卡） ---- */
+  {
+    const on = d.allowSelfEditCard === true
+    const c = selfCard(
+      '它能自己改自己的设定吗',
+      on ? '开着：反思时可以直接改角色卡' : '关着：只能向你提申请',
+    )
+    const row = el('div', 'self-field')
+    const sw = el('button', 'mini-btn', on ? '已开启' : '已关闭')
+    sw.style.color = on ? 'var(--green)' : 'var(--dim)'
+    sw.style.borderColor = on ? 'rgba(63,185,80,.4)' : ''
+    sw.onclick = async () => {
+      try {
+        await sendJson('/api/self/autonomy', { on: !on }, 'PUT')
+        toast(!on ? '已允许它自己改角色卡' : '已改为只能提申请')
+        await loadSelfV2()
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+    row.appendChild(sw)
+    c.appendChild(row)
+    c.appendChild(
+      el(
+        'div',
+        'self-item muted',
+        on
+          ? '每 12 小时最多改 2 项，改完记日志；特别想改但没轮上的会变成「想做的事」留到下次。名字/生日/外貌/身份 它永远不能改。'
+          : '它想改角色卡时会提申请，你在下面「申请」里批准或忽略。',
+      ),
+    )
+    body.appendChild(c)
+  }
+
   {
     const c = selfCard('说话方式', '改完立即生效')
     const form = el('div', 'self-form')
