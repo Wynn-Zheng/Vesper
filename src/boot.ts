@@ -144,6 +144,14 @@ interface Buffer {
   texts: string[]
     /** 每条消息的发送者，用来判断这轮是不是多人穿插 */
     senders: string[]
+  /**
+   * 这一批里所有消息的图片引用（合并去重）。
+   *
+   * 以前 flush 直接用 `buf.last.images`：一批里分几条发的图，
+   * 只有**最后一张**进了视觉，其余的只在 text 里留 `[图片]`、也没有失败标记，
+   * 模型会以为自己都看见了。
+   */
+  images: string[]
   last: Incoming
   passive: boolean
   /** 这批里有没有被 @（有就优先处理） */
@@ -521,7 +529,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
     const run = prev
       .catch(() => undefined)
       .then(() =>
-        handle(buf.last, buf.texts.join('\n'), buf.passive, opts.getRules(), {
+        handle({ ...buf.last, images: buf.images }, buf.texts.join('\n'), buf.passive, opts.getRules(), {
           textsCount: buf.texts.length,
           sendersCount: new Set(buf.senders).size,
           spanMs: buf.lastAt - buf.firstAt,
@@ -630,6 +638,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
     if (resolveDebounce(rules.行为.防抖) === null) {
       const single: Buffer = {
         texts: [m.text],
+        images: [...(m.images ?? [])],
         senders: [senderKey],
         last: m,
         passive: m.passive ?? false,
@@ -676,6 +685,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
     const existing = buffers.get(key)
     if (existing) {
+      // 合并这批里所有消息的图：flush 只用 buf.last.images 的话，
+      // 分几条发的图只有最后一张进视觉
+      existing.images = [...new Set([...existing.images, ...(m.images ?? [])])]
       existing.texts.push(m.text)
       existing.senders.push(m.senderId ?? m.from.id)
       existing.last = m
@@ -689,6 +701,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
     const buf: Buffer = {
       texts: [m.text],
+      images: [...(m.images ?? [])],
       senders: [m.senderId ?? m.from.id],
       last: m,
       passive: m.passive ?? false,
