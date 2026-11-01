@@ -172,7 +172,3 @@ export function renderAbilities(list: Ability[]): string {
   return lines.join('\n')
 }
 
-/** 有没有能力文件（旧版本没有，用来做兼容判断） */
-export function hasAbilitiesFile(): boolean {
-  return existsSync('persona/self.md')
-}

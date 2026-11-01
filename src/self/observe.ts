@@ -185,39 +185,7 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
   })
 }
 
-/** 渲染成给模型看的一段话 */
-export function renderIssues(issues: Issue[]): string {
-  if (!issues.length) return ''
-  const lines = ['# 最近日志里反复出问题的地方']
-  for (const i of issues.slice(0, 6)) {
-    lines.push(`- [${i.confidence}] ${i.message}`)
-    if (i.where) {
-      lines.push(`  位置：${i.where}`)
-    } else {
-      lines.push('  位置：（日志里没带位置，只能从消息猜）')
-    }
-    lines.push(`  出现 ${i.count} 次，最近一次 ${new Date(i.lastAt).toLocaleString('zh-CN')}`)
-    if (i.samples.length) lines.push(`  样本：${i.samples[0]}`)
-  }
-  return lines.join('\n')
-}
 
-/** 一句话概括，给聊天用 */
-export function summarizeIssues(issues: Issue[]): string {
-  if (!issues.length) return ''
-  const sure = issues.filter((i) => i.confidence === '确定')
-  const maybe = issues.filter((i) => i.confidence === '可能')
-  const parts: string[] = []
-  if (sure.length) {
-    const top = sure[0]!
-    parts.push(`确定有问题的是 ${top.where || top.message}（出现 ${top.count} 次）`)
-  }
-  if (maybe.length) {
-    const top = maybe[0]!
-    parts.push(`还有几个拿不准的，比如「${top.message}」（${top.count} 次）`)
-  }
-  return parts.join('；')
-}
 
 /* ============ 定时扫 + 待提 ============ */
 

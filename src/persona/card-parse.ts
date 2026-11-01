@@ -282,24 +282,3 @@ export function parseCardText(text: string): ParsedCard {
   return out
 }
 
-/** 把解析结果套到一张卡上（不覆盖没有解析出的字段） */
-export function applyParsed(card: CharCard, p: ParsedCard): CharCard {
-  const next: CharCard = { ...card }
-  if (p.name) next.name = p.name
-  if (p.appearance) next.appearance = p.appearance
-  if (p.identity) next.identity = p.identity
-  if (p.traits.core) next.traits = { ...next.traits, core: p.traits.core }
-  if (p.traits.good) next.traits = { ...next.traits, good: p.traits.good }
-  if (p.traits.bad) next.traits = { ...next.traits, bad: p.traits.bad }
-  if (p.speech.tone) next.speech = { ...next.speech, tone: p.speech.tone }
-  if (p.speech.catchphrase) next.speech = { ...next.speech, catchphrase: p.speech.catchphrase }
-  if (p.actions.length) next.actions = p.actions
-  if (p.likes.length) next.likes = p.likes
-  if (p.dislikes.length) next.dislikes = p.dislikes
-  const rs: Record<string, string> = { ...next.reactions }
-  for (const k of REACTIONS) {
-    if (p.reactions[k]) rs[k] = p.reactions[k]!
-  }
-  next.reactions = rs
-  return next
-}

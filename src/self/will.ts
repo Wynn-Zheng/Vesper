@@ -144,10 +144,6 @@ export function impressionFromFile(personId: string): string {
   }
 }
 
-/** 印象文件路径（给控制台显示用） */
-export function willFile(): string {
-  return FILE()
-}
 
 export function impressionFileOf(personId: string): string {
   // 印象也按角色卡分：同一个好友，不同角色眼里的印象不一样

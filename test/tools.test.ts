@@ -64,3 +64,19 @@ test('注册表：默认是空的（我们现在一个工具都没有）', async
   assert.equal(tools.size, 0)
   assert.deepEqual(tools.list(), [])
 })
+
+test('本机权限门：所有 desktop 工具都被拦住', async () => {
+  const { isLocalTool } = await import('../src/loop/chat.ts')
+  const { desktopReadTools, desktopWriteTools } = await import('../src/tools/desktop.ts')
+  const all = [...desktopReadTools, ...desktopWriteTools]
+  assert.ok(all.length >= 10, `desktop 工具数异常：${all.length}`)
+  // 锁死这条：以前用正则按前缀匹配，`click`/`type_text`/`press_key`/`scroll`/
+  // `focus_window`/`list_windows`/`monitor_info` 七个全漏，群里能看主人窗口标题。
+  for (const t of all) {
+    assert.ok(isLocalTool(t.name), `${t.name} 没被本机权限门拦住`)
+  }
+  // 发本地图片也算"碰本机"
+  assert.ok(isLocalTool('send_image'))
+  // 只读代码不算（群里也能读）
+  assert.ok(!isLocalTool('read_code'))
+})
