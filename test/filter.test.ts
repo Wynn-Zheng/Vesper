@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { shouldHandle, type OnebotOptions, type OBEvent } from '../src/channel/onebot.ts'
+import { shouldHandle, isObserveOnly, type OnebotOptions, type OBEvent } from '../src/channel/onebot.ts'
 
 const base: OnebotOptions = { host: '127.0.0.1', port: 8765, path: '/onebot/v11/ws', token: 't' }
 
@@ -62,14 +62,25 @@ test('群聊：开启后，@ 了才处理', () => {
   assert.equal(shouldHandle(groupAt('123', '999', '你好'), opts), true)
 })
 
-test('群聊：没 @ 就忽略（默认行为）', () => {
+test('群聊：没 @ 就只记录不回复（默认行为）', () => {
   const opts = { ...base, allowGroup: true }
-  assert.equal(shouldHandle(group('123', '999', '你好'), opts), false)
+  const ev = group('123', '999', '你好')
+  // 消息还是要进来：不进来就学不到这个群怎么说话、记不住发生过什么、
+  // 「发言频率」也永远不生效（这几件事以前全都是坏的）
+  assert.equal(shouldHandle(ev, opts), true, '应该进历史')
+  // 但不回复
+  assert.equal(isObserveOnly(ev, opts), true, '没叫它就不回')
 })
 
-test('群聊：requireAt=false 时没 @ 也可以', () => {
+test('群聊：@ 了就会回复', () => {
+  const opts = { ...base, allowGroup: true }
+  assert.equal(isObserveOnly(groupAt('123', '999', '你好'), opts), false)
+})
+
+test('群聊：requireAt=false 时没 @ 也会回复', () => {
   const opts = { ...base, allowGroup: true, requireAt: false }
   assert.equal(shouldHandle(group('123', '999', '你好'), opts), true)
+  assert.equal(isObserveOnly(group('123', '999', '你好'), opts), false, '不要求 @ 就该参与')
 })
 
 test('群聊：群号白名单之外被拦', () => {

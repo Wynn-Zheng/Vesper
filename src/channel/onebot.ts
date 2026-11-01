@@ -625,6 +625,13 @@ export class OnebotTransport implements Transport {
     const followUp = !isPrivate && !addressed && isRecentTalker(this.opts, gid, uid)
     if (!isPrivate) markTalker(this.opts, gid, uid)
 
+    // 「必须 @」现在只决定**回不回复**，不决定**看不看得见**。
+    //
+    // 这条消息照样要进 raw：这样 distill 有材料学这个群怎么说话、
+    // lastTalk 会更新、"群里刚才热不热闹"判断得准。
+    // 唯一区别是它不参与这一轮的生成。
+    const observeOnly = isObserveOnly(ev, this.opts)
+
     const from: Target = isPrivate
       ? { kind: 'private', id: uid, name: ev.sender?.nickname }
       : { kind: 'group', id: gid, name: ev.sender?.card ?? ev.sender?.nickname }
@@ -640,6 +647,7 @@ export class OnebotTransport implements Transport {
       // QQ 昵称单独留一份：群名片每个群不同，全局名必须用它
       senderNick: ev.sender?.nickname ?? ev.sender?.card,
       passive: !isPrivate && !addressed && !followUp,
+      ...(observeOnly ? { observeOnly: true } : {}),
       ...(() => {
         const imgs = extractImages(ev.message)
         return imgs.length ? { images: imgs } : {}
@@ -835,28 +843,54 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
     if (opts.getPolicy) {
       const p = opts.getPolicy()
       if (!checkAccess(p, gid, userId).ok) return false
-      if (p.requireAt && !isAddressed(ev)) {
-        const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
-        const called = names.some((n) => text.includes(n))
-        // 没 @ 也没叫名字，但刚才正在跟它说话：这是连续对话，不算突然插话
-        if (!called && !isRecentTalker(opts, gid, userId)) return false
-      }
+      // 「必须 @」不在这里拦了。
+      //
+      // 以前这里 return false，等于群里的普通聊天**整条都进不来**：
+      // 不进 raw（distill 没材料、学不到群里的说法）、不更新 lastTalk
+      // （"安静/活跃"判断失真）、`passive` 分支永远走不到
+      // （所以「发言频率」在群里从来没生效过）。
+      //
+      // 现在的分工：这里只判"能不能进来"，"要不要回复"由 onEvent 打
+      // observeOnly 标记、boot 里决定。消息全进历史，只是不一定回。
       return true
     }
 
     if (opts.groupAllow?.length && !opts.groupAllow.includes(gid)) return false
     if (opts.memberAllow?.length && !opts.memberAllow.includes(userId)) return false
-    // 群里默认必须 @ 它；没 @ 的话，叫了名字或者刚聊过才放行
-    if (opts.requireAt !== false && !isAddressed(ev)) {
-      const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
-      const called = names.some((n) => text.includes(n))
-      if (!called && !isRecentTalker(opts, gid, userId)) return false
-    }
+    return true
   } else if (opts.ownerQQ && userId !== opts.ownerQQ) {
     return false
   }
 
   return true
+}
+
+/**
+ * 这条群消息是不是「只记录、不回复」。
+ *
+ * 和 `shouldHandle` 分工：
+ *   shouldHandle  → 能不能进来（黑白名单、群开关）
+ *   这个函数      → 进来之后回不回复（群里是不是在叫它）
+ *
+ * 以前两件事都塞在 shouldHandle 里，后果是群里没 @ 它的话
+ * **整条都进不来**：raw 没材料、distill 学不到这个群怎么说话、
+ * lastTalk 不更新、「发言频率」永远不生效。
+ */
+export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
+  if (ev.message_type === 'private') return false
+  if (isAddressed(ev)) return false
+
+  const gid = String(ev.group_id ?? '')
+  const uid = String(ev.user_id ?? '')
+  // 刚跟它说过话的人：这是接着聊，不是突然插话
+  if (isRecentTalker(opts, gid, uid)) return false
+
+  const text = extractText(ev.message)
+  const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
+  if (names.some((n) => text.includes(n))) return false
+
+  const policy = opts.getPolicy?.()
+  return policy ? policy.requireAt : opts.requireAt !== false
 }
 
 /** 这个人是不是刚刚还在跟它说话 */

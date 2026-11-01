@@ -44,8 +44,12 @@ export function visible(scope: Scope, current: Scope): boolean {
   const consoleMatch = /^private:console-(.+)$/.exec(current)
   if (consoleMatch) {
     const owner = consoleMatch[1]!
-    // 主人私聊、控制台自己的历史、公共的，都读
-    return scope === 'shared' || scope === current || scope === `private:qq-${owner}`
+    // 主人私聊、控制台自己的历史、公共的，都读。
+    //
+    // 注意私聊 scope 是 `private:<QQ号>`，**没有 `qq-` 前缀**
+    // （见 memory/scope.ts 的 scopeOf）。以前这里写成 `private:qq-<owner>`，
+    // 跟实际存的对不上，控制台一条主人私聊的记忆都读不到。
+    return scope === 'shared' || scope === current || scope === `private:${owner}`
   }
   if (current.startsWith('private:')) {
     return scope === current || scope === 'shared'

@@ -237,10 +237,6 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 再让 recall 把最近 8 条原始消息塞进 system，等于最近对话注入两遍：
   // token 翻倍，而且模型容易去回一条旧消息。这里只保留召回的事实/经历/待办。
   recalled.recent = []
-  // 关键词反应：rules.yaml 配的「说到 X 就 Y」，boot 已经算好放在 m.hint 里。
-  // 之前 boot 传了但这里没读，等于配了不生效。
-  const hintText = (m as { hint?: string }).hint?.trim() || ''
-  const hintBlock = hintText ? '【这会儿该有的反应】' + hintText : ''
 
   const groupBlock = scope.startsWith('group:')
     ? [renderGroupContext(scope.slice('group:'.length)), renderJargon(explainJargon(text, scope.slice('group:'.length)))]
@@ -270,7 +266,6 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
         since: loadPerson(personId)?.firstSeen,
       }),
       groupBlock,
-      hintBlock,
     ]
       .filter((s) => s.trim())
       .join('\n\n'),

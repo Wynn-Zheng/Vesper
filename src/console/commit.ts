@@ -6,7 +6,7 @@
  *   2. 页面按钮：他点「把这段计入记忆」，直接调 /api/chat/commit
  *
  * 落地方式：把最近 N 轮控制台对话整理成一条 episode，
- * scope 用**主人的私聊 scope**（private:qq-<owner>），这样 QQ 那边就能想起。
+ * scope 用**主人私聊的 scope**（`private:<QQ号>`），这样 QQ 那边就能想起。
  * episode 里标 source: console，以后能看出"这是从控制台转过来的"。
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -47,8 +47,12 @@ export function renderConsoleTranscript(rounds = 6): string {
 /**
  * 把控制台最近的对话记成一条正式 episode。
  *
- * 写到**主人私聊的 scope**（`private:qq-<owner>`），所以 QQ 那边能想起来。
+ * 写到**主人私聊的 scope**（`private:<QQ号>`），所以 QQ 那边能想起来。
  * 标题里带「控制台」三个字，以后翻记忆能看出这条是从哪来的。
+ *
+ * ⚠ 以前这里写的是 `private:qq-<QQ号>` —— 而 QQ 私聊的 scope 是
+ * `private:<QQ号>`（见 memory/scope.ts，没有平台前缀）。两者对不上，
+ * 于是「计入记忆」写进去的东西 QQ 那边永远读不到，功能等于没有。
  */
 export async function commitConsoleToMemory(opts: {
   ownerQQ: string
@@ -71,7 +75,7 @@ export async function commitConsoleToMemory(opts: {
       // saveEpisode 会用这个拼文件名；带时间戳避免同一天多条撞号
       id: `${day}-console-${String(now.getTime()).slice(-5)}`,
       date: day,
-      scope: `private:qq-${owner}`,
+      scope: `private:${owner}`,
       importance: 5,
       title: `${title}（控制台）`,
       body: `（这段是在控制台里聊的，用户要求记下来）\n\n${transcript}`,

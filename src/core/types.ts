@@ -36,12 +36,21 @@ export interface Incoming {
    *   senderNick 永远是 QQ 昵称，用来做全局名。
    */
   senderNick?: string
-  /** 命中关键词反应时追加给模型的指令（可选） */
-  hint?: string
   /** 这条消息里的图片地址（最多几张），有视觉模型时会被识别 */
   images?: string[]
   /** 群聊里没 @ 它、只是叫了名字 —— 要不要接话由业务层决定 */
   passive?: boolean
+  /**
+   * 只记录、不回复。
+   *
+   * 用在「群里必须 @ 才回」的时候：消息仍然要进历史（能学、能记、能算关系），
+   * 但这一条不参与回复。
+   *
+   * 为什么需要这个字段：以前 `shouldHandle` 直接把这类消息丢掉，
+   * 结果是群里 90% 的话它**根本没看见** —— distill 没有材料、
+   * 「发言频率」永远不生效、`lastTalk` 不更新。
+   */
+  observeOnly?: boolean
   /** 原始事件，只用于调试与落盘 */
   raw?: unknown
 }

@@ -9,6 +9,7 @@ import {
   extractImages,
   extractText,
   isAddressed,
+  isObserveOnly,
   shouldHandle,
   type OBEvent,
   type OnebotOptions,
@@ -295,37 +296,43 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
 
   // 群里被 @
   check('群里 @ 了它 → 处理', shouldHandle(groupAt('123', '999'), { ...base, allowGroup: true }))
-  check('群里 @ 的是别人 → 不处理', !shouldHandle(groupAt('123', '999', '111'), { ...base, allowGroup: true }))
+  check(
+    '群里 @ 的是别人 → 不回复（消息照进历史）',
+    isObserveOnly(groupAt('123', '999', '111'), { ...base, allowGroup: true }),
+  )
   check('群里 @ 了它但没开 allowGroup → 不处理', !shouldHandle(groupAt('123', '999'), base))
   check('群里被 @ 时 isAddressed 为真', isAddressed(groupAt('123', '999')))
 
-  // 群里没 @
-  check('群里没 @ → 默认不处理', !shouldHandle(group('123', '999'), { ...base, allowGroup: true }))
+  // 群里没 @：能进来（进历史、能学这个群怎么说话），但不回复
+  check('群里没 @ → 默认只记录不回复', isObserveOnly(group('123', '999'), { ...base, allowGroup: true }))
   check('群里没 @ 时 isAddressed 为假', !isAddressed(group('123', '999')))
-  check('requireAt=false 时没 @ 也处理', shouldHandle(group('123', '999'), { ...base, allowGroup: true, requireAt: false }))
   check(
-    '没 @ 但叫了名字 → 处理',
-    shouldHandle(group('123', '999', '小助手在吗'), { ...base, allowGroup: true, botNames: ['小助手'] }),
+    'requireAt=false 时没 @ 也回复',
+    !isObserveOnly(group('123', '999'), { ...base, allowGroup: true, requireAt: false }),
   )
   check(
-    '没 @ 也没叫名字，但刚聊过 → 处理',
-    shouldHandle(group('123', '999'), {
+    '没 @ 但叫了名字 → 回复',
+    !isObserveOnly(group('123', '999', '小助手在吗'), { ...base, allowGroup: true, botNames: ['小助手'] }),
+  )
+  check(
+    '没 @ 也没叫名字，但刚聊过 → 回复',
+    !isObserveOnly(group('123', '999'), {
       ...base,
       allowGroup: true,
       recentTalkers: new Map([['123:999', Date.now()]]),
     }),
   )
   check(
-    '刚聊过的是别人 → 不处理',
-    !shouldHandle(group('123', '999'), {
+    '刚聊过的是别人 → 不回复',
+    isObserveOnly(group('123', '999'), {
       ...base,
       allowGroup: true,
       recentTalkers: new Map([['123:888', Date.now()]]),
     }),
   )
   check(
-    '连续对话超过窗口 → 不处理',
-    !shouldHandle(group('123', '999'), {
+    '连续对话超过窗口 → 不回复',
+    isObserveOnly(group('123', '999'), {
       ...base,
       allowGroup: true,
       recentTalkers: new Map([['123:999', Date.now() - 200_000]]),
@@ -341,7 +348,7 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
     requireAt: true,
     ...patch,
   })
-  check('策略：群里没 @ → 不处理', !shouldHandle(group('123', '999'), { ...base, allowGroup: true, getPolicy: policy() }))
+  check('策略：群里没 @ → 不回复', isObserveOnly(group('123', '999'), { ...base, allowGroup: true, getPolicy: policy() }))
   check('策略：群里 @ 了 → 处理', shouldHandle(groupAt('123', '999'), { ...base, allowGroup: true, getPolicy: policy() }))
   check(
     '策略：群白名单之外 → 不处理',
@@ -364,7 +371,7 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
   check('CQ 字符串：@ 了它 → isAddressed 为真', isAddressed(cqAt(SELF)))
   check('CQ 字符串：@ 了它 → 处理', shouldHandle(cqAt(SELF), { ...base, allowGroup: true }))
   check('CQ 字符串：@ 了别人 → isAddressed 为假', !isAddressed(cqAt('111')))
-  check('CQ 字符串：@ 了别人 → 不处理', !shouldHandle(cqAt('111'), { ...base, allowGroup: true }))
+  check('CQ 字符串：@ 了别人 → 不回复', isObserveOnly(cqAt('111'), { ...base, allowGroup: true }))
 
   // 缺 self_id 时不能把空 qq 误判成"@ 了我"
   const noSelf = {

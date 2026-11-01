@@ -9,7 +9,7 @@ import { allow, resetRateLimit } from '../src/core/ratelimit.ts'
 import { similarity } from '../src/core/text.ts'
 import { pruneSessions, pushTurn, getTurns, historyMessages, sessionCount, clearSessions } from '../src/loop/session.ts'
 import { personOfMessage } from '../src/memory/scope.ts'
-import { shouldHandle, type OBEvent, type OnebotOptions } from '../src/channel/onebot.ts'
+import { shouldHandle, isObserveOnly, type OBEvent, type OnebotOptions } from '../src/channel/onebot.ts'
 import { appendFacts, effectiveConfidence, loadFacts, setVisibility, touchFact } from '../src/memory/facts.ts'
 import { setMemoryRoot, today, appendRaw } from '../src/memory/store.ts'
 import {
@@ -355,7 +355,7 @@ test('personOfMessage：全新账号才新建', () => {
   assert.equal(id, 'qq-20071')
 })
 
-test('连续对话：2 分钟内没 @ 也认，超时就不认', () => {
+test('连续对话：2 分钟内没 @ 也会回，超时就只看不回', () => {
   const opts: OnebotOptions = {
     host: '127.0.0.1',
     port: 0,
@@ -374,20 +374,23 @@ test('连续对话：2 分钟内没 @ 也认，超时就不认', () => {
     message: [{ type: 'text', data: { text: '看名字呢' } }],
   }
 
-  // 从没说过话：没 @ 也没叫名字 → 不处理
-  assert.equal(shouldHandle(ev, opts), false)
+  // 从没说过话：没 @ 也没叫名字 → 只记录，不回复
+  assert.equal(isObserveOnly(ev, opts), true)
 
-  // 刚跟它说过话 → 算是接着聊
+  // 刚跟它说过话 → 算是接着聊，会回
   opts.recentTalkers!.set('3:2', Date.now())
-  assert.equal(shouldHandle(ev, opts), true)
+  assert.equal(isObserveOnly(ev, opts), false)
 
-  // 超过窗口 → 回到不处理
+  // 超过窗口 → 回到"只看不回"
   opts.recentTalkers!.set('3:2', Date.now() - 200_000)
-  assert.equal(shouldHandle(ev, opts), false)
+  assert.equal(isObserveOnly(ev, opts), true)
 
   // 别人说话不算你
   opts.recentTalkers!.set('3:2', Date.now())
-  assert.equal(shouldHandle({ ...ev, user_id: 9 }, opts), false)
+  assert.equal(isObserveOnly({ ...ev, user_id: 9 }, opts), true, '不是同一个人，不该算接着聊')
+
+  // 不管回不回，消息本身都要能进来（否则学不到这个群怎么说话）
+  assert.equal(shouldHandle(ev, opts), true)
 })
 
 /* ---------------- 相似度边界 ---------------- */

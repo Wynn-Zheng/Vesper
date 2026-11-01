@@ -5,7 +5,7 @@
  * 比没有更糟。所以这里同时断言两边：
  *   shouldHandle 说 false 的，rejectReason 必须给出一个非「未知原因」的说法。
  */
-import { rejectReason, shouldHandle, type OBEvent, type OnebotOptions } from '../src/channel/onebot.ts'
+import { isObserveOnly, rejectReason, shouldHandle, type OBEvent, type OnebotOptions } from '../src/channel/onebot.ts'
 
 let pass = 0
 let fail = 0
@@ -100,8 +100,10 @@ console.log('\n=== 5. 没 @ 也没叫名字 ===')
     message: [{ type: 'text', data: { text: '今天天气不错' } }],
   } as Partial<OBEvent>)
   const o = opts()
-  check('没 @ 没叫名字 → 拒绝', !shouldHandle(plain, o))
-  check('原因提到要 @ 或叫名字', rejectReason(plain, o).includes('@'), rejectReason(plain, o))
+  // 不再「拒绝」了：消息照样进来（进历史、能学这个群怎么说话），只是不回复。
+  // 以前这里 return false，等于群里 90% 的话它根本没看见。
+  check('没 @ 没叫名字 → 只记录不回复', isObserveOnly(plain, o))
+  check('但消息本身要能进来', shouldHandle(plain, o))
 }
 
 console.log('\n=== 6. 叫了名字也算 ===')

@@ -130,25 +130,6 @@ function shouldDrop(text: string, rules: Rules): boolean {
   return false
 }
 
-/** 命中关键词/正则时返回要追加给模型的反应提示 */
-function reactionFor(text: string, rules: Rules): string | undefined {
-  const list = rules.关键词反应 ?? []
-  if (!list.length) return undefined
-  for (const rule of list) {
-    const hitWord = (rule.关键词 ?? []).some((w) => w && text.includes(w))
-    if (hitWord) return rule.反应
-    for (const r of rule.正则 ?? []) {
-      if (!r) continue
-      try {
-        if (new RegExp(r).test(text)) return rule.反应
-      } catch {
-        /* 同上 */
-      }
-    }
-  }
-  return undefined
-}
-
 /** 用户要求撤回刚才那句 */
 const RECALL_HINT = /撤回|收回去|撤掉|刚才那句不对|别说那句|收回/g
 /** 让"去看个视频"能真的触发一次，不然它只能说"我没有这个口子" */
@@ -358,9 +339,10 @@ export function boot(transport: Transport, opts: BootOptions): void {
         return
       }
 
-      // 命中关键词就追加一段"反应提示"，不用改代码就能调整它的回应
-    const hint = reactionFor(text, rules)
-    const reply = await opts.reply({ ...m, text, ...(hint ? { hint } : {}) }, rules)
+      // 关键词反应不在这儿算了：它属于「怎么组织 prompt」，
+      // 由 loop/chat.ts 直接读 rules 算（见 loop/keyword.ts）。
+      // 这里再算一遍会往 prompt 里塞两份，而且老的这份只取第一条命中的规则。
+      const reply = await opts.reply({ ...m, text }, rules)
       consecutiveFailures = 0
 
       if (!reply || !reply.trim()) {
@@ -575,6 +557,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
     lastTalk.set(`${m.from.kind}:${m.from.id}`, m.at)
     // 后面用的都是替换过的文本（聚合、生成、日志）
     m.text = displayText
+
+    // 只记录不回复：群里没叫它（而 access.yaml 要求必须 @）。
+    //
+    // 走到这里说明消息已经进 raw 了，也更新过 lastTalk —— 这正是这一段的目的：
+    // 它看得见群里的聊天，能学这个群怎么说话、能记住发生过什么，
+    // 只是不插嘴。以前这类消息在 shouldHandle 就被丢了，等于全程聋着。
+    if (m.observeOnly) return
 
     // 聚合按"谁在哪个会话里说"分桶：群里两个人先后说话不能合并成一轮
     // 按「会话」合并，不按「会话+发送者」：同一群两个人同时说话时，
