@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+﻿import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
@@ -107,8 +107,6 @@ export function isLocalTool(name: string): boolean {
   return LOCAL_TOOL.has(name)
 }
 
-/** 本机类工具全集（测试用） */
-export const LOCAL_TOOL_NAMES: readonly string[] = [...LOCAL_TOOL]
 
 export function formatUserText(scope: string, speaker: string | undefined, text: string): string {
   const name = (speaker ?? '').trim()

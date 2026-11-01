@@ -267,15 +267,6 @@ export function personOfAccount(platform: Platform, accountId: string): string {
   return known ? known.id : personIdOf(platform, accountId)
 }
 
-/** 某个 scope 属于谁；群聊返回 null */
-export function personOfScope(scope: string): string | null {
-  if (!scope.startsWith('private:')) return null
-  const account = scope.slice('private:'.length)
-  for (const p of listPeople()) {
-    if (p.accounts.some((a) => a.id === account)) return p.id
-  }
-  return personIdOf('qq', account)
-}
 
 /**
  * 按群名单里看到的名字对齐档案。

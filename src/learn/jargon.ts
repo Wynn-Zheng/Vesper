@@ -148,6 +148,3 @@ export function renderJargon(items: Jargon[]): string {
   return ['这个群里几个人在用的词：', ...items.map((j) => `- 「${j.word}」= ${j.meaning}`)].join('\n')
 }
 
-export function jargonFile(): string {
-  return FILE()
-}

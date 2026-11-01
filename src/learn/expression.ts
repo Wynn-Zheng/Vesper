@@ -54,9 +54,6 @@ function today(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function expressionFile(): string {
-  return FILE()
-}
 
 export function loadExpressions(): Expression[] {
   if (!existsSync(FILE())) return []

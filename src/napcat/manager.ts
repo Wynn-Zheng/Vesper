@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NapCat 管理器：启动 / 停止 / 状态查询。
  *
  * 所有路径都从 locate.ts 推导（配置里的 Shell目录 → 自动探测），
@@ -11,7 +11,7 @@
  * 不依赖任何 .cmd 启动脚本：别人装 NapCat 不一定有我们改过的那个。
  */
 import { spawn } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { loadRules } from '../core/config.ts'
 import { autoLocate, resolvePaths, type NapcatPaths } from './locate.ts'
 import { hideQqConsole } from './win.ts'
@@ -417,28 +417,7 @@ export function logFile(): string | null {
   return existsSync(f) ? f : null
 }
 
-/** 日志文件大小和最后修改时间 */
-export function logStat(): { bytes: number; mtime: number } {
-  const f = logFile()
-  if (!f) return { bytes: 0, mtime: 0 }
-  try {
-    const st = statSync(f)
-    return { bytes: st.size, mtime: st.mtimeMs }
-  } catch {
-    return { bytes: 0, mtime: 0 }
-  }
-}
 
-/** 读日志（原样文本，调用方自己按行切）*/
-export function readLog(): string {
-  const f = logFile()
-  if (!f) return ''
-  try {
-    return readFileSync(f, 'utf8')
-  } catch {
-    return ''
-  }
-}
 
 /* ============================================================
  * 掉线看门狗

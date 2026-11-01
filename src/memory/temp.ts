@@ -184,17 +184,6 @@ export function relevantTemp(query: string, limit = 3): TempItem[] {
   return scored.slice(0, limit).map((x) => x.it)
 }
 
-/** 删一条 */
-export function dropTemp(id: string): boolean {
-  const f = fileOf(id)
-  if (!existsSync(f)) return false
-  try {
-    unlinkSync(f)
-    return true
-  } catch {
-    return false
-  }
-}
 
 /**
  * 清理过期的。启动时和每天调一次。

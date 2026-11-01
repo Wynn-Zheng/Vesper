@@ -104,12 +104,4 @@ export async function hideQqConsole(): Promise<number> {
   return run('hide')
 }
 
-/** 把控制台弄回来（排查问题时用） */
-export async function showQqConsole(): Promise<number> {
-  return run('show')
-}
 
-/** 还有几个可见的控制台（0 = 已经藏干净了） */
-export async function countQqConsole(): Promise<number> {
-  return run('count')
-}

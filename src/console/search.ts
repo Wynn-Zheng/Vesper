@@ -138,15 +138,5 @@ export function search(opts: SearchOptions): Hit[] {
   return hits.sort((a, b) => b.score - a.score).slice(0, limit)
 }
 
-/** 最近几天的日期（给"按天浏览"用） */
-export function recentDates(days = 7): string[] {
-  const out: string[] = []
-  for (let i = 0; i < days; i++) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    out.push(ymd(d))
-  }
-  return out
-}
 
 

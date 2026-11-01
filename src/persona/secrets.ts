@@ -48,13 +48,6 @@ function saveAll(list: Secret[]): void {
   writeAtomic(FILE(), JSON.stringify(list, null, 2))
 }
 
-export function addSecret(text: string): Secret {
-  const list = loadSecrets()
-  const s: Secret = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text, at: Date.now() }
-  list.push(s)
-  saveAll(list)
-  return s
-}
 
 /** 标记一条被看过，返回这条秘密（找不到返回 null） */
 export function peekSecret(id: string): Secret | null {

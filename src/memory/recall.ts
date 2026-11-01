@@ -250,9 +250,6 @@ export function flushRecalls(): void {
   pendingMarks.clear()
 }
 
-export function pendingRecallCount(): number {
-  return pendingMarks.size
-}
 
 /** 按三维加权召回。返回的是"想起什么"，不是原文。 */
 export function recall(opts: RecallOptions): Recalled {

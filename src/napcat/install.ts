@@ -34,9 +34,6 @@ export function installStatus(): InstallStatus {
   return { ...status }
 }
 
-export function resetInstallStatus(): void {
-  status = { state: 'idle', percent: 0, message: '' }
-}
 
 /**
  * 不该跟着新机器走的东西。

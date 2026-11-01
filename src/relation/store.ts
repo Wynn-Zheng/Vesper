@@ -56,9 +56,6 @@ function cardScopedRelation(personId: string, name: string, fallback: string): s
   }
 }
 
-export function relationPath(personId: string): string {
-  return relationFile(personId)
-}
 
 export function loadRelation(personId: string): RelationState {
   const file = relationFile(personId)
