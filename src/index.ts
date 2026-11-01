@@ -14,7 +14,7 @@ import { generateReply } from './loop/chat.ts'
 import { pruneSessions } from './loop/session.ts'
 import type { LlmOptions } from './llm/types.ts'
 import { ensurePerson, loadPerson, personIdOf } from './people/store.ts'
-import { startDistiller } from './scheduler/distiller.ts'
+import { startCodeMapRefresher, startDistiller } from './scheduler/distiller.ts'
 import { startProactive } from './scheduler/proactive.ts'
 import { loadSelf } from './self/store.ts'
 import { startAutoSnapshot } from './persona/version.ts'
@@ -227,12 +227,14 @@ if (apiKey) {
   const llmRef = llm
   setTimeout(() => {
     startDistiller({ llm: llmRef })
-    // 代码地图：启动时先确保有一份，之后每天刷
+    // 代码地图：启动时先确保有一份，之后每天刷一次。
+    // 之前只做了"启动时刷"，refresher 写了却没人调 —— 长期不重启的话地图会过期。
     try {
       refreshCodeMap(false)
     } catch {
       /* 没有就算了，用到时会现场扫 */
     }
+    startCodeMapRefresher()
     info('自动整理已启动（每 30 分钟检查一次）')
   }, 30_000)
 
