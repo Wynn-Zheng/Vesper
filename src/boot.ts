@@ -14,7 +14,7 @@ import { watchOne } from './outward/watch.ts'
 import { personOfMessage, scopeOf } from './memory/scope.ts'
 import { ensurePerson } from './people/store.ts'
 import { refreshGroupMembers, groupMembers, isKnownMember, setGroupMembersMissingHook } from './people/group.ts'
-import { evaluateTurn } from './relation/evaluate.ts'
+import { drainEvaluations, evaluateTurn } from './relation/evaluate.ts'
 import { judgeReply } from './loop/judge.ts'
 import { recordPlayReviewed } from './learn/plays.ts'
 import { maybeSendEmoji } from './loop/chat.ts'
@@ -350,6 +350,30 @@ export function boot(transport: Transport, opts: BootOptions): void {
       // 关键词反应不在这儿算了：它属于「怎么组织 prompt」，
       // 由 loop/chat.ts 直接读 rules 算（见 loop/keyword.ts）。
       // 这里再算一遍会往 prompt 里塞两份，而且老的这份只取第一条命中的规则。
+      //
+      // 回复前先评一次情绪（只对"直接冲它来的"：私聊 / @ / 刚聊过的人）。
+      //
+      // 原来评估在回复**之后**异步跑，结果是"被怼的那一句还笑着回，下一句才生气"
+      // —— 这是最影响体验的那类 bug。代价是回复前多等一次小调用（几百毫秒到 1-2 秒），
+      // 换"这一句的情绪是对的"。群聊普通闲聊不走这条，仍然发完之后异步评。
+      if (opts.llm && !(m.passive ?? false) && rules.关系.评估?.开启 !== false) {
+        const earlyPerson = personOfMessage(m)
+        if (
+          allow(`eval:${earlyPerson}`, Math.max(0, Number(rules.关系.评估?.每天最多 ?? 300)), 86_400_000)
+        ) {
+          evaluateTurn({
+            rules,
+            llm: opts.llm,
+            personId: earlyPerson,
+            userText: text,
+            // 还没生成回复：让 evaluate 用"（还没回）"兜底
+            selfText: '',
+          })
+          // 等它落地再生成回复，否则这一句还是旧情绪
+          await drainEvaluations()
+        }
+      }
+
       const reply = await opts.reply({ ...m, text }, rules)
       consecutiveFailures = 0
 
@@ -400,24 +424,27 @@ export function boot(transport: Transport, opts: BootOptions): void {
       info(`→ ${who}：${ids.length} 条`)
 
       if (opts.llm) {
-        // 评估是每条回复后一次模型调用（再叠加自评/自审，单条最多 4 次）。
-        // 给个每日额度：超了就跳过评估，心情保持原样——不影响回话，只是不再"长"。
+        // 走到这里的是**群聊普通闲聊**（`m.passive`）：不拖慢回复，评估放到发完之后异步跑。
+        // 私聊 / @ / 刚聊过的人（`!m.passive`）在生成回复**之前**就已经同步评过了，
+        // 所以这里跳过它们，避免同一条消息评估两次。
         const evalConf = rules.关系.评估
         const evalPerson = personOfMessage(m)
-        if (evalConf?.开启 === false) {
-          /* 配置里关掉了 */
-        } else if (
-          allow(`eval:${evalPerson}`, Math.max(0, Number(evalConf?.每天最多 ?? 300)), 86_400_000)
-        ) {
-          evaluateTurn({
-            rules,
-            llm: opts.llm,
-            personId: evalPerson,
-            userText: text,
-            selfText: reply.trim(),
-          })
-        } else {
-          warnAt('关系/心情评估今日额度已用完，本轮跳过', { 对象: evalPerson })
+        if (m.passive) {
+          if (evalConf?.开启 === false) {
+            /* 配置里关掉了 */
+          } else if (
+            allow(`eval:${evalPerson}`, Math.max(0, Number(evalConf?.每天最多 ?? 300)), 86_400_000)
+          ) {
+            evaluateTurn({
+              rules,
+              llm: opts.llm,
+              personId: evalPerson,
+              userText: text,
+              selfText: reply.trim(),
+            })
+          } else {
+            warnAt('关系/心情评估今日额度已用完，本轮跳过', { 对象: evalPerson })
+          }
         }
         // 发完给自己这条打个分（异步，不挡后面的消息）。
         // 短回复没什么好评的，跳过省钱；可以用 rules.yaml 整体关掉。

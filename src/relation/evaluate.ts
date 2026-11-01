@@ -198,7 +198,9 @@ async function evaluate(opts: EvaluateOptions): Promise<void> {
   const past = recentContext(opts.personId, opts.userText)
   const userBlock = [
     `他：${opts.userText}`,
-    `我：${opts.selfText}`,
+    // 回复前调用的那次没有 selfText：写"还没回"比留空更像一轮真实对话，
+    // 否则模型会把空行当成"它说了句空话"。
+    `我：${opts.selfText || '（还没回）'}`,
     ...(past ? ['', '以前的事（判断强度时对比着看）：', past] : []),
   ].join('\n')
 
