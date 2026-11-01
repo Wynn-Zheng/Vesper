@@ -109,8 +109,13 @@ export function decayRelation(rules: Rules, personId: string, now = Date.now(), 
     if (prevDays >= grace) alreadyDeducted = Math.floor((prevDays - grace) / 3) + 1
   }
   const baseAmount = Math.max(0, Math.floor((days - grace) / 3) + 1 - alreadyDeducted)
-  // 强关系抗衰减：60 分以上每次只掉一半
-  const scaled = state.closeness >= 60 ? Math.max(1, Math.ceil(baseAmount / 2)) : baseAmount
+  // 强关系抗衰减：60 分以上每次只掉一半。
+  //
+  // ⚠️ 必须判 baseAmount > 0：baseAmount 为 0 表示"这次没有新增扣减"（已经扣过了），
+  // `Math.max(1, ceil(0/2))` 会把它补成 1 —— 结果是 ≥60 的关系**每天必掉 1 分**，
+  // 70 分静默 10 天就跌到 59，和"强关系抗衰减"的设计正好相反。
+  const scaled =
+    state.closeness >= 60 && baseAmount > 0 ? Math.max(1, Math.ceil(baseAmount / 2)) : baseAmount
   const amount = Math.min(3, scaled, Math.max(0, Math.ceil(state.closeness - 3)))
   if (amount <= 0) return { changed: false, days, delta: 0 }
 

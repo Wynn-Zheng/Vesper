@@ -10,7 +10,7 @@ import { chat } from '../llm/deepseek.ts'
 import { appendRaw, loadEpisodes, memoryRoot, recentRaw } from '../memory/store.ts'
 import { loadFacts } from '../memory/facts.ts'
 import { loadOpen } from '../people/open.ts'
-import { personOfAccount, accountIdsOf } from '../people/store.ts'
+import { personOfAccount, accountIdsOf, loadPerson } from '../people/store.ts'
 import { loadMood, decayedMood } from '../persona/mood.ts'
 import { buildPhaseBlock } from '../self/format.ts'
 import { loadRelation } from '../relation/store.ts'
@@ -523,7 +523,10 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const context = [
     // 不报关系值：模型看到数字会去"刷分"，也容易直接说出来
     `你们的关系：${stage.名}`,
-    `称呼上：${salutationOf(rules, stage, false)}`,
+    // 称呼要传 callName：主动消息以前漏了这个参数，于是"它自己给这人起的叫法"
+    // 在主动消息里失效，回落到 关系.昵称 / 阶段说明 —— 聊天里叫"阿鱼"、
+    // 主动消息里叫"哎"，看起来像两个人。
+    `称呼上：${salutationOf(rules, stage, false, loadPerson(personId)?.callName)}`,
     `这次想说话的原因：${urge.reasons.length ? urge.reasons.join('；') : '就是想找他'}`,
     mood ? `你现在的心情：${mood.emotion}（强度 ${mood.intensity.toFixed(1)}）` : '',
     phase ? `当下的状态：${phase}` : '',
