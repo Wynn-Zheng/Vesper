@@ -43,6 +43,8 @@ export interface EmojiStore {
   list(): Promise<IndexItem[]>
   remove(id: string): Promise<boolean>
   touch(id: string): Promise<boolean>
+  /** 补/改语义标签（视觉打标、控制台手改都走这里） */
+  setMeta(id: string, meta: { mood?: string; tags?: string[] }): Promise<boolean>
 }
 
 const DEFAULT_ROOT = join('persona', 'emoji')
@@ -331,5 +333,29 @@ export function createEmojiStore(
     })
   }
 
-  return { add, list, remove, touch }
+  /**
+   * 补/改语义标签。给视觉打标用，也给控制台手动改。
+   *
+   * 只动这两项，不碰 lastUsedAt：打标不算"用过一次"，
+   * 算进去的话刚打完标的表情包会立刻沉到加权挑选的队尾。
+   */
+  async function setMeta(id: string, meta: { mood?: string; tags?: string[] }): Promise<boolean> {
+    return serial(async () => {
+      const index = await readIndex()
+      const item = index.items.find((it) => it.id === id)
+      if (!item) return false
+      if (meta.mood !== undefined) item.mood = String(meta.mood).slice(0, 12)
+      if (meta.tags !== undefined) {
+        item.tags = meta.tags
+          .filter((t): t is string => typeof t === 'string')
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0 && t.length <= 12)
+          .slice(0, 8)
+      }
+      await saveIndex(index.items)
+      return true
+    })
+  }
+
+  return { add, list, remove, touch, setMeta }
 }

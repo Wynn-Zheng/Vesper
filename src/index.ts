@@ -23,6 +23,7 @@ import { startRateLimitSweeper } from './core/ratelimit.ts'
 import { startSelfReflect } from './self/reflect.ts'
 import { startObserving } from './self/observe.ts'
 import { startWatching } from './outward/watch.ts'
+import { startEmojiTagger } from './scheduler/emoji-tagger.ts'
 import { watchFile } from 'node:fs'
 
 initLog()
@@ -246,6 +247,9 @@ if (apiKey) {
   // 它自己出去看东西
   startWatching(llmRef, () => loadRules().rules)
   info('刷视频已启动（看 rules.yaml 的 外部.刷视频）')
+
+  // 表情包补语义标签：收的时候 NapCat 不带情绪，攒着慢慢用视觉模型补
+  startEmojiTagger({ llm: llmRef, getRules: () => loadRules().rules })
 
   const owner = process.env['OWNER_QQ'] || undefined
   if (owner) {

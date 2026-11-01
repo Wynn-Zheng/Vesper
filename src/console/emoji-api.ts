@@ -121,5 +121,71 @@ export async function handleEmojiApi(
     return true
   }
 
+  /**
+   * 手动上传一张。
+   *
+   * 为什么需要：它自己收集的表情包来自群里，你想让库里有特定的一张
+   * （自己画的、别处存的）就没辙了。这也是"库空了怎么办"的兜底。
+   *
+   * 收 base64 而不是 multipart：控制台所有接口都是 JSON，
+   * 为了一个上传去接 multipart 解析器不值当。
+   */
+  if (req.method === 'POST' && path === '/api/emoji/upload') {
+    const body = (await readJson(req)) as { ext?: unknown; data?: unknown; mood?: unknown; tags?: unknown }
+    const raw = typeof body?.data === 'string' ? body.data : ''
+    if (!raw) {
+      json(res, 400, { ok: false, error: '没有图片数据' })
+      return true
+    }
+
+    // 只认这几种：别的格式发出去平台也不收
+    const wantExt = (typeof body?.ext === 'string' ? body.ext : '').replace(/^\.+/, '').toLowerCase() || 'png'
+    if (!TYPES[wantExt]) {
+      json(res, 400, { ok: false, error: `不支持 ${wantExt} 格式，只收 ${Object.keys(TYPES).join(' / ')}` })
+      return true
+    }
+
+    let buffer: Buffer
+    try {
+      // 允许带 data URL 前缀，前端直接传 FileReader 的结果也行
+      buffer = Buffer.from(raw.replace(/^data:[^;]+;base64,/, ''), 'base64')
+    } catch {
+      json(res, 400, { ok: false, error: '图片数据不是合法的 base64' })
+      return true
+    }
+    if (!buffer.byteLength) {
+      json(res, 400, { ok: false, error: '图片是空的' })
+      return true
+    }
+
+    const result = await store.add({
+      buffer,
+      ext: wantExt,
+      source: 'console',
+      ...(typeof body?.mood === 'string' && body.mood.trim() ? { mood: body.mood.trim().slice(0, 12) } : {}),
+      ...(Array.isArray(body?.tags)
+        ? {
+            tags: body.tags
+              .filter((t): t is string => typeof t === 'string')
+              .map((t) => t.trim())
+              .filter((t) => t.length > 0 && t.length <= 12)
+              .slice(0, 8),
+          }
+        : {}),
+    })
+
+    if (result.added) {
+      json(res, 200, { ok: true, data: { id: result.id } })
+      return true
+    }
+    // 有 reason 说明没进去：太大或库满。库里已有同一张（按 sha256 判重）不算失败。
+    if (result.reason) {
+      json(res, 409, { ok: false, error: result.reason === 'too-large' ? '图片超过 2MB' : '库存满了，先删几张' })
+      return true
+    }
+    json(res, 200, { ok: true, data: { id: result.id, duplicate: true } })
+    return true
+  }
+
   return false
 }

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initLog } from '../src/core/log.ts'
 import { pickEmoji } from '../src/emoji/pick.ts'
+import { moodGroup } from '../src/emoji/tag.ts'
 import { createEmojiStore, MAX_EMOJI_BYTES, type IndexItem } from '../src/emoji/store.ts'
 
 const root = mkdtempSync(join(tmpdir(), 'qqbot-emoji-'))
@@ -203,7 +204,47 @@ await check('pickEmoji：mood 精确 / tag 命中 / 兜底随机', async () => {
   assert.equal(pickEmoji([], '开心'), null, '空库返回 null')
 })
 
-/* ---------- 5. 超过 2MB 不落盘 ---------- */
+/* ---------- 5. 情绪归一化与同组匹配 ---------- */
+
+await check('moodGroup：自由情绪词能归到固定词表', async () => {
+  // 系统情绪是模型自由生成的，表情包的 mood 是固定词表。
+  // 不归一化的话两边永远对不上，打完标也白打。
+  assert.equal(moodGroup('有点烦'), '生气')
+  assert.equal(moodGroup('挺开心的'), '开心')
+  assert.equal(moodGroup('无语子'), '无语')
+  assert.equal(moodGroup('困死了'), '疲惫')
+  assert.equal(moodGroup('开心'), '开心', '标准词直接返回')
+  assert.equal(moodGroup('平静'), '', '认不出来就返回空，别硬套')
+  assert.equal(moodGroup(''), '')
+})
+
+await check('pickEmoji：同一情绪组也能匹配上', async () => {
+  const pool: IndexItem[] = [
+    indexItem({ id: 'angry', mood: '生气', tags: [] }),
+    indexItem({ id: 'happy', mood: '开心', tags: ['笑'] }),
+  ]
+  // 「有点烦」既不是精确 mood，也不在 tags 里，靠情绪组才匹配到 angry
+  assert.equal(pickEmoji(pool, '有点烦', () => 0)?.id, 'angry')
+  assert.equal(pickEmoji(pool, '挺开心的', () => 0)?.id, 'happy')
+})
+
+await check('setMeta：补标签不碰 lastUsedAt', async () => {
+  const store = createEmojiStore(emojiDir, { libraryCap: 10 })
+  const r = await store.add({ buffer: image('meta'), ext: 'png' })
+  const before = (await store.list()).find((x) => x.id === r.id)!
+  assert.equal(before.mood, '', '刚收进来没有情绪')
+  assert.equal(before.tags.length, 0)
+
+  assert.equal(await store.setMeta(r.id, { mood: '开心', tags: ['鼓掌', '点赞'] }), true)
+  const after = (await store.list()).find((x) => x.id === r.id)!
+  assert.equal(after.mood, '开心')
+  assert.deepEqual(after.tags, ['鼓掌', '点赞'])
+  assert.equal(after.lastUsedAt, before.lastUsedAt, '打标不算"用过一次"，否则刚打完标就沉到队尾')
+
+  assert.equal(await store.setMeta('不存在的id', { mood: '开心' }), false)
+})
+
+/* ---------- 6. 超过 2MB 不落盘 ---------- */
 
 await check('超限：>2MB 返回 too-large 且不写文件', async () => {
   const big = new Uint8Array(MAX_EMOJI_BYTES + 1)

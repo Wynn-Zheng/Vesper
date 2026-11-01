@@ -5013,6 +5013,57 @@ async function openEmojiLibrary() {
   head.appendChild(cnt)
   head.appendChild(el('span', 'spacer'))
 
+  // 上传：手动往库里加几张（自己画的、别处存的）
+  const picker = document.createElement('input')
+  picker.type = 'file'
+  picker.accept = 'image/png,image/jpeg,image/gif,image/webp,image/bmp'
+  picker.multiple = true
+  picker.style.display = 'none'
+  const upload = el('button', 'mini-btn', '上传')
+  upload.onclick = () => picker.click()
+  picker.onchange = async () => {
+    const files = [...picker.files]
+    picker.value = ''
+    if (!files.length) return
+    upload.disabled = true
+    let ok = 0
+    let dup = 0
+    let fail = 0
+    let lastErr = ''
+    for (const f of files) {
+      try {
+        // FileReader 给的是 data URL，后端会自己剥掉前缀
+        const data = await new Promise((resolve, reject) => {
+          const fr = new FileReader()
+          fr.onload = () => resolve(String(fr.result || ''))
+          fr.onerror = () => reject(new Error('读不了这个文件'))
+          fr.readAsDataURL(f)
+        })
+        const ext = (f.name.split('.').pop() || 'png').toLowerCase()
+        const raw = await api('/api/emoji/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ext, data }),
+        })
+        const d = raw && raw.data ? raw.data : raw
+        if (d && d.duplicate) dup++
+        else ok++
+      } catch (e) {
+        fail++
+        lastErr = e.message
+      }
+    }
+    upload.disabled = false
+    const bits = []
+    if (ok) bits.push(ok + ' 张收下了')
+    if (dup) bits.push(dup + ' 张库里已有')
+    if (fail) bits.push(fail + ' 张没收下（' + lastErr + '）')
+    toast(bits.join('，') || '没选到图')
+    void load()
+  }
+  head.appendChild(upload)
+  head.appendChild(picker)
+
   const clean = el('button', 'mini-btn', '清掉 30 天没用的')
   clean.onclick = async () => {
     try {
@@ -5060,7 +5111,7 @@ async function openEmojiLibrary() {
       body.innerHTML = ''
       if (!items.length) {
         body.innerHTML =
-          '<div class="empty">库还是空的。群里有人发表情包时会自动收进来（前提是它连上了 QQ）。</div>'
+          '<div class="empty">库还是空的。群里有人发表情包时会自动收进来（前提是它连上了 QQ），也可以点右上角「上传」自己加。</div>'
         return
       }
       const grid = el('div')
@@ -5091,8 +5142,12 @@ async function openEmojiLibrary() {
         }
         cell.appendChild(del)
 
-        const meta = el('div', '', it.size < 1024 ? it.size + ' B' : (it.size / 1024).toFixed(0) + ' KB')
-        meta.style.cssText = 'font-size:10px;color:var(--dim2);padding:3px 6px;text-align:center'
+        // 打了标签就显示情绪和关键词（鼠标悬停看体积），没标签才显示体积
+        const sizeText = it.size < 1024 ? it.size + ' B' : (it.size / 1024).toFixed(0) + ' KB'
+        const kind = [it.mood || '', ...(it.tags || [])].filter(Boolean).join(' · ')
+        const meta = el('div', '', kind || sizeText)
+        meta.title = sizeText + (kind ? ' · ' + kind : '')
+        meta.style.cssText = 'font-size:10px;color:var(--dim2);padding:3px 6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
         cell.appendChild(meta)
         grid.appendChild(cell)
       }

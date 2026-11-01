@@ -1,4 +1,5 @@
 import type { IndexItem } from './store.ts'
+import { moodGroup } from './tag.ts'
 
 /**
  * 从候选里按权重取一个。
@@ -33,12 +34,17 @@ function pickWeighted(items: IndexItem[], rng: () => number, now = Date.now()): 
 /**
  * 按心情挑一张表情包。纯函数，不读盘。
  *
- * 优先级：mood 完全相同 → tags 里含 mood → 随便一张（按最近使用加权）。
- * 库空返回 null，调用方自己决定要不要发。
+ * 优先级：
+ *   ① mood 完全相同
+ *   ② tags 里含这个情绪词
+ *   ③ **同一个情绪组**（「有点烦」和「生气」算一组）
+ *   ④ 随便一张（按最近使用加权）
  *
- * ⚠ 现实提醒：收集表情包时 NapCat 不带 mood/tags，所以前两级通常匹配不到，
- * 实际走的是第三级。这不影响"能用"，只影响"按心情挑"这件事做不到——
- * 要真按心情挑，得在入库时补语义标签（用视觉模型或消息上下文）。
+ * 第 ③ 级是补视觉打标之后加的：系统情绪是模型自由生成的（"有点烦"、"挺开心的"），
+ * 而表情包的 mood 是固定词表（"生气"、"开心"）。没有归一化的话两边永远对不上，
+ * 打完标也还是走第 ④ 级。
+ *
+ * 库空返回 null，调用方自己决定要不要发。
  */
 export function pickEmoji(
   items: IndexItem[],
@@ -52,6 +58,13 @@ export function pickEmoji(
 
   const tagged = items.filter((item) => item.tags.includes(mood))
   if (tagged.length > 0) return pickWeighted(tagged, rng)
+
+  // 同一个情绪组：这一级让"有点烦"也能翻出生气的表情包
+  const group = moodGroup(mood)
+  if (group) {
+    const sameGroup = items.filter((item) => moodGroup(item.mood) === group)
+    if (sameGroup.length > 0) return pickWeighted(sameGroup, rng)
+  }
 
   return pickWeighted(items, rng)
 }
