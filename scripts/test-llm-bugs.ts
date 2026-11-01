@@ -30,7 +30,7 @@ console.log('=== 1. 配置缺失 ===')
   ]
   for (const [name, cfg, re] of cases) {
     try {
-      await deepseek.chat([{ role: 'user', content: 'x' }], cfg)
+      await deepseek.chat([{ role: 'user', content: 'x' }], cfg as unknown as Parameters<typeof deepseek.chat>[1])
       check(name, false, '没抛错')
     } catch (e) {
       const msg = String((e as Error).message)

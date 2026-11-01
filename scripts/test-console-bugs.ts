@@ -58,7 +58,7 @@ console.log('=== 1. 搜索的边界 ===')
 console.log('\n=== 2. 导出 ===')
 {
   const { exportAll } = await import('../src/console/backup.ts')
-  const data = exportAll(7) as Record<string, unknown>
+  const data = exportAll(7) as unknown as Record<string, unknown>
   check('导出有 exportedAt', typeof data.exportedAt === 'string')
   check('导出有 people 数组', Array.isArray(data.people))
   check('导出有 episodes', Array.isArray(data.episodes))
@@ -161,3 +161,7 @@ console.log('\n=== 5. 回复评分 ===')
 
 console.log(`\n通过 ${pass} / 失败 ${fail}`)
 process.exit(fail > 0 ? 1 : 0)
+
+// 显式标记为模块：否则 TS 会把顶层 let/const 当全局变量，与其它脚本互相冲突
+// （报 TS2451 重复声明 / TS1375 顶层 await），加这一行就没有歧义了。
+export {}

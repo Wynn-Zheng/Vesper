@@ -88,7 +88,7 @@ for (const f of personaFiles) {
       for (const line of text.split('\n')) {
         const t = line.trim()
         if (!t || t.startsWith('#') || t.startsWith('-')) continue
-        if (!/^[\p{L}\p{N}_·「」()（）、。：: -]+[:：]/.test(t) && !t.endsWith(':') && !t.includes(':')) {
+        if (!/^[\p{L}\p{N}_·「」()（）、。：: -]+[:：]/u.test(t) && !t.endsWith(':') && !t.includes(':')) {
           throw new Error(`第 ${text.split('\n').indexOf(line) + 1} 行不像 yaml: ${t.slice(0, 40)}`)
         }
       }

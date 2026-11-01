@@ -45,13 +45,16 @@ let handler: FetchHandler = () => {
   throw new Error('测试没有设置 fetch 桩')
 }
 
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+globalThis.fetch = (async (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   return handler(url, init)
 }) as typeof fetch
 
 function imageResponse(
-  body: BodyInit,
+  body: NonNullable<NonNullable<Parameters<typeof fetch>[1]>['body']>,
   type = 'image/png',
   headers: Record<string, string> = {},
 ): Response {

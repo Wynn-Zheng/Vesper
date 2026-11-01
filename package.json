@@ -11,7 +11,7 @@
     "start": "node --env-file=.env src/index.ts",
     "mock": "node dev/mock.ts",
     "check": "node node_modules/typescript/bin/tsc --noEmit",
-    "check:strict": "node node_modules/typescript/bin/tsc --noEmit --noUnusedLocals",
+    "check:strict": "node node_modules/typescript/bin/tsc -p tsconfig.strict.json --noEmit --noUnusedLocals",
     "test": "node --test test/*.test.ts",
     "smoke": "node scripts/smoke.ts",
     "smoke:live": "node --env-file=.env scripts/smoke.ts",

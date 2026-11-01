@@ -59,7 +59,6 @@ console.log('=== 1. 高相似度不问模型 ===')
 {
   const dir = mkdtempSync(join(tmpdir(), 'qqbot-p1-'))
   people.setPeopleRoot(dir)
-  facts.setFactsRoot?.(dir)
 
   const pid = 'qq-1'
   people.ensurePerson('qq', '1', '小明')
@@ -67,7 +66,7 @@ console.log('=== 1. 高相似度不问模型 ===')
 
   const srv = await fakeModel(['no'])
   const turns = [
-    { ts: Date.now(), scope: 'private:qq-1', role: 'user' as const, text: '他养了一只叫豆豆的猫' },
+    { ts: Date.now(), scope: 'private:qq-1' as const, role: 'user' as const, text: '他养了一只叫豆豆的猫' },
   ]
 
   // 这一步会调 distill，但 facts 已经存在且相似度极高 → 不该问模型
@@ -137,7 +136,6 @@ console.log('\n=== 3. 模型不可用 ===')
   const srv = await fakeModel(['error'])
   const d = mkdtempSync(join(tmpdir(), 'qqbot-p1b-'))
   people.setPeopleRoot(d)
-  facts.setFactsRoot?.(d)
   people.ensurePerson('qq', '2', '小红')
   facts.appendFacts('qq-2', [{ text: '他喜欢看球', date: '2026-10-01', confidence: 0.9, visibility: 'private' }])
 

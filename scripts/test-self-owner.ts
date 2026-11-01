@@ -33,6 +33,8 @@ const base = {
   name: '小鲸鱼',
   nameReason: '觉得这个名字像我',
   about: '我是个会担心人熬夜的家伙。',
+  aboutExtra: '',
+  aboutOwner: 'it' as const,
   thinking: '在想折纸的事。',
   traits: { 说话倾向: '短句' },
   abilities: '能聊天、能记事。',

@@ -265,3 +265,7 @@ main().catch((e) => {
   console.error('测试本身崩了：', e)
   process.exit(1)
 })
+
+// 显式标记为模块：否则 TS 会把顶层 let/const 当全局变量，与其它脚本互相冲突
+// （报 TS2451 重复声明 / TS1375 顶层 await），加这一行就没有歧义了。
+export {}

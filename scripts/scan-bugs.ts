@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 
 let bugs = 0
-function bug(name: string, detail: string): void {
+function bug(name: string, detail = ''): void {
   bugs++
   console.log(`🐛 ${name}`)
   console.log(`   ${detail}`)

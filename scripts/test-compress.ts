@@ -30,7 +30,7 @@ function check(name: string, fn: () => void): void {
   }
 }
 
-async function checkAsync(name: string, fn: () => Promise<void>): Promise<void> {
+async function checkAsync(name: string, fn: () => Promise<void> | void): Promise<void> {
   try {
     await fn()
     pass++

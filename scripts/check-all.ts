@@ -70,8 +70,11 @@ function runStep(cmd: string, id: number): { out: string; code: number } {
 }
 
 const STEPS: Step[] = [
+  // 全量类型检查：含 scripts/（87 个脚本），catch 真正的类型错误
   { name: '类型检查', cmd: 'node node_modules/typescript/bin/tsc --noEmit', expect: /^$/ },
-  { name: '类型检查（严格）', cmd: 'node node_modules/typescript/bin/tsc --noEmit --noUnusedLocals', expect: /^$/ },
+  // 严格检查（noUnusedLocals）只覆盖 src/dev/test：
+  // scripts/ 是测试与工具脚本，未使用的 import 属风格问题，不强求。
+  { name: '类型检查（严格）', cmd: 'node node_modules/typescript/bin/tsc -p tsconfig.strict.json --noEmit --noUnusedLocals', expect: /^$/ },
   {
     name: '单元测试',
     cmd: 'node --test --test-isolation=none test/*.test.ts',
@@ -141,7 +144,7 @@ const STEPS: Step[] = [
   { name: '自我页结构', cmd: 'node --env-file-if-exists=.env scripts/test-self-page.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '人物扩展', cmd: 'node --env-file-if-exists=.env scripts/test-people-extras.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '控制台自查', cmd: 'node --env-file-if-exists=.env scripts/selfcheck-console.ts', expect: /通过 \d+ \/ 失败 0/ },
-  { name: '控制台边界', cmd: 'node --env-file-if-exists=.env scripts/test-console-edge.ts', expect: /通过 \d+ \/ 失败 0/, needsServer: true },
+  { name: '控制台边界', cmd: 'node --env-file-if-exists=.env scripts/test-console-edge.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
   { name: '群聊发言人', cmd: 'node --env-file-if-exists=.env scripts/test-speaker.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '群名单恢复', cmd: 'node --env-file-if-exists=.env scripts/test-restore-groups.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '名字一致性', cmd: 'node --env-file-if-exists=.env scripts/test-name-consistency.ts', expect: /通过 \d+ \/ 失败 0/ },

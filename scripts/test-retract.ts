@@ -58,7 +58,7 @@ console.log('\n=== 2. 配置项 ===')
   const loaded = lr()
   check('实际能读到改口概率（不是 undefined）', loaded.rules.行为.改口概率 !== undefined, String(loaded.rules.行为.改口概率))
   check('实际能读到已读不回概率', loaded.rules.行为.已读不回概率 !== undefined, String(loaded.rules.行为.已读不回概率))
-  check('没有未知键警告', (loaded.unknown?.length ?? 0) === 0, (loaded.unknown ?? []).join(','))
+  check('没有未知键警告', !loaded.warnings.some((w) => w.includes('未知配置项')), loaded.warnings.join(','))
 }
 
 /* ============ 3. 预设句 ============ */
