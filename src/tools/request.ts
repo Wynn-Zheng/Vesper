@@ -12,7 +12,9 @@
 import { requestChange, type RequestTarget } from '../self/requests.ts'
 import type { Tool } from './types.ts'
 
-const TARGETS: RequestTarget[] = ['name', 'about', 'traits', 'person']
+// person 的 apply 还没实现（apply.ts 里写死返回失败），先不暴露给模型：
+// 提了也批不了，而失败时又不会出队（server.ts 有意为之），会永久堵住这个名额。
+const TARGETS: RequestTarget[] = ['name', 'about', 'traits']
 
 export const requestChangeTool: Tool = {
   name: 'request_change',

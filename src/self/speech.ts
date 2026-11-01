@@ -9,11 +9,22 @@
  *   plays 学的是**别人怎么说话**（好的说法）；
  *   这个统计的是**它自己怎么说话**（它的口音）。
  *
- * 数据来源：persona/memory/raw/*.jsonl 里 role=assistant 的行（保留 7 天）。
+ * 数据来源：当前角色卡记忆目录下 raw/*.jsonl 里 role=assistant 的行。
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { memoryRoot } from '../memory/store.ts'
 
-const DIR = 'persona/memory/raw'
+/**
+ * 与 appendRaw 写的位置保持一致：`<memoryRoot>/raw`。
+ *
+ * 这里原来写死 `persona/memory/raw`；卡片化之后 raw 已改写到
+ * `persona/cards/<卡>/memory/raw`，于是统计冻结在老数据上了。
+ * 用函数延迟求值，避免模块加载时卡片还没确定。
+ */
+function rawDir(): string {
+  return join(memoryRoot(), 'raw')
+}
 
 export interface SpeechStats {
   /** 统计了几条 */
@@ -48,13 +59,14 @@ const OPENER_WHITELIST = new Set([
 const OPENER_STOP = new Set(['答:', '第一', '一次', '的是', '不上', '还没'])
 
 export function analyzeSpeech(): SpeechStats | null {
-  if (!existsSync(DIR)) return null
+  const dir = rawDir()
+  if (!existsSync(dir)) return null
 
   const texts: string[] = []
   try {
-    for (const f of readdirSync(DIR)) {
+    for (const f of readdirSync(dir)) {
       if (!f.endsWith('.jsonl')) continue
-      for (const line of readFileSync(`${DIR}/${f}`, 'utf8').split('\n')) {
+      for (const line of readFileSync(join(dir, f), 'utf8').split('\n')) {
         if (!line.trim()) continue
         try {
           const j = JSON.parse(line) as { role?: string; text?: string }

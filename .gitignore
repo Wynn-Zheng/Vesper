@@ -40,3 +40,6 @@ ui-*.png
 update/
 dist-update/
 app-backup-*
+
+# agent-team 过程产物
+.team/

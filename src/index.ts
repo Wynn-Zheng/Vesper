@@ -356,9 +356,7 @@ if (prunedLogs) info(`清理了 ${prunedLogs} 个过期日志文件（保留 ${k
   setInterval(() => { try { pruneLogs(90) } catch { /* ignore */ } }, 6 * 3600_000).unref?.()
   setInterval(() => {
     try {
-      const n = // 日志按天删（90 天）+ 每 6 小时跑一次：只在启动删的话，长期不重启会无限累积
-setInterval(() => { try { pruneLogs(90) } catch { /* ignore */ } }, 6 * 3600_000).unref?.()
-pruneRaw(120)
+      const n = pruneRaw(120)
       if (n) info(`清理了 ${n} 天的原始对话`)
     } catch {
       /* 删不掉就下次再说 */

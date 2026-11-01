@@ -167,6 +167,8 @@ function json(res: ServerResponse, code: number, data: unknown): void {
 }
 
 function text(res: ServerResponse, code: number, body: string, type = 'text/plain; charset=utf-8'): void {
+  // 原来只 end(body)，code/type 两个参数被丢掉 —— 401/404 页面实际都返回 200。
+  res.writeHead(code, { 'Content-Type': type })
   res.end(body)
 }
 

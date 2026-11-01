@@ -124,7 +124,9 @@ export async function testAbility(id: string): Promise<AbilityTestResult> {
     }
 
     case 'qzone': {
-      const q = (rules as unknown as Record<string, unknown>)['空间'] as Record<string, unknown> | undefined
+      // 配置在「外部.发空间」，不是顶层「空间」——读错层级会让这个测试永远报“没开”。
+      const ext = (rules as unknown as Record<string, unknown>)['外部'] as Record<string, unknown> | undefined
+      const q = ext?.['发空间'] as Record<string, unknown> | undefined
       if (q?.['开启'] !== true) return done(false, '发说说没开')
       return done(true, '发之前要人确认')
     }

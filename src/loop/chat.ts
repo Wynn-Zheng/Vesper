@@ -434,7 +434,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     Math.max(1, Number(opts.rules.说话.每轮最多条数) || 3),
   ).join('\n')
   const keepTurns = Math.max(60, opts.rules.上下文压缩.摘要阈值 + 20)
-  pushTurn(key, { role: 'user', content: userContent, at: m.at }, keepTurns)
+  // 用户这条在调模型之前已经记过了（见函数上半段的 pushTurn），这里只补回复。
+  // 曾经这里又 push 了一次 userContent，导致每轮用户消息在历史里出现两遍。
   pushTurn(key, { role: 'assistant', content: sendable, at: Date.now() }, keepTurns)
 
   // 历史压成滚动摘要，避免 session 无限增长；失败不挡这一轮
