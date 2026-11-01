@@ -718,7 +718,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           // 内存无上限增长。直接丢这条（日志本来就有文件持久化）。
           try {
             if (res.writableEnded || res.destroyed) return
-            const okWrite = res.write(`data: ${JSON.stringify(rec)}\\n\\n`)
+            const okWrite = res.write(`data: ${JSON.stringify(rec)}\n\n`)
             if (!okWrite) dropped++
           } catch {
             // 某个客户端写失败绝不能把异常抛回业务代码（logBus.emit 是同步的）
@@ -727,7 +727,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         logBus.on('log', onLog)
         const ping = setInterval(() => {
           try {
-            if (!res.writableEnded && !res.destroyed) res.write(': ping\\n\\n')
+            if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n')
           } catch {
             /* ignore */
           }
@@ -1359,7 +1359,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 它能不能自己改角色卡（rules.yaml 的 人格.它能自改角色卡）
       if (req.method === 'PUT' && path === '/api/self/autonomy') {
         const body = await readJson(req) as { on?: boolean }
-        const on = Boolean(body.on)
+        // 只认真正的 true：Boolean('false') === true，会把"关"误开
+        const on = body.on === true
         const { readFileSync } = await import('node:fs')
         const { setConfigPath } = await import('./config-write.ts')
         const { writeAtomic } = await import('../store/fs.ts')
@@ -1983,14 +1984,24 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
       if (req.method === 'PUT' && path === '/api/rules') {
         const body = await readBody(req)
-        // 先校验 YAML 能不能解析，再落盘
-        const probe = loadRules()
-        void probe
+        // 不要调 loadRules() 做探测：rules.yaml 语法坏了的时候它会先抛错，
+        // 于是这里永远 500 —— 而启动时的提示恰恰是"请到控制台修改"，
+        // 等于把唯一的修复入口锁死。只校验**新**内容。
+        if (!body.trim()) {
+          json(res, 400, { error: '内容为空，拒绝保存（会清空成默认配置）' })
+          return
+        }
+        let parsed: unknown
         try {
           const YAML = (await import('yaml')).default
-          YAML.parse(body)
+          parsed = YAML.parse(body)
         } catch (err) {
           json(res, 400, { error: `YAML 语法错误：${String(err)}` })
+          return
+        }
+        // 顶层必须是映射：`[]` / `null` 都能通过语法校验，但下次启动 loadRules() 会抛错
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          json(res, 400, { error: '顶层必须是一个映射（`键: 值` 的形式），不能是数组或空' })
           return
         }
         writeAtomic(RULES_FILE, body)

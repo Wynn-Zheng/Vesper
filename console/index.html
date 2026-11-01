@@ -5076,11 +5076,10 @@ async function loadHistory() {
 async function rollback(id) {
   if (!confirm(`回滚到 ${id}？\n当前状态会先被快照一份，可以再滚回来。`)) return
   try {
-    await sendJson('/api/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'restore', payload: { id } }),
-    })
+    // 注意 sendJson(path, body, method) 的第二个参数就是**请求体**，
+    // 不要传 fetch 的 init（以前这里传了 {method,headers,body}，
+    // 结果整个对象被序列化成 body，服务端拿到的 action 是 undefined → 回滚永远 400）
+    await sendJson('/api/action', { action: 'restore', payload: { id } })
     toast('已回滚到 ' + id)
     loadHistory()
     loadStatus()
@@ -5361,11 +5360,10 @@ async function saveRules() {
 async function act(action) {
   try {
     toast('执行中…')
-    const r = await sendJson('/api/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    })
+    // 同上：第二参就是请求体，不是 fetch init。
+    // 这一处错了会让操作页 7 个按钮（speak/distill/snapshot/reload/watch/
+    // selfReflect/draftQzone）全部静默 400。
+    const r = await sendJson('/api/action', { action })
     toast('完成：' + JSON.stringify(r.result).slice(0, 120))
     loadStatus()
   } catch (err) { toast('失败：' + err.message) }
