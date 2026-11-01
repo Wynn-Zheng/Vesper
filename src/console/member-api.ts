@@ -9,21 +9,10 @@
  * 详情要的是"一个人所有东西"的深结构。两种查询的目的不一样。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { parseJsonBody } from './http.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
-/** 读 JSON body：空 body 当 {}，非法 JSON 抛一个能映射成 400 的错误 */
-function safeJson(text: string): Record<string, unknown> {
-  if (!text || !text.trim()) return {}
-  let v: unknown
-  try {
-    v = JSON.parse(text)
-  } catch {
-    throw new Error('请求体不是合法 JSON')
-  }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
-  return v as Record<string, unknown>
-}
 export async function handleMemberApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -226,7 +215,7 @@ export async function handleMemberApi(
   /* ============ 抽屉：屏蔽/取消屏蔽 ============ */
   // 屏蔽的意思：它不再主动跟这个人说话（但还会记住对方说的）
   if (method === 'PUT' && path === '/api/member/block') {
-    const body = safeJson(await readBody(req)) as { id?: string; blocked?: boolean }
+    const body = parseJsonBody(await readBody(req)) as { id?: string; blocked?: boolean }
     const id = String(body.id ?? '')
     const { isValidPersonId } = await import('../people/store.ts')
     if (!isValidPersonId(id)) {

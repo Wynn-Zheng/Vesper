@@ -4,22 +4,11 @@
  * 危险操作（点击/打字/按键）先排队，你在控制台点「允许」才真执行。
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { parseJsonBody } from './http.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 type ReadBody = (req: IncomingMessage) => Promise<string>
 
-/** 读 JSON body：空 body 当 {}，非法 JSON 抛一个能映射成 400 的错误 */
-function safeJson(text: string): Record<string, unknown> {
-  if (!text || !text.trim()) return {}
-  let v: unknown
-  try {
-    v = JSON.parse(text)
-  } catch {
-    throw new Error('请求体不是合法 JSON')
-  }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
-  return v as Record<string, unknown>
-}
 export async function handleDesktopApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -48,7 +37,7 @@ export async function handleDesktopApi(
 
   // 批准：真执行
   if (method === 'POST' && path === '/api/desktop/approve') {
-    const body = safeJson(await readBody(req)) as { id?: string }
+    const body = parseJsonBody(await readBody(req)) as { id?: string }
     const id = String(body.id ?? '')
     if (!id) {
       json(res, 400, { error: '缺少 id' })
@@ -62,7 +51,7 @@ export async function handleDesktopApi(
 
   // 拒绝
   if (method === 'POST' && path === '/api/desktop/reject') {
-    const body = safeJson(await readBody(req)) as { id?: string }
+    const body = parseJsonBody(await readBody(req)) as { id?: string }
     const id = String(body.id ?? '')
     if (!id) {
       json(res, 400, { error: '缺少 id' })

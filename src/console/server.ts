@@ -34,6 +34,7 @@ import { handleSettingsApi } from './settings-api.ts'
 import { handleTestApi } from './test-api.ts'
 import { createPluginService, pluginRoutes } from './plugin-api.ts'
 import { handleEmojiApi } from './emoji-api.ts'
+import { parseJsonBody } from './http.ts'
 import { recordConsoleTurn } from './activity.ts'
 import { previewReply } from '../loop/preview.ts'
 import { writeAtomic } from '../store/fs.ts'
@@ -185,16 +186,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
  * 外层 catch 会把它当输入错误返 400 —— 之前是直接 500 加原始 SyntaxError 文案。
  */
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const text = (await readBody(req)) || ''
-  if (!text.trim()) return {}
-  let v: unknown
-  try {
-    v = JSON.parse(text)
-  } catch {
-    throw new Error('请求体不是合法 JSON')
-  }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
-  return v as Record<string, unknown>
+  return parseJsonBody(await readBody(req))
 }
 
 function status(opts: ConsoleOptions, personId: string): unknown {

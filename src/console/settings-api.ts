@@ -35,11 +35,12 @@ import { join, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
 import { loadRules } from '../core/config.ts'
+import { parseJsonBody } from './http.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
 /** 递归算目录大小（只算文件，跳过 node_modules/.git） */
-function dirSize(dir: string, skip = new Set(['node_modules', '.git', '.agenttree', 'versions'])): number {
+function dirSize(dir: string, skip = new Set(['node_modules', '.git', 'versions'])): number {
   let total = 0
   const walk = (d: string): void => {
     let entries: string[]
@@ -71,18 +72,6 @@ function human(bytes: number): string {
   return (bytes / 1024 ** 3).toFixed(2) + ' GB'
 }
 
-/** 读 JSON body：空 body 当 {}，非法 JSON 抛一个能映射成 400 的错误 */
-function safeJson(text: string): Record<string, unknown> {
-  if (!text || !text.trim()) return {}
-  let v: unknown
-  try {
-    v = JSON.parse(text)
-  } catch {
-    throw new Error('请求体不是合法 JSON')
-  }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
-  return v as Record<string, unknown>
-}
 export async function handleSettingsApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -107,7 +96,7 @@ export async function handleSettingsApi(
   if (method === 'PUT' && path === '/api/settings/log-retention') {
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as { 保留天数?: number }
+    const body = parseJsonBody(Buffer.concat(chunks).toString('utf8')) as { 保留天数?: number }
     const days = Math.round(Number(body.保留天数))
 
     if (!Number.isFinite(days) || days < 1 || days > 3650) {
@@ -222,7 +211,7 @@ export async function handleSettingsApi(
   if (method === 'PUT' && path === '/api/settings/model') {
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as {
+    const body = parseJsonBody(Buffer.concat(chunks).toString('utf8')) as {
       apiKey?: string
       model?: string
       visionModel?: string
@@ -334,7 +323,7 @@ export async function handleSettingsApi(
   if (method === 'POST' && path === '/api/settings/download-update') {
     const chunks: Buffer[] = []
     for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-    const body = safeJson(Buffer.concat(chunks).toString('utf8')) as { latest?: unknown }
+    const body = parseJsonBody(Buffer.concat(chunks).toString('utf8')) as { latest?: unknown }
     const { downloadUpdate, pendingUpdate } = await import('./update.ts')
     const latest = body.latest as { version: string; buildTime: string; app?: { url: string; sha256: string; size: number } }
     if (!latest || !latest.version) { json(res, 400, { error: '缺版本信息' }); return true }

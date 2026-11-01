@@ -2870,17 +2870,6 @@ async function selfCoreDrop(index) {
   }
 }
 
-/** 段头：色条 + 标题 + 说明 */
-function selfSec(title, desc, color) {
-  const wrap = el('div', 'self-sec')
-  const head = el('div', 'self-sec-head ' + (color || 'blue'))
-  head.appendChild(el('span', 'bar'))
-  head.appendChild(el('h2', '', title))
-  if (desc) head.appendChild(el('span', 'desc', desc))
-  wrap.appendChild(head)
-  return wrap
-}
-
 /** 卡片：小标题 +（可选）右侧注记 */
 function selfCard(title, extra) {
   const c = el('div', 'self-card')
@@ -5658,37 +5647,6 @@ async function toggleExpression(text, checked) {
     SELF_DATA = null
     await loadSelfV2()
   } catch (e) { alert('失败：' + e.message) }
-}
-
-async function loadSelf() {
-  try {
-    const d = await api('/api/self')
-    $('self-phase').textContent = PHASE_LABEL[d.phase] || d.phase
-    $('self-name').textContent = d.self.name || '还没有名字'
-    $('self-name-why').textContent = d.self.nameReason || (d.self.name ? '' : '时机到了它会自己取一个')
-    $('self-about').textContent = d.self.about || '（还没想清楚）'
-    $('self-thinking').textContent = d.self.thinking || '（还没想）'
-
-    const box = $('self-life')
-    box.innerHTML = ''
-    if (!d.life.length) {
-      box.appendChild(el('div', 'empty', '还没有记录。整理记忆之后会慢慢长出来。'))
-    }
-    for (const entry of d.life) {
-      const h = el('div', 'hint')
-      h.style.margin = '10px 0 4px'
-      h.textContent = entry.date
-      box.appendChild(h)
-      for (const line of entry.lines) {
-        const i = el('div', 'item')
-        i.appendChild(el('span', 'tag pink', '自己'))
-        const b = el('div')
-        b.appendChild(el('div', 'txt', line))
-        i.appendChild(b)
-        box.appendChild(i)
-      }
-    }
-  } catch (err) { toast('自我加载失败：' + err.message) }
 }
 
 // ---------- 历史 ----------
