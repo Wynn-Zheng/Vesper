@@ -51,9 +51,14 @@ for (const p of people) {
   const foreign = r.facts.filter((f) => !mine.has(f.text))
   check(`${p.name} 的私聊没混进别人的事实`, foreign.length === 0, `混进 ${foreign.length} 条`)
 
-  // 经历：只该有 private:<自己> 和 shared
-  const myScopes = new Set([`private:${p.id}`, 'shared'])
-  const badEp = r.episodes.filter((e) => !myScopes.has(e.scope))
+  // 经历：只该有 private:<自己> 和 shared。
+  //
+  // 注意 personId 是 `qq-<QQ>`，而 scope 是 `private:<QQ>` —— **不带 qq- 前缀**
+  // （见 memory/scope.ts 的 scopeOf）。这里以前直接用 p.id 拼，拼出来的 scope
+  // 永远对不上，于是所有自己的经历都被判成"别人的"。
+  const account = p.id.replace(/^qq-/, '')
+  const myScopes = new Set([`private:${account}`, 'shared'])
+  const badEp = r.episodes.filter((e) => !myScopes.has(e.scope.replace(/^private:qq-/, 'private:')))
   check(`${p.name} 的私聊没混进别人的经历`, badEp.length === 0, badEp.map((e) => e.scope).join(','))
 }
 
