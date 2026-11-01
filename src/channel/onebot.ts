@@ -544,12 +544,31 @@ export class OnebotTransport implements Transport {
     // 旧连接还没断开时先把旧的关掉：不然两个 ws 并存，事件重复、socket 泄漏
     const prev = this.socket
     if (prev && prev !== ws) {
-      try { prev.close(4000, 'replaced') } catch { /* ignore */ }
+      try {
+        // 必须**摘监听 + terminate**，不能只 close：
+        //   · 旧 socket 在关闭完成前还会 onFrame → 同一条消息被派发两次（重复收）
+        //   · 旧 socket 的 close 处理器会无条件 failPending，把新连接上
+        //     刚发出的请求（含 loadSelfInfo）一起拒掉 → 昵称拉不到、发送误判失败
+        prev.removeAllListeners()
+        prev.terminate()
+      } catch {
+        /* ignore */
+      }
     }
     this.socket = ws
     void this.loadSelfInfo()
 
     ws.on('message', (data) => this.onFrame(data))
+    // ws 在 socket 错误时会 emit('error')，没有监听者就变成未捕获异常
+    // （靠全局 uncaughtException 兜住，但那已经是"崩了一次"的语义了）
+    ws.on('error', (err) => {
+      warnAt('NapCat 连接出错', { err: String(err).slice(0, 120) })
+      try {
+        ws.terminate()
+      } catch {
+        /* ignore */
+      }
+    })
     // 心跳：NapCat 掉线但 TCP 半开时 readyState 仍是 OPEN，
     // 没有 ping/pong 就永远"显示已连接"，每次发送等满 10s 超时、回复全丢。
     let alive = true
@@ -577,9 +596,12 @@ export class OnebotTransport implements Transport {
     ws.on('close', () => {
       clearInterval(hb)
       info('NapCat 断开')
-      if (this.socket === ws) this.socket = null
-      // 断线时把在飞请求立刻失败，别让它们各自等满 10s
-      this.failPending('NapCat 断开')
+      // 只清**自己的**：旧 socket 的 close 不该把新连接的在飞请求也拒掉
+      if (this.socket === ws) {
+        this.socket = null
+        // 断线时把在飞请求立刻失败，别让它们各自等满 10s
+        this.failPending('NapCat 断开')
+      }
     })
   }
 

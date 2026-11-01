@@ -264,17 +264,23 @@ export function recall(opts: RecallOptions): Recalled {
   // 群聊里只注入公开的：私事在公共场合没有该出现的理由
   const isPrivateScope = scope.startsWith('private:')
   // 关键词召回：事实也过一遍 BM25（和 episodes 一个道理）
+  //
+  // ⚠️ 下标必须先配对再过滤：bm25 是按**未过滤**的 allFacts 算的，
+  // 而下面 `.filter(!supersededAt)` 会改变下标 —— 以前先 filter 再用
+  // `factBm25[i]`，只要前面有 1 条失效事实，后面所有事实的 BM25 都错一格，
+  // `bm >= 0.6` 的强关键词会命中另一条。
   const factBm25 = bm25(query, allFacts.map((f) => f.text))
   const factBmMax = Math.max(0, ...factBm25)
   const scoredFacts = allFacts
+    .map((f, i) => ({ f, bmRaw: factBm25[i] ?? 0 }))
     // 被新说法取代的旧事实不再注入（文件里留着，能人工恢复）
-    .filter((f) => !f.supersededAt)
-    // 「重要」的事衰减慢（139 天半衰期），「平常」按正常节奏（35 天）。
-    // 老数据没有 tier → 当 normal，和以前行为一致。
-    .map((f, i) => ({
-      f,
-      eff: effectiveConfidence(f, now, f.tier === 'major' ? 0.005 : 0.023),
-      bm: factBmMax > 0 ? (factBm25[i] ?? 0) / factBmMax : 0,
+    .filter((x) => !x.f.supersededAt)
+    .map((x) => ({
+      f: x.f,
+      // 「重要」的事衰减慢（139 天半衰期），「平常」按正常节奏（35 天）。
+      // 老数据没有 tier → 当 normal，和以前行为一致。
+      eff: effectiveConfidence(x.f, now, x.f.tier === 'major' ? 0.005 : 0.023),
+      bm: factBmMax > 0 ? x.bmRaw / factBmMax : 0,
     }))
     .filter((x) => isPrivateScope || x.f.visibility === 'public')
 
