@@ -195,7 +195,16 @@ export function renderCard(card: CharCard): string {
   sec('喜欢', card.likes.map((a) => '- ' + a).join('\n'))
   sec('讨厌', card.dislikes.map((a) => '- ' + a).join('\n'))
 
-  const reactionLines = REACTIONS.filter((k) => card.reactions[k]?.trim())
+  // 反应：先白名单（顺序固定），再补用户手写的自定义场景。
+  //
+  // 以前只写 REACTIONS 白名单，而 parseCard 会把任意「场景：表现」读进 reactions、
+  // cardPromptBlock 也渲染自定义场景 —— 于是用户在角色卡里手写的
+  // 「被夸：…」会在**任意一次 saveCard 之后不可逆消失**（它改个字段就没了）。
+  const knownReactions = REACTIONS.filter((k) => card.reactions[k]?.trim())
+  const customReactions = Object.keys(card.reactions)
+    .filter((k) => !(REACTIONS as readonly string[]).includes(k) && card.reactions[k]?.trim())
+    .sort()
+  const reactionLines = [...knownReactions, ...customReactions]
     .map((k) => k + '：' + card.reactions[k]!.trim())
     .join('\n')
   sec('反应', reactionLines)
