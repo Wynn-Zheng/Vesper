@@ -10,6 +10,14 @@ import { buildRelationBlock } from '../relation/format.ts'
 import { loadRelation } from '../relation/store.ts'
 import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
 import { loadCard, cardPromptBlock } from '../persona/card.ts'
+import { matchKeywordReactions, renderKeywordReactions } from './keyword.ts'
+import { loadCodeMapBrief } from '../self/codemap.ts'
+import { renderCoreForPrompt } from '../memory/core.ts'
+import { renderPendingForPrompt } from '../self/requests.ts'
+import { renderSpeechHabit } from '../self/speech.ts'
+import { renderGrowth } from '../self/growth.ts'
+import { todoForPrompt } from '../memory/intent.ts'
+import { relevantPlays, renderPlays } from '../learn/plays.ts'
 import { buildSystem } from './prompt.ts'
 
 export interface PreviewOptions {
@@ -58,18 +66,42 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
     minScore: opts.rules.记忆.检索.最低分,
   })
 
+  // ⚠️ 这里要和 chat.ts 的 buildSystem 调用**保持同一份清单**。
+  // 以前只有 10 个字段（漏了 desktop/core/requests/speech/expression/growth/
+  // intent/codeMap/personRole/consoleMode/keyword/repeatHint），
+  // 于是试聊里它说"我看不到屏幕"，而线上其实能截图 —— 用户在试聊里调 prompt 会被误导。
   const system = buildSystem({
+    keyword: renderKeywordReactions(matchKeywordReactions(opts.rules, text)),
     rules: opts.rules,
     card: cardPromptBlock(loadCard()),
     actionDesc: loadCard()?.actionDesc === true,
     self: buildSelfBlock(opts.rules, new Date(), personId, loadPerson(personId)?.name ?? opts.accountId),
+    codeMap: loadCodeMapBrief(),
     personName: loadPerson(personId)?.name ?? opts.accountId,
+    personRole: loadPerson(personId)?.role,
     profile: loadProfile(personId),
     relation: buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
+      // 试聊走私聊 scope：不传 inGroup（默认 false）
       since: loadPerson(personId)?.firstSeen,
       callName: loadPerson(personId)?.callName,
     }),
-    memory: renderRecalled(recalled),
+    consoleMode: scope.startsWith('private:console-'),
+    core: renderCoreForPrompt(),
+    requests: renderPendingForPrompt(),
+    speech: renderSpeechHabit(),
+    expression: '',
+    growth: renderGrowth(),
+    desktop: {
+      只读: opts.rules.电脑操作?.enabled === true,
+      可操作: opts.rules.电脑操作?.enabled === true && opts.rules.电脑操作?.允许操作 === true,
+    },
+    intent: todoForPrompt(),
+    memory: [
+      renderRecalled(recalled),
+      renderPlays(relevantPlays(text, 3, opts.rules.表达学习?.只用精选 ?? false)),
+    ]
+      .filter((s) => s.trim())
+      .join('\n\n'),
     userChars: text.length,
     phase: buildPhaseBlock(opts.rules),
   })
