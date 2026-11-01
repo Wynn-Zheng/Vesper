@@ -216,10 +216,16 @@ export async function publishDraft(
 
   try {
     const r = await transport.sendQzone(post)
-    c.drafts.splice(index, 1)
-    c.published.push({ tid: r.tid, at: Date.now(), content: d.content })
-    c.published = c.published.slice(-20)
-    writeAtomic(FILE, render(c))
+    // 重新读一遍再改：
+    // await 期间用户可能又存了/删了草稿，用 await 前的快照（c）整份回写
+    // 会把那些改动覆盖掉 —— 丢新草稿、复活已删草稿。
+    // 按 (at, content) 定位这一条再删，其它草稿保持磁盘上的最新状态。
+    const fresh = load()
+    const idx = fresh.drafts.findIndex((x) => x.at === d.at && x.content === d.content)
+    if (idx >= 0) fresh.drafts.splice(idx, 1)
+    fresh.published.push({ tid: r.tid, at: Date.now(), content: d.content })
+    fresh.published = fresh.published.slice(-20)
+    writeAtomic(FILE, render(fresh))
     info('说说发出去了', { tid: r.tid })
     return { ok: true, tid: r.tid }
   } catch (err) {

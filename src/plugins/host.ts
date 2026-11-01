@@ -455,6 +455,13 @@ export function createHost(options: {
     // 即使 deactivate 抛错，也要把插件从内存里移除并清空订阅
     loaded.delete(id)
     clearSubscriptions(id)
+    // 清掉这个插件注册过的工具。
+    // 不删的话：重载后 registerTool 会撞上旧条目、被当"工具重名"忽略，
+    // 而 tools() 因为 pluginId 还"活着"继续返回旧模块的 run ——
+    // 表现就是"重载成功了，但跑的还是旧代码"，错误还只进 host.errors。
+    for (const [name, item] of pluginTools) {
+      if (item.pluginId === id) pluginTools.delete(name)
+    }
     return error ? { ok: false, error } : { ok: true }
   }
 

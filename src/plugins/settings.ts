@@ -74,9 +74,21 @@ export function getPluginConfig(file: string, id: string): PluginConfig {
   return loadPluginSettings(file)[id]?.config ?? {}
 }
 
-/** 改某个插件的配置（整体替换） */
+/**
+ * 改某个插件的配置（整体替换）。
+ *
+ * ⚠️ 必须先确认文件能解析：`loadPluginSettings` 解析失败会返回 `{}`，
+ * 直接写回等于把 plugins.yaml 里**其它插件的配置全部清空**（没有任何备份）。
+ * 所以这里先探一次 —— 解析不了就抛错，让调用方看到"配置文件坏了"，
+ * 而不是静默把别人的配置删掉。
+ */
 export function setPluginConfig(file: string, id: string, config: PluginConfig): void {
   const all = loadPluginSettings(file)
+  const before = Object.keys(all).length
+  // 文件存在、有内容、但读出来是空的 → 八成是解析失败
+  if (existsSync(file) && readFileSync(file, 'utf8').trim() && before === 0) {
+    throw new Error('plugins.yaml 解析失败（或结构不对），拒绝写入以免清空其它插件配置')
+  }
   all[id] = { config }
   savePluginSettings(file, all)
 }
