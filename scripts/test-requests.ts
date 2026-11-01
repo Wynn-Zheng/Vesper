@@ -125,8 +125,10 @@ console.log('\n=== 7. traits 申请能解析「键：值」===')
 
 console.log('\n=== 8. 不支持的类型如实说 ===')
 {
+  // abilities / plays 不在 tools/request.ts 的 TARGETS 里，模型提不出来；
+  // 但 applyRequest 万一收到未知 target，必须如实拒绝，不能静默成功。
   const r = applyRequest({ id: 'x', target: 'plays', content: 'x', reason: 'y', at: Date.now() }, false)
-  check('plays 不支持申请', !r.ok && r.detail.includes('不支持'), r.detail)
+  check('未知 target 如实拒绝', !r.ok && r.detail.length > 0, r.detail)
 }
 
 // 先切回原目录再删 —— 进程还待在 dir 里的话 Windows 会 EPERM

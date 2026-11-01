@@ -71,10 +71,8 @@ export function applyRequest(r: ChangeRequest, grant = false): ApplyResult {
       return { ok: false, detail: '人物档案的申请还没接上，先手动改吧' }
     }
 
-    case 'abilities':
-    case 'plays': {
-      return { ok: false, detail: `${labelOf(r.target)} 目前不支持申请修改` }
-    }
+    // abilities / plays 不在 tools/request.ts 的 TARGETS 里，模型根本提不出来，
+    // 所以这里不需要单独分支，落到 default 兜底即可。
 
     default:
       return { ok: false, detail: '不认识的申请类型' }

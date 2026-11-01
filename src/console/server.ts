@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+﻿import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
@@ -1923,99 +1923,6 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             .filter((p) => !groups.some((g) => g.members.some((m) => m.档案 === p.id)))
             .map((p) => ({ id: p.id, name: p.name })),
         })
-        return
-      }
-
-      if (req.method === 'GET' && path === '/api/features') {
-        const rules = opts.getRules()
-        const out: Record<string, unknown> = {}
-
-        // 表情包库
-        try {
-          const { createEmojiStore } = await import('../emoji/store.ts')
-          const store = createEmojiStore(undefined, { libraryCap: rules.表情包?.库存上限 ?? 200 })
-          const list = await store.list()
-          const byMood: Record<string, number> = {}
-          for (const it of list) {
-            const m = it.mood || '未分类'
-            byMood[m] = (byMood[m] ?? 0) + 1
-          }
-          out.emoji = {
-            开启: rules.表情包?.开启 ?? false,
-            总数: list.length,
-            上限: rules.表情包?.库存上限 ?? 200,
-            按情绪: byMood,
-            最近: list.slice(-6).map((it) => ({ id: it.id, mood: it.mood, tags: it.tags, size: it.size, createdAt: it.createdAt, lastUsedAt: it.lastUsedAt })),
-          }
-        } catch (e) {
-          out.emoji = { 错误: String(e).slice(0, 80) }
-        }
-
-        // 看图
-        out.vision = {
-          开启: rules.视觉?.开启 ?? false,
-          模型: rules.视觉?.模型 || process.env.DEEPSEEK_VISION_MODEL || 'deepseek-v4-flash-vision-exp',
-          最多张数: rules.视觉?.最多张数 ?? 4,
-          主模型是: process.env.DEEPSEEK_MODEL ?? 'deepseek-chat',
-        }
-
-        // 上下文压缩
-        out.context = {
-          摘要阈值: rules.上下文压缩?.摘要阈值 ?? 40,
-          保留最近: rules.上下文压缩?.保留最近 ?? 12,
-        }
-
-        // 表达学习
-        try {
-          const { loadPlays } = await import('../learn/plays.ts')
-          const plays = loadPlays()
-          const expression: Record<string, unknown> = {
-            审核: rules.表达学习?.审核 ?? false,
-            只用精选: rules.表达学习?.只用精选 ?? false,
-            总数: plays.length,
-            已精选: plays.filter((x) => x.checked).length,
-            高分: plays.filter((x) => x.score >= 7).length,
-            低分: plays.filter((x) => x.score <= 3).length,
-            最近: plays.slice(-6).map((x) => ({ score: x.score, scene: x.scene, reply: x.reply, date: x.date, checked: !!x.checked })),
-          }
-          // 群里的说法（从群友的话里学的，和上面「学到的说话方式」不是一回事）
-          try {
-            const { loadExpressions } = await import('../learn/expression.ts')
-            const exprs = loadExpressions()
-            expression.说法 = {
-              总数: exprs.length,
-              已精选: exprs.filter((x) => x.checked).length,
-              最近: exprs.slice(-5).map((x) => ({ text: x.text, scene: x.scene, count: x.count })),
-            }
-          } catch {
-            expression.说法 = { 总数: 0, 已精选: 0, 最近: [] }
-          }
-          out.expression = expression
-        } catch (e) {
-          out.expression = { 错误: String(e).slice(0, 80) }
-        }
-
-        // 情绪序列（多轮情感上下文）
-        try {
-          const { loadMood } = await import('../persona/mood.ts')
-          const m = loadMood()
-          out.mood = m
-            ? {
-                当前: m.emotion,
-                强度: m.intensity,
-                最近: (m.recent ?? []).slice(-5).map((r) => ({
-                  emotion: r.emotion,
-                  intensity: r.intensity,
-                  at: r.at,
-                  reason: r.reason ?? '',
-                })),
-              }
-            : null
-        } catch {
-          out.mood = null
-        }
-
-        json(res, 200, out)
         return
       }
 
