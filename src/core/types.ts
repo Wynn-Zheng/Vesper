@@ -23,6 +23,13 @@ export interface Incoming {
   text: string
   /** 毫秒时间戳 */
   at: number
+  /**
+   * 这个会话里上一次说话的时间（收消息时先取后写的快照）。0/undefined = 第一次。
+   *
+   * 用它算"隔了多久没说话"，别用 session.turns 的最后一条：
+   * 那个会被 pruneSessions(2h) 清掉，而"隔了 2 小时以上"恰好是要显示的场景。
+   */
+  prevAt?: number
   /** 谁说的。群聊时是发言人，私聊时同 from.id */
   senderId?: string
   senderName?: string

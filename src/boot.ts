@@ -1,4 +1,4 @@
-﻿import { rand, say, sleep } from './channel/send.ts'
+import { rand, say, sleep } from './channel/send.ts'
 import type { Rules } from './core/config.ts'
 import { talkValueOf, resolveDebounce } from './core/config.ts'
 import { scoreReply } from './loop/score.ts'
@@ -246,6 +246,8 @@ export function boot(transport: Transport, opts: BootOptions): void {
     textsCount: number
     sendersCount: number
     spanMs: number
+    /** 这批之前最后一次说话的时间（先取后写的快照）。0 = 第一次。 */
+    prevAt: number
   }
 
   async function handle(
@@ -310,7 +312,10 @@ export function boot(transport: Transport, opts: BootOptions): void {
         isPrivate: m.from.kind === 'private',
         followUp: false,
         text,
-        idleMinutes: (Date.now() - lastTalkAt(m.from)) / 60_000,
+        // 用 batch.prevAt（收消息时**先取后写**的快照），不要用 lastTalkAt()：
+        // 后者在 604 行已经被更新成 m.at 了，算出来恒 ≈0，
+        // score.ts 里 ">30min +20 / >120min +35" 这两档从来没生效过。
+        idleMinutes: batch.prevAt ? (Date.now() - batch.prevAt) / 60_000 : 0,
         recentReplies: recentReplyCount(scopeOf(m.from)),
         lastReplyAgoSec: lastReplyAgoSec(scopeOf(m.from)),
         talkValue: talkValueOf(rules),
@@ -374,7 +379,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
         }
       }
 
-      const reply = await opts.reply({ ...m, text }, rules)
+      const reply = await opts.reply({ ...m, text, prevAt: batch.prevAt }, rules)
       consecutiveFailures = 0
 
       if (!reply || !reply.trim()) {
@@ -520,6 +525,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
           textsCount: buf.texts.length,
           sendersCount: new Set(buf.senders).size,
           spanMs: buf.lastAt - buf.firstAt,
+          prevAt: buf.prevAt,
         }),
       )
     sending.set(key, run.finally(() => {

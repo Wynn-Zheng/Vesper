@@ -267,7 +267,10 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 后面 pushTurn(本轮回复) 会改它。用引用的话，下面的防复读硬拦截会拿
   // "本轮回复"和它自己比（相似度 1 > 0.85）→ 把每一条 ≥15 字的回复都拦掉。
   const prevTurns = [...getTurns(key)]
-  const prevAt = prevTurns.length ? prevTurns[prevTurns.length - 1]?.at : undefined
+  // 优先用入站消息带的 prevAt（收消息时落盘的快照）：
+  // session.turns 会被 pruneSessions(2h) 清掉，而"隔了 2 小时以上"恰好是
+  // 要显示"距离上次说话 X 小时"的场景 —— 用 session 算正好在那时失效。
+  const prevAt = m.prevAt || (prevTurns.length ? prevTurns[prevTurns.length - 1]?.at : undefined)
   const gapHours = prevAt ? (m.at - prevAt) / 3_600_000 : null
 
   const recalled = recall({
