@@ -505,12 +505,6 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     Math.max(1, Number(opts.rules.说话.每轮最多条数) || 3),
   ).join('\n')
   const keepTurns = Math.max(60, opts.rules.上下文压缩.摘要阈值 + 20)
-  // 用户这条在调模型之前已经记过了（见函数上半段的 pushTurn），这里只补回复。
-  // 曾经这里又 push 了一次 userContent，导致每轮用户消息在历史里出现两遍。
-  pushTurn(key, { role: 'assistant', content: sendable, at: Date.now() }, keepTurns)
-
-  // 历史压成滚动摘要，避免 session 无限增长；失败不挡这一轮
-  await compressIfNeeded(key, opts)
 
   if (res.usage) info('token 用量', res.usage)
   if (recalled.facts.length || recalled.episodes.length) {
@@ -526,9 +520,13 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 和最近几条说过的话太像：这次干脆不说（比复读一次好）。
   //
   // 之前只有 detectRepeat 的"提示"——把"你刚才说过类似的"塞进 prompt，
-  // 模不模型听不听是随缘。这里做硬拦截：宁可这轮沉默（boot 会记“无回复内容”），
+  // 模不模型听不听是随缘。这里做硬拦截：宁可这轮沉默（boot 会记"无回复内容"），
   // 也不发一句"我昨天就说过这个"。
   // 两个保守条件：回复 ≥15 字（"嗯""好"本来就容易撞）、相似度 >0.85。
+  //
+  // ⚠️ 顺序很重要：**先判复读、再入历史**。
+  // 以前是先 pushTurn 再判，被拦下的回复已经进历史 ——
+  // 下一轮它以为自己说过，detectRepeat 也会读到它。
   if (
     out.trim().length >= 15 &&
     prevTurns.some((t) => t.role === 'assistant' && similarity(t.content, out) > 0.85)
@@ -536,6 +534,13 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     info('回复和最近太像，这次不说了', { 片段: out.slice(0, 30) })
     return ''
   }
+
+  // 通过拦截才补历史（用户这条在调模型之前已经记过了，这里只补回复）
+  pushTurn(key, { role: 'assistant', content: sendable, at: Date.now() }, keepTurns)
+  // 压缩放到**发送之后**、不 await：它要一次 1200-token 的模型调用，
+  // 卡在 return 前会让这一轮明显变慢（而用户此刻正等着回复）。
+  void compressIfNeeded(key, opts).catch(() => undefined)
+
   // 这轮把"待提的问题"注入过 prompt 了，标记一下，别让它每轮都挂在那儿
   // 只有真说出话（非空回复）才算"提过了"：模型选择沉默/空回复时
   // 之前也会标已提，之后这个问题永远不会再被问起。

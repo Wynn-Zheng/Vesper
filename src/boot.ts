@@ -382,7 +382,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
             selfText: '',
           })
           // 等它落地再生成回复，否则这一句还是旧情绪
-          await drainEvaluations()
+          await drainEvaluations(earlyPerson)
         }
       }
 

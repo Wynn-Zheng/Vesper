@@ -280,17 +280,33 @@ async function evaluate(opts: EvaluateOptions): Promise<void> {
   }
 }
 
-// 串行队列：评估是异步的，但文件读写不能并发
-let queue: Promise<void> = Promise.resolve()
+// 串行队列：评估是异步的，但**同一个人的**关系文件读写不能并发。
+//
+// 原来是一条全局队列：A 会话调 drainEvaluations() 会等 B 会话的评估跑完，
+// 并发私聊时第 N 个回复要等 N 次完整 LLM 调用，延迟线性放大。
+// 按 personId 分片后，只等自己的那一条。
+const queues = new Map<string, Promise<void>>()
 
 export function evaluateTurn(opts: EvaluateOptions): void {
-  queue = queue
+  const key = opts.personId
+  const prev = queues.get(key) ?? Promise.resolve()
+  const next = prev
     .then(() => evaluate(opts))
     .catch((err) => {
       warnAt('关系评估失败', { err: String(err) })
     })
+    .finally(() => {
+      // 队列跑完就丢掉，避免 Map 随人数无限增长
+      if (queues.get(key) === next) queues.delete(key)
+    })
+  queues.set(key, next)
 }
 
-export async function drainEvaluations(): Promise<void> {
-  await queue
+/** 等某个人的评估跑完（不传就是等全部）。 */
+export async function drainEvaluations(personId?: string): Promise<void> {
+  if (personId) {
+    await (queues.get(personId) ?? Promise.resolve())
+    return
+  }
+  await Promise.all([...queues.values()])
 }
