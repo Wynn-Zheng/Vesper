@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 角色卡：一张卡 = 一套人设。
  *
  * 为什么独立成文件（persona/cards/<id>.md）而不是塞进 self.md：
@@ -540,9 +540,28 @@ export function ensureCardScopedData(): void {
     }
   }
   const memDest = join(dir, 'memory')
-  if (!existsSync(memDest) && existsSync('persona/memory')) {
+  // 逐个子目录补，不要整目录判断：
+  // 新卡在切过去的瞬间就会写 raw/（收消息），整目录判断会以为"memory 已经有了"，
+  // 于是 episodes 永远迁不过来。
+  for (const sub of ['episodes', 'insights']) {
+    const src = join('persona/memory', sub)
+    const dst = join(memDest, sub)
+    if (existsSync(dst) || !existsSync(src)) continue
     try {
-      cpSync('persona/memory', memDest, { recursive: true })
+      mkdirSync(memDest, { recursive: true })
+      cpSync(src, dst, { recursive: true })
+    } catch {
+      /* 下次启动再试 */
+    }
+  }
+  // learnings / secrets 也在卡目录里，一起迁移（否则切卡后"学到的"和"秘密"变空）
+  for (const name of ['learnings.json', 'secrets.json']) {
+    const dst = join(dir, name)
+    if (existsSync(dst)) continue
+    const src = join('persona', name)
+    if (!existsSync(src)) continue
+    try {
+      copyFileSync(src, dst)
     } catch {
       /* 下次启动再试 */
     }
@@ -578,7 +597,17 @@ export function switchCard(id: string): { ok: boolean; error?: string } {
   if (!target) return { ok: false, error: '没有这张卡' }
 
   const cur = currentCardId()
-  if (cur === clean) return { ok: true }
+  if (cur === clean) {
+    // 已经在这张卡上：不重复归档/恢复 self.md，但**迁移还是要跑** ——
+    // 可能是上次切过来时迁移没跑成（或刚补上的迁移逻辑），早退的话永远补不上。
+    // ensureCardScopedData 是幂等的，跑一次没代价。
+    try {
+      ensureCardScopedData()
+    } catch (e) {
+      warnAt('补迁数据失败', { err: String(e) })
+    }
+    return { ok: true }
+  }
 
   const SELF = 'persona/self.md'
   ensureDir()
@@ -617,6 +646,16 @@ export function switchCard(id: string): { ok: boolean; error?: string } {
     resetCardCache()
   } catch (e) {
     return { ok: false, error: '写 current 指针失败：' + String(e) }
+  }
+  // 4) 把老卡片目录里的数据接过来（生活线/说话方式/黑话/心情/记忆）。
+  //
+  // 这一步以前**从没被调用过**（ensureCardScopedData 只有定义没有调用点），
+  // 所以切到新卡之后 episodes / learnings / secrets 全是空的 ——
+  // 表现为"换了张卡，它把我们之前经历的事全忘了"。
+  try {
+    ensureCardScopedData()
+  } catch (e) {
+    warnAt('切换角色卡：迁移数据失败', { err: String(e) })
   }
   return { ok: true }
 }
