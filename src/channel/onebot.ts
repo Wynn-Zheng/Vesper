@@ -616,7 +616,10 @@ export class OnebotTransport implements Transport {
       if (!p) return
       this.pending.delete(obj['echo'])
       clearTimeout(p.timer)
-      if (obj['status'] === 'failed' || obj['retcode'] !== 0) p.reject(new Error(`action 失败：${String(obj['message'] ?? obj['wording'] ?? '')}`))
+      // retcode 判空：有些实现（或代理/网关包装）回包里根本没有 retcode，
+      // `undefined !== 0` 会把成功判成失败 → 触发"去掉引用重发"，消息发两遍。
+      const failed = obj['status'] === 'failed' || (obj['retcode'] !== undefined && obj['retcode'] !== 0)
+      if (failed) p.reject(new Error(`action 失败：${String(obj['message'] ?? obj['wording'] ?? '')}`))
       else p.resolve(obj['data'])
       return
     }
@@ -660,7 +663,12 @@ export class OnebotTransport implements Transport {
     const addressed = isPrivate || isAddressed(ev, this.opts.botNames)
     // 刚才正在跟它说话的人，不 @ 也算接着聊，不算"突然插话"
     const followUp = !isPrivate && !addressed && isRecentTalker(this.opts, gid, uid)
-    if (!isPrivate) markTalker(this.opts, gid, uid)
+    // 只在**它要回应这条**时才记"刚跟它说过话"。
+    //
+    // 以前是无条件记：11-01 起所有群消息都进 onEvent（为了学群里的说法），
+    // 于是任何人随便说一句，2 分钟内他的非 @ 消息都会被 isObserveOnly 当成
+    // "接着聊"直接回 —— 「必须 @」形同虚设，还会插话/连回。
+    if (!isPrivate && (addressed || followUp)) markTalker(this.opts, gid, uid)
 
     // 「必须 @」现在只决定**回不回复**，不决定**看不看得见**。
     //

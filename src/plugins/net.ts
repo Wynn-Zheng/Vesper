@@ -93,11 +93,24 @@ function isPrivateV4(ip: string): boolean {
 function isPrivateV6(ip: string): boolean {
   const low = ip.toLowerCase().replace(/^\[|\]$/g, '')
   if (low === '::' || low === '::1') return true
-  // IPv4-mapped（::ffff:192.168.1.1）：按里面的 IPv4 判
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(low)
-  if (mapped) return isPrivateV4(mapped[1]!)
+  // IPv4-mapped 点分形式：::ffff:192.168.1.1
+  const dotted = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(low)
+  if (dotted) return isPrivateV4(dotted[1]!)
+  // IPv4-mapped 十六进制形式：::ffff:7f00:1
+  //
+  // 这一条是补的：WHATWG URL 会把 `[::ffff:127.0.0.1]` 归一化成 `[::ffff:7f00:1]`，
+  // 只认点分的话 `http://[::ffff:127.0.0.1]:6379/` 能直接打穿内网
+  // （实测 checkUrl 返回 ok:true）。
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(low)
+  if (hex) {
+    const a = parseInt(hex[1]!, 16)
+    const b = parseInt(hex[2]!, 16)
+    return isPrivateV4(`${a >> 8}.${a & 0xff}.${b >> 8}.${b & 0xff}`)
+  }
   if (/^f[cd][0-9a-f]{2}:/.test(low)) return true // fc00::/7 唯一本地
   if (/^fe[89ab][0-9a-f]:/.test(low)) return true // fe80::/10 链路本地
+  if (/^ff[0-9a-f]{2}:/.test(low)) return true // ff00::/8 组播
+  if (/^64:ff9b:/.test(low)) return true // 64:ff9b::/96 NAT64（可能映射到内网）
   return false
 }
 
