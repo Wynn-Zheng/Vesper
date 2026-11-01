@@ -28,7 +28,7 @@ const MAX_PER_TARGET = 3
 /** 被忽略之后，同一字段多久内不许再提（毫秒）。防骚扰。 */
 export const REJECT_COOLDOWN_MS = 24 * 3600_000
 
-export type RequestTarget = 'name' | 'about' | 'abilities' | 'traits' | 'plays' | 'person'
+export type RequestTarget = 'name' | 'about' | 'abilities' | 'plays' | 'person'
 
 export interface ChangeRequest {
   /** 稳定 id（时间戳字符串） */
@@ -48,7 +48,6 @@ const LABEL: Record<RequestTarget, string> = {
   about: '我是谁',
   abilities: '我能做什么',
   plays: '说话方式',
-  traits: '我给自己定的规矩',
   person: '人物档案',
 }
 

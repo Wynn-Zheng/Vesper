@@ -1,4 +1,4 @@
-﻿import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
@@ -859,7 +859,6 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           selfAbout: self.about || null,
           selfThinking: self.thinking || null,
           nameReason: self.nameReason || null,
-          traits: self.traits ?? {},
           selfVersions: listSelfVersions(5),
           drifts: loadDrifts(5),
           phase: phaseOf(opts.getRules(), new Date()),
@@ -1306,7 +1305,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 而不是被踢去设置页找。
       if (req.method === 'PUT' && path === '/api/self/name') {
         const body = await readJson(req) as { name?: string }
-        // 换行会破坏 self.md 的 frontmatter（能注入 traits 甚至提前闭合 ---）
+        // 换行会破坏 self.md 的 frontmatter（能注入字段甚至提前闭合 ---）
         if (/[\r\n]/.test(String(body.name ?? ""))) {
           json(res, 400, { error: '名字不能换行' })
           return
@@ -1321,22 +1320,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'PUT' && path === '/api/self/traits') {
-        const body = await readJson(req) as { traits?: unknown }
-        const src = body.traits
-        // 必须是普通对象：字符串/数组/null 会被 Object.entries 拆成垃圾再全量覆盖
-        if (!src || typeof src !== 'object' || Array.isArray(src)) {
-          json(res, 400, { error: '规矩格式不对' })
-          return
-        }
-        const traits: Record<string, string> = {}
-        for (const [k, v] of Object.entries(src as Record<string, unknown>)) {
-          const kk = String(k ?? '').trim().slice(0, 40)
-          const vv = String(v ?? '').trim().slice(0, 300)
-          if (kk && vv) traits[kk] = vv
-        }
-        const { loadSelf, saveSelf } = await import('../self/store.ts')
-        saveSelf({ ...loadSelf(), traits })
-        json(res, 200, { ok: true, traits })
+        // 已废弃：性格/说话方式/喜好现在归角色卡（/api/card），self.md 不再存 traits。
+        json(res, 410, { error: 'self.md 的 traits 已废弃，请改角色卡（/api/card）' })
         return
       }
 
@@ -1540,7 +1525,6 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           /* 还没学到东西 */
         }
 
-        const traits = Object.entries(self.traits ?? {}).filter(([, v]) => v && String(v).trim())
 
         // 「我的记忆」：它自己的经历和洞察。
         // 现实中几乎没有 scope === 'shared' 的记录 —— 全都在 private:/group: 下面。
@@ -1576,6 +1560,10 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         json(res, 200, {
           // 名字和 prompt 同一个优先级：self.md → 当前角色卡（之前漏了卡名，页面会显示"还没取名字"）
           name: self.name || (await import('../persona/card.ts')).loadCard()?.name || '',
+          // 它自己的「称呼」= self.md 的 name（它自己取的，或你在控制台填的）。
+          // 注意和下面的 `称呼` 区分：那是"它怎么叫你"（rules.yaml 的 关系.昵称）。
+          // 本名在角色卡的 name 里（/api/card 的 name）。
+          selfCallName: self.name || '',
           // 自我页就地编辑要显示"现在是什么"，不然输入框全是空的
           称呼: (() => {
             try {
@@ -1594,7 +1582,6 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           selfText: self.about || '',
           aboutOwner: self.aboutOwner,
           aboutExtra: self.aboutExtra || '',
-          traits,
           life,
           intent: loadIntent(),
           mood,

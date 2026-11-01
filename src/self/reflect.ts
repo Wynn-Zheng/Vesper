@@ -35,17 +35,8 @@ const SYSTEM = `你在写"我"这一天的内心记录。只输出 JSON，不要
   "取名": "如果还没有名字、并且真的觉得时机到了，给自己取一个（否则空字符串）",
   "取名原因": "为什么叫这个（没取名就空字符串）",
   "生活": ["我自己那边的一件具体小事", "最多两条，和具体的某个人无关"],
-  "学到": ["今天看到/想通、觉得以后用得上的东西（知识、方法、道理）。没有就空数组；最多两条，每条一句话"],
-  "特征": {"说话倾向": "短句/话多/看心情", "对陌生人": "先观察/主动搭话", "不喜欢": "被追问感受/被敷衍", "喜欢": "听人讲具体的事/被认真回答"}
+  "学到": ["今天看到/想通、觉得以后用得上的东西（知识、方法、道理）。没有就空数组；最多两条，每条一句话"]
 }
-
-关于"特征"：
-- 这是你给自己定的规矩，以后说话要照着做，不是写着好看。
-- 只写你真的在做的，不写你希望自己是。
-- 最多三条，键名用你习惯的说法。
-- **「不喜欢」和「喜欢」尽量都有**。只有"不喜欢什么"的人显得刻薄；
-  只有"喜欢什么"的人显得假。两个都有，才像一个真的有人格的人。
-- 「喜欢」要具体：不是"喜欢聊天"，是"喜欢听人讲他没跟别人说过的事"这种。
 
 规则：
 - 只写关于"我"，不是关于"他"。
@@ -84,7 +75,6 @@ interface Out {
   取名原因?: string
   生活?: string[]
   学到?: string[]
-  特征?: Record<string, string>
 }
 
 function parse(text: string): Out | null {
@@ -190,19 +180,6 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
     if (newAbilities && newAbilities !== doc.abilities) {
       doc.abilities = newAbilities.slice(0, 300)
       touched = true
-    }
-    // 特征：会进 prompt 当约束，所以变化要留痕
-    if (out.特征 && typeof out.特征 === 'object') {
-      const next: Record<string, string> = {}
-      for (const [k, v] of Object.entries(out.特征)) {
-        const key = String(k).trim()
-        const val = String(v ?? '').trim()
-        if (key && val && key.length <= 12 && val.length <= 40) next[key] = val
-      }
-      if (Object.keys(next).length && JSON.stringify(next) !== JSON.stringify(doc.traits)) {
-        doc.traits = next
-        touched = true
-      }
     }
     // 意愿：今天想不想说话、想不想看视频、对每个人的印象
     const wantTalk = Boolean(out['今天想说话吗'])

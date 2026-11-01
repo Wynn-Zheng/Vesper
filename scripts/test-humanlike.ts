@@ -111,24 +111,18 @@ console.log('\n=== 4. 说话习惯 ===')
   check('样本门槛存在', src.includes('texts.length < 20'), '')
 }
 
-/* ============ 5. 自己的偏好 ============ */
-console.log('\n=== 5. 自己的偏好 ===')
+/* ============ 5. 自己的偏好（2026-11-01 起归角色卡） ============ */
+console.log('\n=== 5. 自己的偏好（角色卡） ===')
 {
-  const reflect = readFileSync('src/self/reflect.ts', 'utf8')
+  const card = readFileSync('src/persona/card.ts', 'utf8')
   const store = readFileSync('src/self/store.ts', 'utf8')
   const format = readFileSync('src/self/format.ts', 'utf8')
 
-  check('prompt 里让输出「喜欢」', reflect.includes('"喜欢"'), '')
-  check('要求喜欢和不喜欢都有', reflect.includes('尽量都有'), '')
-  check('特征写进 frontmatter', store.includes('我·'), '')
-  // 文案改过（从「你给自己定的规矩」→「你在相处中对自己形成的理解」），断言跟着改语义：\n  // 要验证的是「self.traits 会被拼进 prompt」，不是某一句话的具体说法\n  check('特征进了 prompt', format.includes('self.traits') && format.includes('理解'), '')
-
-  // 真实的 self.md 里有没有
-  if (existsSync('persona/self.md')) {
-    const self = readFileSync('persona/self.md', 'utf8')
-    const fm = self.split('---')[1] ?? ''
-    check('self.md 有特征行', fm.includes('我·'), fm.slice(0, 100))
-  }
+  // 性格 / 语言风格 / 喜欢 / 讨厌 只在角色卡里存一份，self.md 不再重复
+  check('角色卡仍有性格/喜好字段', card.includes('核心特质') && card.includes('讨厌'), '')
+  check('self.md 不再存 traits（避免两套打架）', !format.includes('self.traits') && !store.includes('doc.traits'), '')
+  // 它仍然可以给自己取名（称呼），只是不再写"特征"
+  check('仍保留自己取名', store.includes('取名原因'), '')
 }
 
 /* ============ 6. 成长的痕迹 ============ */

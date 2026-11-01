@@ -108,10 +108,9 @@ try {
   const hasWho = self.includes('# 我是谁')
   const hasThink = self.includes('## 我最近在想')
   console.log(`frontmatter ${hasFront ? '✓' : '❌'} / 我是谁 ${hasWho ? '✓' : '❌'} / 我最近在想 ${hasThink ? '✓' : '❌'}`)
-  const traits = Array.from(self.matchAll(/^我·([^:]+):\s*(.+)$/gm))
-  console.log(`特征 ${traits.length} 条：${traits.map((m) => `${m[1]}=${m[2]}`).join(', ')}`)
-  const longTrait = traits.find((m) => m[1]!.trim().length > 12 || m[2]!.trim().length > 40)
-  if (longTrait) console.log(`⚠ 超长特征：${longTrait[0]}`)
+  // 2026-11-01 起 self.md 不再存 traits（性格/喜好归角色卡），旧的 `我·xxx` 行可以忽略
+  const oldTraits = Array.from(self.matchAll(/^我·([^:]+):\s*(.+)$/gm))
+  if (oldTraits.length) console.log(`（旧格式特征 ${oldTraits.length} 条，已废弃，可忽略）`)
 } catch {
   console.log('（没有 self.md）')
 }

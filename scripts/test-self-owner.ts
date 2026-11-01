@@ -36,7 +36,6 @@ const base = {
   aboutExtra: '',
   aboutOwner: 'it' as const,
   thinking: '在想折纸的事。',
-  traits: { 说话倾向: '短句' },
   abilities: '能聊天、能记事。',
 }
 

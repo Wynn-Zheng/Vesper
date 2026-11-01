@@ -37,7 +37,6 @@ const seed = {
   aboutExtra: '',
   aboutOwner: 'it' as const,
   thinking: '',
-  traits: {},
   abilities: '',
 }
 saveSelf(seed)
@@ -107,23 +106,14 @@ console.log('\n=== 5. 批准并交权 ===')
 
 console.log('\n=== 6. ignores 后的冷却 ===')
 {
-  markRejected('traits')
-  const r = requestChange('traits', '说话倾向：更短', '想改改')
+  // traits 已废弃（性格/喜好归角色卡），改用 about 测冷却
+  markRejected('about')
+  const r = requestChange('about', '更短的自述', '想改改')
   check('刚忽略过的字段提不了', !r.ok, r.why)
   check('理由提到过一天', r.why.includes('一天') || r.why.includes('过一天'), r.why)
 }
 
-console.log('\n=== 7. traits 申请能解析「键：值」===')
-{
-  // 绕过冷却直接塞一条
-  const reqs = loadRequests()
-  reqs.push({ id: 'test-1', target: 'traits', content: '说话倾向：更短一点', reason: '想试试', at: Date.now() })
-  const r = applyRequest(reqs[reqs.length - 1]!, false)
-  check('应用成功', r.ok, r.detail)
-  check('traits 里有了', loadSelf().traits['说话倾向'] === '更短一点', JSON.stringify(loadSelf().traits))
-}
-
-console.log('\n=== 8. 不支持的类型如实说 ===')
+console.log('\n=== 7. 不支持的类型如实说 ===')
 {
   // abilities / plays 不在 tools/request.ts 的 TARGETS 里，模型提不出来；
   // 但 applyRequest 万一收到未知 target，必须如实拒绝，不能静默成功。

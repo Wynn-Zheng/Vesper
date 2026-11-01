@@ -42,13 +42,15 @@ export interface SelfDoc {
   about: string
   /** 最近在想的事 */
   thinking: string
-  /** 结构化的自我特征：进 prompt 时当约束，不只是描述 */
-  traits: Record<string, string>
   /** 它自己总结的"我能做什么"——不是我们写的 */
   abilities: string
 }
 
-const EMPTY: SelfDoc = { name: '', nameReason: '', about: '', thinking: '', traits: {}, abilities: '', aboutOwner: 'it', aboutExtra: '' }
+// 注：self.md 里原本还有一组 `traits`（说话倾向 / 对陌生人 / 喜欢 / 不喜欢），
+// 和角色卡的「性格 / 语言风格 / 喜欢 / 讨厌」完全撞车。2026-11-01 起以角色卡为准，
+// self.md 不再存这类"特征"；旧文件里的 `我·xxx` 行读的时候直接忽略。
+
+const EMPTY: SelfDoc = { name: '', nameReason: '', about: '', thinking: '', abilities: '', aboutOwner: 'it', aboutExtra: '' }
 
 function splitFront(text: string): { meta: Record<string, string>; body: string } {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)
@@ -75,17 +77,6 @@ function section(body: string, title: string): string {
   return m ? (m[1] ?? '').trim() : ''
 }
 
-/** frontmatter 里以「我·」开头的是特征 */
-function parseTraits(meta: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(meta)) {
-    if (!k.startsWith('我·')) continue
-    const key = k.slice(2).trim()
-    if (key && v) out[key] = v
-  }
-  return out
-}
-
 export function loadSelf(): SelfDoc {
   if (!existsSync(selfPath)) return { ...EMPTY }
   const { meta, body } = splitFront(readFileSync(selfPath, 'utf8'))
@@ -96,7 +87,6 @@ export function loadSelf(): SelfDoc {
     thinking: section(body, '我最近在想'),
     aboutExtra: section(body, '它补充的'),
     abilities: section(body, '我能做什么'),
-    traits: parseTraits(meta),
     // 默认 'it'：老文件没这个字段，保持原来的行为（它能改自述）
     aboutOwner: meta['所有权'] === '我写' ? 'me' : 'it',
   }
@@ -144,7 +134,6 @@ export function loadSelfVersion(id: string): SelfDoc | null {
     thinking: section(body, '我最近在想'),
     aboutExtra: section(body, '它补充的'),
     abilities: section(body, '我能做什么'),
-    traits: parseTraits(meta),
     aboutOwner: meta['所有权'] === '我写' ? 'me' : 'it',
   }
 }
@@ -170,16 +159,11 @@ export function saveSelf(doc: SelfDoc): void {
     }
   }
 
-  const traitLines = Object.entries(doc.traits ?? {})
-    .filter(([, v]) => v && v.trim())
-    .map(([k, v]) => `我·${k}: ${v.trim()}`)
-
   const lines = [
     '---',
     `名字: ${doc.name}`,
     `所有权: ${doc.aboutOwner === 'me' ? '我写' : '它写'}`,
     doc.nameReason ? `取名原因: ${doc.nameReason}` : '取名原因: ',
-    ...traitLines,
     '---',
     '',
     '# 我是谁',

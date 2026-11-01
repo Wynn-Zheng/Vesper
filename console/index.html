@@ -962,10 +962,6 @@
       </div>
       <div class="grid2" style="margin-top:var(--gap-card)">
         <div class="panel">
-          <h3>它给自己定的规矩 <span class="r">会进 prompt 当约束</span></h3>
-          <div class="body"><div id="st-traits"></div></div>
-        </div>
-        <div class="panel">
           <h3>它变过吗 <span class="r">自我认识明显变化时记录</span></h3>
           <div class="body"><div id="st-drift"></div></div>
         </div>
@@ -3416,14 +3412,36 @@ function renderSelfCardPage(body, d) {
   /* ---- 名字 / 生日 ---- */
   {
     const c = selfCard('名字与生日', '生日 = 它第一次和你说话那天')
+
+    // 本名：角色卡里的名字，你定的，它不能改
     const row1 = el('div', 'self-field')
-    row1.appendChild(el('label', '', '名字'))
+    row1.appendChild(el('label', '', '本名'))
     const nameI = el('input', 'self-input')
     nameI.value = card.name || ''
-    nameI.placeholder = '它叫什么'
+    nameI.placeholder = '它叫什么（本名）'
     nameI.oninput = () => { card.name = nameI.value.trim(); SELF_CARD_AUTO?.schedule() }
     row1.appendChild(nameI)
     form.appendChild(row1)
+
+    // 称呼：它平时自居的叫法。空 = 让它自己取；你填了就是你的，它想改只能提申请。
+    const rowCall = el('div', 'self-field')
+    rowCall.appendChild(el('label', '', '称呼'))
+    const callI = el('input', 'self-input')
+    callI.value = d.selfCallName || ''
+    callI.placeholder = '平时怎么叫它（留空 = 让它自己取）'
+    rowCall.appendChild(callI)
+    const callSave = el('button', 'mini-btn', '保存称呼')
+    callSave.onclick = async () => {
+      try {
+        await sendJson('/api/self/name', { name: callI.value.trim() }, 'PUT')
+        toast(callI.value.trim() ? '称呼已保存' : '称呼已清空，它以后可以自己取')
+        await loadSelfV2()
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+    rowCall.appendChild(callSave)
+    form.appendChild(rowCall)
 
     const row2 = el('div', 'self-field')
     row2.appendChild(el('label', '', '生日'))
@@ -3981,33 +3999,6 @@ function renderSelfLearnPage(body, d) {
     }
     body.appendChild(c)
   }
-// 它对自己的理解（self.md 的「我·xxx」）
-  // 这是它在相处中慢慢长出来的，不是你设的（你设的是角色卡）；
-  // 只读展示，因为它由「自我反思」写入。
-  {
-    // /api/self/v2 的 traits 是 [[键, 值], ...] 数组（保顺序），不是对象
-    const rawTraits = d.traits || []
-    const entries = (Array.isArray(rawTraits) ? rawTraits : Object.entries(rawTraits)).filter(
-      (pair) => pair && pair[1] && String(pair[1]).trim(),
-    )
-    const c = selfCard('它对自己的理解', entries.length ? entries.length + ' 条' : '')
-    if (!entries.length) {
-      c.appendChild(
-        selfEmpty('还没有。这些是它在相处中自己总结出来的（说话倾向、喜欢、不喜欢），每次自我反思时可能会更新。'),
-      )
-    } else {
-      for (const [k, v] of entries) {
-        const row = el('div', 'self-trait-row')
-        row.appendChild(el('span', 'self-trait-k', k))
-        row.appendChild(el('span', 'self-trait-v', String(v)))
-        c.appendChild(row)
-      }
-      c.appendChild(
-        el('div', 'hint', '这是它在相处中逐渐形成的理解，会随自我反思变化；角色卡才是你设定的底子。'),
-      )
-    }
-    body.appendChild(c)
-  }
 }
 
 /* ============================================================
@@ -4174,7 +4165,7 @@ function renderSelfThinkPage(body, d) {
         const ok = el('button', 'mini-btn', '批准')
         ok.onclick = () => decideRequest(r.id, 'approve', false)
         acts.appendChild(ok)
-        if (r.target === 'about' || r.target === 'traits') {
+        if (r.target === 'about') {
           const grant = el('button', 'mini-btn', '批准并交权')
           grant.onclick = () => decideRequest(r.id, 'approve', true)
           acts.appendChild(grant)
@@ -6033,19 +6024,6 @@ async function loadState() {
       b.appendChild(el('div', 'sub', o.date))
       i.appendChild(b)
       openBox.appendChild(i)
-    }
-
-    const traitsBox = $('st-traits')
-    if (traitsBox) {
-      traitsBox.innerHTML = ''
-      const entries = Object.entries(d.traits || {}).filter(([, v]) => v)
-      if (!entries.length) traitsBox.appendChild(el('div', 'empty', '还没有。自我反思时会慢慢长出来。'))
-      for (const [k, v] of entries) {
-        const row = el('div', 'trait-row')
-        row.appendChild(el('span', 'trait-k', k))
-        row.appendChild(el('span', 'trait-v', v))
-        traitsBox.appendChild(row)
-      }
     }
 
     const driftBox = $('st-drift')

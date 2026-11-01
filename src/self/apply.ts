@@ -55,17 +55,6 @@ export function applyRequest(r: ChangeRequest, grant = false): ApplyResult {
       return { ok: true, detail: '自述已更新' }
     }
 
-    case 'traits': {
-      const doc = loadSelf()
-      // 格式：「键：值」或只有值
-      const m = /^(.{1,12})?[：:]\s*(.+)$/.exec(r.content.trim())
-      const key = (m?.[1] ?? '').trim() || r.content.trim().slice(0, 8)
-      const val = (m?.[2] ?? r.content).trim().slice(0, 60)
-      if (!key || !val) return { ok: false, detail: '看不明白要加什么规矩' }
-      saveSelf({ ...doc, traits: { ...doc.traits, [key]: val } })
-      return { ok: true, detail: `加了规矩「${key}：${val}」` }
-    }
-
     case 'person': {
       // 人物档案的申请先只支持"改名字"这一种，别的走人工
       return { ok: false, detail: '人物档案的申请还没接上，先手动改吧' }

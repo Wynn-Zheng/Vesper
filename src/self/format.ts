@@ -55,9 +55,24 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
   } catch {
     cardName = ''
   }
-  const name = self.name || cardName || (rules.人格.名字 !== '未定' ? rules.人格.名字 : '')
-  if (name) {
-    lines.push(`- 你叫「${name}」${self.nameReason ? `，是你自己取的（${self.nameReason}）` : ''}`)
+  // 名字分两层：
+  //   本名 = 当前角色卡的「名字」（你给他定的），它不能改；
+  //   称呼 = self.md 的 name（它自己取的，或你在控制台填的）—— 平时自居用这个。
+  // 以前只有一个 name，且 self.md 优先，导致"卡名"永远不生效。
+  const realName = cardName || (rules.人格.名字 !== '未定' ? rules.人格.名字 : '')
+  const callName = self.name
+  if (callName) {
+    const why = self.nameReason ? `，是你自己取的（${self.nameReason}）` : ''
+    if (realName && realName !== callName) {
+      lines.push(
+        `- 你的本名是「${realName}」（主人给你定的）。平时大家叫你「${callName}」${why}，你也用这个称呼自己。`,
+      )
+    } else {
+      lines.push(`- 你叫「${callName}」${why}`)
+    }
+  } else if (realName) {
+    lines.push(`- 你的本名是「${realName}」，大家平时就这么叫你。`)
+    lines.push('- 相处久了如果想要一个自己的叫法，可以在合适的时候给自己取一个。')
   } else {
     lines.push('- 你还没有名字。这件事你一直放在心里，合适的时候可以给自己取一个。')
   }
@@ -102,12 +117,8 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
     lines.push(`- 你觉得自己能做什么：${self.abilities.replace(/\s+/g, ' ').trim()}`)
   }
 
-  // 结构化特征：这是"约束"，不是描述——它得照着做
-  const traits = Object.entries(self.traits ?? {}).filter(([, v]) => v && v.trim())
-  if (traits.length) {
-    lines.push('- 你在相处中对自己形成的理解（说话的倾向、喜好、不喜欢）：')
-    for (const [k, v] of traits) lines.push(`  · ${k}：${v.trim()}`)
-  }
+  // 性格 / 语言风格 / 喜好 / 讨厌 由角色卡提供（buildSystem 里在 self 段之前已经塞进去了），
+  // self.md 不再重复一份 —— 两套并存时经常互相打架。
 
   if (life.length) {
     lines.push('- 你自己那边最近的事：')
