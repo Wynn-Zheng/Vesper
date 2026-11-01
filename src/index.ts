@@ -544,7 +544,12 @@ await startConsole({
         }
         // 看门狗状态一起上报：/api/status 的 channel.watchdog 里能看到
         // 它有没有在计时、重启过几次、为什么压着不动手。
-        return Object.assign(base, { watchdog: watchdogStatus() })
+        //
+        // connected 用实时值覆盖：看门狗关着的时候它从不采样，
+        // 会一直返回初始的 false，控制台看起来像"断线了"（实际连着）。
+        return Object.assign(base, {
+          watchdog: { ...watchdogStatus(), connected: transport.connected === true },
+        })
       },
       // 插件注册的工具（manifest 里 type: tool 的那些）挂进工具注册表，
       // 这样模型才能真正调用它们 —— 否则插件只是"装上了但用不上"。
