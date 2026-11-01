@@ -44,3 +44,6 @@ app-backup-*
 
 # agent-team 过程产物
 .team/
+
+# dsh 浏览器工具截图
+browser-screenshots/
