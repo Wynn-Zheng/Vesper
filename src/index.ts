@@ -1,4 +1,4 @@
-﻿import { OnebotTransport } from './channel/onebot.ts'
+import { OnebotTransport, markTalker, type OnebotOptions } from './channel/onebot.ts'
 import { createEmojiStore } from './emoji/store.ts'
 import { boot } from './boot.ts'
 import { ToolRegistry, tools as globalTools } from './tools/registry.ts'
@@ -235,7 +235,7 @@ info(
   `权限：群白 ${policy.groupAllow.length || '不限'} / 群黑 ${policy.groupDeny.length} / 成员白 ${policy.memberAllow.length || '不限'} / 成员黑 ${policy.memberDeny.length} / 必须@ ${policy.requireAt ? '是' : '否'}`,
 )
 
-const transport = new OnebotTransport({
+const onebotOpts: OnebotOptions = {
   host: process.env['ONEBOT_HOST'] ?? '127.0.0.1',
   port: Number(process.env['ONEBOT_PORT']) || 8765,
   path: process.env['ONEBOT_PATH'] ?? '/onebot/v11/ws',
@@ -261,7 +261,8 @@ const transport = new OnebotTransport({
    * 这里传一个指向 persona/emoji 的 store，采集链路才真正接上。
    */
   emojiStore: createEmojiStore(),
-})
+}
+const transport = new OnebotTransport(onebotOpts)
 
 const apiKey = (process.env['DEEPSEEK_API_KEY'] ?? '').trim()
 let llm: LlmOptions | undefined
@@ -356,7 +357,13 @@ if (apiKey) {
   }
 
   info(`模型已就绪：${llm.model}`)
-  boot(transport, { getRules, reply: (m, r) => generateReply(m, { rules: r, llm: llm!, tools: registry }), llm })
+  boot(transport, {
+    getRules,
+    reply: (m, r) => generateReply(m, { rules: r, llm: llm!, tools: registry }),
+    llm,
+    // 「接着聊」的窗口锚在"它刚回过这个人"，而不是"上次被 @"
+    touchTalker: (groupId, userId) => markTalker(onebotOpts, groupId, userId),
+  })
 
   // 定时器错开启动：六个都在同一秒触发的话，distiller 和 proactive 会同时调模型
   const llmRef = llm

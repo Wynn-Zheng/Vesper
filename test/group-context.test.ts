@@ -13,7 +13,7 @@ import {
   pushTurn,
   setSessionRoot,
 } from '../src/loop/session.ts'
-import { joinBatchText } from '../src/boot.ts'
+import { batchLines } from '../src/boot.ts'
 
 /**
  * 群聊的「谁在说」与「旁听」。
@@ -41,21 +41,31 @@ test('群聊：单人发言时仍由下游加一次名字前缀', () => {
   assert.equal(formatUserText('group:1', '小明', text), '小明：在吗\n在忙')
 })
 
-test('群聊：多人合批时逐行带名字，且不再额外加前缀', () => {
-  // boot 的多发送人分支
-  const { text, multi } = joinBatchText(['他刚才说话了', '我知道'], ['小红', '小明'])
-  assert.equal(multi, true)
-  assert.equal(text, '小红：他刚才说话了\n小明：我知道')
-  // 关键：不能再出现"小明：小红：..."这种双前缀
-  assert.equal(text.includes('小明：小红：'), false)
+test('群聊：多人合批时逐条带名字', () => {
+  const lines = batchLines(['他刚才说话了', '我知道'], ['小红', '小明'])
+  assert.deepEqual(lines, [
+    { name: '小红', text: '他刚才说话了' },
+    { name: '小明', text: '我知道' },
+  ])
 })
 
-test('群聊：同一个人连发多条，走单发送人分支（名字只加一次）', () => {
-  const { text, multi } = joinBatchText(['在吗', '在忙'], ['小明', '小明'])
-  assert.equal(multi, false)
-  assert.equal(text, '在吗\n在忙')
-  // 下游加一次前缀
-  assert.equal(formatUserText('group:1', '小明', text), '小明：在吗\n在忙')
+test('群聊：同一个人连发多条也要逐条带名字', () => {
+  // 这是最高频的批次（同人续发）。只加一次前缀的话，第二句在
+  // group.ts 的规则里（无前缀 = 你自己说的）会被读成它自己说的。
+  const lines = batchLines(['在吗', '在忙'], ['小明', '小明'])
+  assert.equal(lines?.length, 2)
+  assert.deepEqual(lines?.[1], { name: '小明', text: '在忙' })
+})
+
+test('群聊：单条消息不拆（走单前缀路径）', () => {
+  assert.equal(batchLines(['在吗'], ['小明']), null)
+  assert.equal(formatUserText('group:1', '小明', '在吗'), '小明：在吗')
+})
+
+test('群聊：两个人重名也要按条拆开', () => {
+  // QQ 允许同群同名片。按"不同名字数"判会当成单人，等于没修。
+  const lines = batchLines(['我是小明A', '我是小明B'], ['小明', '小明'])
+  assert.equal(lines?.length, 2, '按条数判，不是按名字数')
 })
 
 test('群聊：私聊不加名字前缀', () => {

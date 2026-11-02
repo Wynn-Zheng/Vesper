@@ -1106,8 +1106,14 @@ export function isRecentTalker(opts: OnebotOptions, groupId: string, userId: str
   return Date.now() - at < (opts.followUpWindowMs ?? 120_000)
 }
 
-/** 记一笔"刚跟它说过话" */
-function markTalker(opts: OnebotOptions, groupId: string, userId: string): void {
+/**
+ * 记一笔"刚跟它说过话"。
+ *
+ * 两个地方会调：被叫到时（开始一段对话），以及**成功发出一条回复后**
+ * （boot 里）。后者是关键 —— 窗口锚在"它最后一次真说话"才像人：
+ * 只锚 @ 的话，连聊三分钟会突然断掉。
+ */
+export function markTalker(opts: OnebotOptions, groupId: string, userId: string): void {
   if (!opts.recentTalkers) return
   const key = `${groupId}:${userId}`
   opts.recentTalkers.set(key, Date.now())
@@ -1158,10 +1164,12 @@ export function isAddressed(ev: OBEvent, botNames: string[] = [], ownIds?: Set<s
  */
 export function isAtOthers(ev: OBEvent, ownIds?: Set<string>): boolean {
   if (ev.message_type === 'private') return false
-  // 引用的是别人的话 → 这是在跟那个人说，同样不该抢答。
-  // （引用的如果是它自己，isAddressed 已经先命中，走不到这里）
-  const replyId = replyTargetId(ev.message)
-  if (replyId && ownIds && !ownIds.has(replyId)) return true
+  // 注意：这里**故意不**用 reply 段做否定判断。
+  //
+  // "引用了一条我不知道是谁的消息" 不等于 "在跟别人说" ——
+  // ownIds 是进程内存里的（重启就空），重启后引用它昨天说的话会
+  // 被误判成"引用别人"，于是它装没看见，比不判还差。
+  // 正向判断（引用我自己 → 算叫我）放在 isAddressed 里，那个方向错了也只是"多看一眼"。
   const selfId = String(ev.self_id ?? '').trim()
   for (const s of messageSegments(ev.message)) {
     if (s.type !== 'at') continue

@@ -375,9 +375,10 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   })
 
   // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人。
-  // 合批且多人时 boot 已经把每行写成「名字：内容」，这里不能再冠一次名字。
-  let userContent = m.speakerInText
-    ? text
+  // 一批里有多条消息时 boot 已经拆好逐条发言，这里按行渲染；
+  // 单条消息仍走 formatUserText（加一次名字前缀）。
+  let userContent = m.batchLines?.length
+    ? m.batchLines.map((l) => `${l.name}：${l.text}`).join('\n')
     : formatUserText(scope, m.senderName ?? m.senderNick ?? m.from.id, text)
 
   // 有图且有视觉模型：先"看"成文字，再混进这一轮的内容。

@@ -202,11 +202,14 @@ test('引用它自己说过的话（没 @）→ 算在跟它说话', () => {
   assert.equal(isAddressed(ev, []), false, '没有 ownIds 就判断不了，别瞎猜')
 })
 
-test('引用别人的话 → 不抢答', () => {
+test('引用别人的话 → 不据此判"在跟别人说"（太容易误伤）', () => {
   const own = new Set(['555'])
   const ev = quoted('666', '你这个怎么弄的')
-  assert.equal(isAddressed(ev, [], own), false)
-  assert.equal(isAtOthers(ev, own), true, '引用别人的话就是在跟那个人说')
+  assert.equal(isAddressed(ev, [], own), false, '引用别人的话不算叫我')
+  // 故意不用 reply 做否定判断：ownIds 是进程内存的，重启就空。
+  // 重启后引用它昨天的话会被误判成"引用别人"，于是它装没看见 —— 比不判更差。
+  // 这类消息交给 @/叫名字/刚聊过/内容打分去决定。
+  assert.equal(isAtOthers(ev, own), false)
 })
 
 test('引用它自己 → 不算在跟别人说', () => {

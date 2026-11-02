@@ -33,6 +33,14 @@ export interface BootOptions {
   reply: (m: Incoming, rules: Rules) => Promise<string> | string
   /** 有的话，每轮结束后异步评估一次关系变化 */
   llm?: LlmOptions
+  /**
+   * 记一笔「这个人在这个群刚跟它说过话」（连续对话窗口的锚点）。
+   *
+   * 由 index.ts 接到 transport 的 recentTalkers 上。boot 自己不持有那个 Map
+   * ——它属于通道层。成功发出一条群回复后调一次，窗口就锚在"它真说话"的时刻，
+   * 而不是"上次被 @"：只锚 @ 的话，连聊三分钟会突然断掉。
+   */
+  touchTalker?: (groupId: string, userId: string) => void
 }
 
 /** 这类短消息可以偶尔不回 */
@@ -186,25 +194,25 @@ function speakerLabel(m: Incoming): string {
 }
 
 /**
- * 把一批消息拼成这一轮给模型的文本。
+ * 把一批消息拆成「谁说了什么」。
  *
- * 一个人说的：原样换行拼起来，名字由下游 `formatUserText` 加一次。
- * 多个人说的：逐行写成「名字：内容」，并告诉下游别再冠名字。
+ * 只要这一批不止一条消息就逐条带名字，**包括同一个人连发**。
  *
- * 为什么必须区分：以前一律 `join('\n')` 再用最后一个人的名字加前缀，
- * A 说的话就被记成了 B 说的（实测 `"小明：小红的话\n小明的话"`）。
- * 群里两个人几乎同时说话是很常见的，所以这不是边角情况。
+ * 为什么同人连发也必须带名字：`people/group.ts` 里告诉模型
+ * 「带名字前缀的是别人说的；没有前缀的是你自己刚说过的」。
+ * 如果一批两条都是小明说的，却只写成 `小明：第一句\n第二句`，
+ * 第二句在模型眼里就成了"它自己刚说过的" —— 它会否认、或者接着自己的话往下说。
+ * 这是最高频的批次（「同人续发」这一档就是为它存在的）。
+ *
+ * 为什么用**条数**而不是"不同名字数"判：QQ 同群允许重名名片，
+ * 两个人同名时按名字数会判成单人，等于没修。
+ *
+ * 返回的是给 prompt 的逐行文本；判定/打分用的是原始拼接文本（见 flush），
+ * 免得名字污染"嗯""哦"这类短回复识别和内容过滤。
  */
-export function joinBatchText(
-  texts: string[],
-  labels: string[],
-): { text: string; multi: boolean } {
-  const multi = new Set(labels).size > 1
-  if (!multi) return { text: texts.join('\n'), multi: false }
-  return {
-    text: texts.map((t, i) => `${labels[i] ?? '?'}：${t}`).join('\n'),
-    multi: true,
-  }
+export function batchLines(texts: string[], labels: string[]): Array<{ name: string; text: string }> | null {
+  if (texts.length <= 1) return null
+  return texts.map((t, i) => ({ name: labels[i] ?? '?', text: t }))
 }
 
 /** 业务装配：去重 → 限流 → 建人 → 聚合 → 落盘 → 延迟 → 生成 → 发送 → 关系评估 */
@@ -333,6 +341,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       bo.pending += 1
       const wakeAt = rules.行为.退避.几条消息打断 > 0 ? rules.行为.退避.几条消息打断 : Number.POSITIVE_INFINITY
       if (bo.pending < wakeAt && Date.now() < bo.since) {
+        noteHeard(m, text)
         return
       }
       backoff.delete(scopeKey)
@@ -365,6 +374,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       })
       if (Math.random() > score.probability) {
         info(`这次不接（${score.score} 分：${score.reasons.join('、') || '没理由'}）：${who}`)
+        noteHeard(m, text)
         enterBackoff(scopeOf(m.from), rules)
         return
       }
@@ -373,6 +383,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
     if (SKIPPABLE.test(text) && Math.random() < rules.行为.偶尔不回概率) {
       info(`选择不回：${text.slice(0, 12)}`)
+      noteHeard(m, text)
       return
     }
 
@@ -467,6 +478,12 @@ export function boot(transport: Transport, opts: BootOptions): void {
         const arr = replyTimes.get(scope) ?? []
         arr.push(Date.now())
         replyTimes.set(scope, arr)
+        // 「接着聊」的窗口锚在**它最后一次真正说话**的时刻，不是"上次被 @"。
+        //
+        // 只锚 @ 的话：有人连聊三分钟、它每条都回，一到那个 120 秒就突然不回，
+        // 像聊着聊着走了。锚在"刚回过"才对得上人的直觉 ——
+        // 既然它刚接过这个人一句，对方接着说下一句就该顺下去。
+        opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
       }
       appendRaw({ ts: Date.now(), scope: scopeOf(m.from), role: 'assistant', text: reply.trim() })
       info(`→ ${who}：${ids.length} 条`)
@@ -553,14 +570,42 @@ export function boot(transport: Transport, opts: BootOptions): void {
   /** 每个会话一条发送链：上一轮还没发完时，下一轮排队，避免分句交错 */
   const sending = new Map<string, Promise<void>>()
 
+  /**
+   * 记一条「旁听」：群里别人说的话，它看见了但没回。
+   *
+   * 只记群聊：私聊每条都会进 turns，不需要旁听。
+   * 与档位无关：无论"必须 @"还是"自己判断"，只要这条没进入生成，
+   * 就该留下来当背景 —— 否则它只在被叫的那一瞬间才存在。
+   */
+  function noteHeard(m: Incoming, text: string): void {
+    if (m.from.kind !== 'group') return
+    const scope = scopeOf(m.from)
+    // 合批的情况要逐条按自己的发送人记。
+    // 直接用整批 text + m 的名字的话，一批里三个人的话会全记到最后一个人头上 ——
+    // 和前面修的合批归属是同一个 bug，只是换了个地方。
+    if (m.batchLines?.length) {
+      for (const l of m.batchLines) {
+        const t = l.text.trim()
+        if (t) pushHeard(scope, { role: 'user', content: `${l.name}：${t}`, at: m.at })
+      }
+      return
+    }
+    const line = text.trim()
+    if (!line) return
+    pushHeard(scope, { role: 'user', content: `${speakerLabel(m)}：${line}`, at: m.at })
+  }
+
   async function flush(key: string): Promise<void> {
     const buf = buffers.get(key)
     if (!buf) return
     buffers.delete(key)
     clearTimeout(buf.timer)
-    // 一批里有多个人说话：逐行写「名字：内容」。
-    // 只有一个人说话时保持原来的写法（下游加一次前缀），避免重复写名字。
-    const { text, multi } = joinBatchText(buf.texts, buf.senderLabels)
+    // 判定/打分/日志用**原始拼接文本**（不带名字）：
+    // 名字写进去会让「嗯」「哦」这类短回复的识别失准（SKIPPABLE / SHORT_ACK 都是整段锚定），
+    // 内容过滤也会被群友的名字误伤，回复预算还会被名字长度抬高。
+    // 逐行带名字的版本单独交给 chat.ts 拼 prompt。
+    const text = buf.texts.join('\n')
+    const lines = batchLines(buf.texts, buf.senderLabels)
     // 关键：同一会话的两轮不能并发处理。之前是这里 delete 完就 await，
     // 对方在上一轮没回完时再发一条，会另起一次 handle，两轮分句互相插、后一轮可能先发完。
     const prev = sending.get(key) ?? Promise.resolve()
@@ -568,7 +613,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       .catch(() => undefined)
       .then(() =>
         handle(
-          { ...buf.last, images: buf.images, ...(multi ? { speakerInText: true } : {}) },
+          { ...buf.last, images: buf.images, ...(lines ? { batchLines: lines } : {}) },
           text,
           buf.passive,
           opts.getRules(),
@@ -589,6 +634,11 @@ export function boot(transport: Transport, opts: BootOptions): void {
   setGroupMembersMissingHook((gid) => refreshGroupMembers(transport, gid))
 
   transport.onMessage((m) => {
+    // 自己发出去的消息被 NapCat 回传时，直接丢掉。
+    // 不回滤的话它会把自己的回复当成"群里某人说的话"再学一遍 ——
+    // 旁听区和 raw 都会被污染。
+    if (m.selfId && m.senderId && m.senderId === m.selfId) return
+
     if (m.id) {
       if (seen.has(m.id)) {
         warnAt('重复消息，已跳过', { id: m.id })
@@ -672,15 +722,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
     // 现在再往前一步：把这句话也记进 session 的「旁听」区。
     // 只进 raw 是不够的 —— raw 是给 distill 用的长期材料，不参与这一轮的 prompt。
     // 所以用户 @ 它问"刚才聊啥呢"，它其实完全不知道群里在聊什么。
+    //
+    // 注意：记旁听不能只挂在 observeOnly 上。切到「自己判断」档时
+    // isObserveOnly 恒为 false，那些"看了但决定不接"的消息会从别的
+    // 分支返回 —— 如果不在那儿补记，它反而在最活跃的档位里最接不上前文。
+    // 下面每个"决定不说话"的出口都会调 noteHeard。
     if (m.observeOnly) {
-      // 只记群聊：私聊不存在"旁听"，而且私聊每条都进 turns。
-      if (m.from.kind === 'group' && displayText.trim()) {
-        pushHeard(scopeOf(m.from), {
-          role: 'user',
-          content: `${speakerLabel(m)}：${displayText}`,
-          at: m.at,
-        })
-      }
+      noteHeard(m, displayText)
       return
     }
 
