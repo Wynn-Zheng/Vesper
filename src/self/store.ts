@@ -10,11 +10,32 @@ const LIFE_FILE = 'persona/life.md'
 
 let selfPath = SELF_FILE
 let lifePath = LIFE_FILE
+/** 测试用：历史目录默认跟着角色卡走（相对路径），测试要能指到临时目录 */
+let historyOverride: string | null = null
 
 /** 测试用 */
 export function setSelfFiles(self: string, life: string): void {
   selfPath = self
   lifePath = life
+}
+
+/** 测试用：把 self-history 也指到临时目录，免得测试往真实数据里写快照 */
+export function setSelfHistoryDir(dir: string | null): void {
+  historyOverride = dir
+}
+
+/**
+ * 测试用：恢复成默认路径。
+ *
+ * 为什么需要它：`--test-isolation=none` 下所有测试共用一个进程，
+ * 而好几个测试文件在**导入时**就把路径指到了各自的临时目录。
+ * 一个文件里的用例改了路径之后如果不还原，会污染后面文件里的用例
+ * （实测把 self.test.ts 的一条用例弄挂了：它看到的是别人存的 self.md）。
+ */
+export function resetSelfFiles(): void {
+  selfPath = SELF_FILE
+  lifePath = LIFE_FILE
+  historyOverride = null
 }
 
 export interface SelfDoc {
@@ -95,6 +116,7 @@ export function loadSelf(): SelfDoc {
 /** 历史目录：每次改动前留一份，人格变了能回看 */
 function historyDir(): string {
   // 按角色卡隔离：换卡就是换人，历史不该混在一起
+  if (historyOverride) return historyOverride
   return cardScopedPath('self-history', 'persona/self-history')
 }
 
