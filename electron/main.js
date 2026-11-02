@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Electron 主进程。
  *
  * 职责只有三件：
@@ -135,7 +135,42 @@ function consoleToken() {
  * ============================================================ */
 
 /**
- * 打包后 DATA_ROOT = %APPDATA%/QQBot/data-root，第一次是空的。
+ * 从旧数据目录迁移过来。
+ *
+ * **为什么需要**：Electron 的 `app.getPath('userData')` 是按 package.json 的 `name`
+ * 算的。项目从 `qqbot` 改名成 `vesper` 之后，数据目录就从
+ *   %APPDATA%\qqbot\data-root  →  %APPDATA%\vesper\data-root
+ * 新版去新目录找，自然"数据全没了"（角色卡、API Key、记忆都在旧目录里）。
+ *
+ * 策略：**只在新目录还没有数据时复制**，复制完**不删旧的**（留作备份）。
+ * 旧目录名按可能性排：先小写 `qqbot`（Electron 按 name 生成的就是小写），
+ * 再 `QQBot`（productName 大写时代可能产生过），再 `Vesper`（中间改名那一版的残留）。
+ */
+function migrateLegacyDataRoot() {
+  if (!app.isPackaged) return
+  const has = (d) => existsSync(path.join(d, '.env')) || existsSync(path.join(d, 'persona'))
+  if (has(DATA_ROOT)) return // 新目录已经有东西了，不动
+
+  const roaming = path.dirname(path.dirname(DATA_ROOT)) // %APPDATA%
+  const candidates = ['qqbot', 'QQBot', 'Vesper', 'qqbot-desktop']
+  for (const name of candidates) {
+    const oldRoot = path.join(roaming, name, 'data-root')
+    if (oldRoot === DATA_ROOT) continue
+    if (!has(oldRoot)) continue
+    try {
+      cpSync(oldRoot, DATA_ROOT, { recursive: true, errorOnExist: false, force: false })
+      console.log(`[main] 已从旧数据目录迁移：${oldRoot} → ${DATA_ROOT}`)
+      trace(`已从旧数据目录迁移：${oldRoot}`)
+    } catch (e) {
+      console.error('[main] 迁移旧数据失败：', e && e.message)
+      trace('迁移旧数据失败：' + (e && e.message))
+    }
+    return // 迁一个就够
+  }
+}
+
+/**
+ * 打包后 DATA_ROOT = %APPDATA%/vesper/data-root，第一次是空的。
  *
  * 不初始化的话两个后果：
  *   - 没有 .env → CONSOLE_TOKEN 和 DEEPSEEK_API_KEY 全空 → 控制台白屏、模型不可用
@@ -149,6 +184,9 @@ function ensureDataRoot() {
   } catch {
     /* 建不出来后面也会报，不用在这拦 */
   }
+
+  // 0. 先把旧数据目录（qqbot/QQBot/Vesper）的东西搬过来，否则改名后老用户会以为数据丢了
+  migrateLegacyDataRoot()
 
 // 1. .env：没有就生成一份（随机 token；API key 留空，让用户在设置页填）
   const envPath = path.join(DATA_ROOT, '.env')
