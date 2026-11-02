@@ -77,7 +77,10 @@ const policy: AccessPolicy = {
 const tick = (ms = 150) => new Promise((r) => setTimeout(r, ms))
 
 /** 起一套"通道 + 业务 + 假 NapCat"，返回操作句柄 */
-async function harness(mode: '只听' | '熟人续话' | '自己判断' = '熟人续话') {
+async function harness(
+  mode: '只听' | '熟人续话' | '自己判断' = '熟人续话',
+  rulesOverride?: () => Rules,
+) {
   const port = await freePort()
   const opts: OnebotOptions = {
     host: '127.0.0.1',
@@ -93,7 +96,7 @@ async function harness(mode: '只听' | '熟人续话' | '自己判断' = '熟�
     timeoutMs: 3000,
   }
   const transport = new OnebotTransport(opts)
-  boot(transport, { getRules: rules, reply: () => '收到' })
+  boot(transport, { getRules: rulesOverride ?? rules, reply: () => '收到' })
   await transport.start()
 
   // 假的 NapCat：连上来，把收到的 action 都记下来，并一律回 ok
@@ -278,6 +281,128 @@ test('真链路：私聊照常回', async () => {
     await tick(400)
     const actions = h.seen.filter((s) => s.action === 'send_private_msg')
     assert.equal(actions.length, 1)
+  } finally {
+    await h.close()
+  }
+})
+
+/* ---------------- 边界：畸形消息、@全体、纯图、去重、限速、合批 ---------------- */
+
+test('边界：群消息没有 group_id 也不崩，且不发消息', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [{ type: 'text', data: { text: '没有群号的消息' } }],
+    })
+    await tick(400)
+    assert.deepEqual(h.sent(), [], '坏数据不该触发发送')
+    // 关键：进程还活着、还能正常处理下一条
+    h.push(groupAt('还活着吗'))
+    await tick(400)
+    assert.equal(h.sent().length, 1, '一条坏消息不能把整条链路弄坏')
+  } finally {
+    await h.close()
+  }
+})
+
+test('边界：@全体成员 不算叫它', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9001,
+      sender: { nickname: '群主' },
+      message: [
+        { type: 'at', data: { qq: 'all' } },
+        { type: 'text', data: { text: ' 所有人开会' } },
+      ],
+    })
+    await tick(400)
+    assert.deepEqual(h.sent(), [], '@全体 是群公告，不是叫它')
+  } finally {
+    await h.close()
+  }
+})
+
+test('边界：纯图片消息不触发回复', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [{ type: 'image', data: { file: 'a.jpg', url: 'http://127.0.0.1:9/x.jpg' } }],
+    })
+    await tick(500)
+    assert.deepEqual(h.sent(), [], '群里有人发图不等于在叫它')
+  } finally {
+    await h.close()
+  }
+})
+
+test('边界：同一条消息重复推送只处理一次', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    const ev = { message_id: 777001, ...groupAt('重复') }
+    h.push(ev)
+    h.push(ev)
+    await tick(500)
+    assert.equal(h.sent().length, 1, '去重按 message_id，不能回两遍')
+  } finally {
+    await h.close()
+  }
+})
+
+test('边界：群每分钟上限 1 → 第二条 @ 不再回', async () => {
+  clearSessions()
+  // 用独立群号 556：限流表是模块级的，前面用例已经吃过 555 的额度了
+  const inG = (text: string, userId = 9001): Record<string, unknown> => ({
+    ...groupAt(text, userId),
+    group_id: 556,
+  })
+  const sends556 = (h: { seen: Array<{ action: string; params: Record<string, unknown> }> }): number =>
+    h.seen.filter(
+      (s) => s.action === 'send_group_msg' && Number(s.params['group_id']) === 556,
+    ).length
+  const h = await harness('熟人续话', () => ({
+    ...rules(),
+    行为: { ...rules().行为, 群每分钟上限: 1 },
+  }))
+  try {
+    h.push(inG('第一条'))
+    await tick(350)
+    h.push(inG('第二条', 9002))
+    await tick(350)
+    assert.equal(sends556(h), 1, '限速应该真的挡住第二条')
+  } finally {
+    await h.close()
+  }
+})
+
+test('边界：防抖开着时两人先后说话，合成一轮只回一次', async () => {
+  clearSessions()
+  const h = await harness('熟人续话', () => ({
+    ...rules(),
+    行为: {
+      ...rules().行为,
+      防抖: { 档位: '自定义', 安静: 0.4, 活跃: 0.4, 同人续发: 0.4, 换人: 0.4, 被at最多: 0.4, 批次上限: 2 },
+    },
+  }))
+  try {
+    h.push(groupAt('我先说', 9001))
+    await tick(60)
+    h.push(groupAt('我接一句', 9002))
+    await tick(900)
+    assert.equal(h.sent().length, 1, '一批只该走一次生成、发一次')
   } finally {
     await h.close()
   }

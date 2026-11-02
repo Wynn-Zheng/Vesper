@@ -704,6 +704,16 @@ export class OnebotTransport implements Transport {
   }
 
   private onEvent(ev: OBEvent): void {
+    // 畸形事件先挡掉：群消息没有 group_id 的话，后面任何
+    // "按群号找目录"的地方都会抛错（groupcache 的 dirOf 会拒绝空串），
+    // 而那是在消息回调里 —— 一条坏数据就能把整条链路弄停。
+    // 实测：不带 group_id 的 group 消息会让 isKnownMember/refreshGroupMembers 抛
+    // "群号不合法"，之后的消息也处理不了。
+    if (ev.message_type === 'group' && !String(ev.group_id ?? '').trim()) {
+      warnAt('收到没有群号的群消息，已丢弃', { 人: ev.user_id, 类型: ev.message_type })
+      return
+    }
+
     // 收表情包和"要不要回复"解耦：纯图片消息不触发模型，但也值得收。
     // 故意不 await：下载/入库再慢也不能卡住消息分发。
     const rules = this.opts.getRules?.()
