@@ -267,3 +267,37 @@ test('popLastAssistant：空会话也安全', async () => {
   clearSessions()
   assert.equal(popLastAssistant('group:empty'), false)
 })
+
+/* ---------------- 刷屏保护：攒满一批要先冲，且不能丢消息 ---------------- */
+
+test('攒满 20 条先冲一批，第 21 条不能丢', async () => {
+  clearSessions()
+  const t = new FakeTransport()
+  const batches: number[] = []
+  // 防抖 350ms：只要消息不断来就会一直重置定时器，所以能攒到 20 条触发溢出；
+  // 溢出后第 21 条落到新的一批，350ms 后自己会冲出来。
+  boot(t, {
+    getRules: () =>
+      batchRules({
+        行为: {
+          ...batchRules().行为,
+          防抖: { 档位: '自定义', 安静: 0.35, 活跃: 0.35, 同人续发: 0.35, 换人: 0.35, 被at最多: 0.35, 批次上限: 8 },
+        },
+      }),
+    reply: (m) => {
+      batches.push(m.batchLines?.length ?? 1)
+      return '嗯'
+    },
+  })
+  // 21 条刷屏
+  for (let i = 0; i < 21; i++) {
+    t.push(groupMsg(`sp${i}`, `第${i}条`, { senderId: '9001', name: '小明', groupId: 'g11' }))
+    await tick(3)
+  }
+  await tick(1500)
+
+  // 第 20 条到达时触发"先冲一批"，第 21 条要落到新的一批里，一条都不能丢
+  assert.equal(batches.length, 2, `应该冲成两批，实际 ${JSON.stringify(batches)}`)
+  assert.equal(batches[0], 20, '第一批应该是攒满的 20 条')
+  assert.equal(batches.reduce((a, b) => a + b, 0), 21, '一条都不能丢')
+})
