@@ -96,6 +96,32 @@ function roleOfPerson(personName?: string): string | undefined {
   }
 }
 
+/**
+ * 把群里的「旁听」记录渲染成一段背景。
+ *
+ * 为什么要给模型看：群里大部分时间没叫它，但它得知道刚才在聊什么，
+ * 否则被 @ 问"刚说啥呢"时只能装傻。不注入这段的时候，它只看得到
+ * 自己被叫的那几句 —— 用户反馈的"没联系上下文"就是这个。
+ *
+ * 为什么标"你只是在看着"：不标的话模型会以为自己参与了那些对话，
+ * 甚至在没人问它时接着往下答。
+ */
+export function renderHeard(turns: Array<{ content: string; at: number }>, maxChars = 800): string {
+  if (!turns.length) return ''
+  const lines: string[] = []
+  let budget = maxChars
+  // 从最近的往前取，超预算就停：老的背景先丢
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const line = turns[i]!.content.trim()
+    if (!line) continue
+    if (line.length > budget) break
+    budget -= line.length
+    lines.unshift(line)
+  }
+  if (!lines.length) return ''
+  return ['【群里刚才在聊】（没叫你，你只是在旁边看着，别当成是在跟你说话）', ...lines].join('\n')
+}
+
 /** 由 rules.yaml + 自我 + 画像 + 关系 + 记忆拼出 system prompt。 */
 export function buildSystem(parts: PromptParts): string {
   const {

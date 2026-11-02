@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { shouldHandle, isObserveOnly, type OnebotOptions, type OBEvent } from '../src/channel/onebot.ts'
+import {
+  shouldHandle,
+  isObserveOnly,
+  isAddressed,
+  isAtOthers,
+  replyTargetId,
+  type OnebotOptions,
+  type OBEvent,
+} from '../src/channel/onebot.ts'
 
 const base: OnebotOptions = { host: '127.0.0.1', port: 8765, path: '/onebot/v11/ws', token: 't' }
 
@@ -165,6 +173,63 @@ test('图片加文字会触发（文字有意义）', () => {
     ],
   }
   assert.equal(shouldHandle(ev, { ...base, ownerQQ: '1234567890' }), true)
+})
+
+/* ---------------- 引用回复：判断"在跟谁说" ---------------- */
+
+const quoted = (replyId: string, text: string): OBEvent => ({
+  post_type: 'message',
+  message_type: 'group',
+  group_id: '123',
+  user_id: '999',
+  self_id: '10000',
+  message: [
+    { type: 'reply', data: { id: replyId } },
+    { type: 'text', data: { text } },
+  ],
+})
+
+test('引用：能从消息段里取出被引用消息的 id', () => {
+  assert.equal(replyTargetId(quoted('777', '嗯').message), '777')
+  assert.equal(replyTargetId(group('123', '999', '没有引用').message), '')
+})
+
+test('引用它自己说过的话（没 @）→ 算在跟它说话', () => {
+  const own = new Set(['555'])
+  const ev = quoted('555', '那你刚才说的那个呢')
+  // 没 @ 也没叫名字
+  assert.equal(isAddressed(ev, [], own), true, '引用它说的话应该算 addressed')
+  assert.equal(isAddressed(ev, []), false, '没有 ownIds 就判断不了，别瞎猜')
+})
+
+test('引用别人的话 → 不抢答', () => {
+  const own = new Set(['555'])
+  const ev = quoted('666', '你这个怎么弄的')
+  assert.equal(isAddressed(ev, [], own), false)
+  assert.equal(isAtOthers(ev, own), true, '引用别人的话就是在跟那个人说')
+})
+
+test('引用它自己 → 不算在跟别人说', () => {
+  const own = new Set(['555'])
+  assert.equal(isAtOthers(quoted('555', '嗯嗯'), own), false)
+})
+
+test('引用 + @它 → 仍然按 @ 处理', () => {
+  const own = new Set(['555'])
+  const ev: OBEvent = {
+    post_type: 'message',
+    message_type: 'group',
+    group_id: '123',
+    user_id: '999',
+    self_id: '10000',
+    message: [
+      { type: 'reply', data: { id: '666' } },
+      { type: 'at', data: { qq: '10000' } },
+      { type: 'text', data: { text: ' 你看这个' } },
+    ],
+  }
+  assert.equal(isAddressed(ev, [], own), true)
+  assert.equal(isObserveOnly(ev, { ...base, allowGroup: true }), false)
 })
 
 test('空消息不触发', () => {

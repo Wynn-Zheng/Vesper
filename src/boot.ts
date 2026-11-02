@@ -2,6 +2,7 @@ import { rand, say, sleep } from './channel/send.ts'
 import type { Rules } from './core/config.ts'
 import { talkValueOf, resolveDebounce } from './core/config.ts'
 import { scoreReply } from './loop/score.ts'
+import { pushHeard } from './loop/session.ts'
 import { decideQuote, QUOTE_THRESHOLD } from './loop/quote.ts'
 import { decayedMood, loadMood } from './persona/mood.ts'
 import { info, warnAt } from './core/log.ts'
@@ -145,6 +146,14 @@ interface Buffer {
     /** 每条消息的发送者，用来判断这轮是不是多人穿插 */
     senders: string[]
   /**
+   * 每条消息的**显示名**（群名片 → 昵称 → QQ 号），和 texts 一一对应。
+   *
+   * 为什么要单独存：合批后要按行写「名字：内容」。只留 senders（QQ 号）的话，
+   * 提示词里会出现一串数字；只留 last.senderName 的话，整批都会被冠上最后
+   * 那个人的名字 —— 群里 A 说一句、B 接一句，A 的话就被算成 B 说的了。
+   */
+  senderLabels: string[]
+  /**
    * 这一批里所有消息的图片引用（合并去重）。
    *
    * 以前 flush 直接用 `buf.last.images`：一批里分几条发的图，
@@ -169,6 +178,33 @@ interface Buffer {
   prevAt: number
   lastSender: string
   timer: NodeJS.Timeout
+}
+
+/** 这条消息是谁说的：群名片 → QQ 昵称 → QQ 号 → 会话 id（和 handle 里的 who 一致） */
+function speakerLabel(m: Incoming): string {
+  return m.senderName ?? m.senderNick ?? m.senderId ?? m.from.id
+}
+
+/**
+ * 把一批消息拼成这一轮给模型的文本。
+ *
+ * 一个人说的：原样换行拼起来，名字由下游 `formatUserText` 加一次。
+ * 多个人说的：逐行写成「名字：内容」，并告诉下游别再冠名字。
+ *
+ * 为什么必须区分：以前一律 `join('\n')` 再用最后一个人的名字加前缀，
+ * A 说的话就被记成了 B 说的（实测 `"小明：小红的话\n小明的话"`）。
+ * 群里两个人几乎同时说话是很常见的，所以这不是边角情况。
+ */
+export function joinBatchText(
+  texts: string[],
+  labels: string[],
+): { text: string; multi: boolean } {
+  const multi = new Set(labels).size > 1
+  if (!multi) return { text: texts.join('\n'), multi: false }
+  return {
+    text: texts.map((t, i) => `${labels[i] ?? '?'}：${t}`).join('\n'),
+    multi: true,
+  }
 }
 
 /** 业务装配：去重 → 限流 → 建人 → 聚合 → 落盘 → 延迟 → 生成 → 发送 → 关系评估 */
@@ -522,18 +558,27 @@ export function boot(transport: Transport, opts: BootOptions): void {
     if (!buf) return
     buffers.delete(key)
     clearTimeout(buf.timer)
+    // 一批里有多个人说话：逐行写「名字：内容」。
+    // 只有一个人说话时保持原来的写法（下游加一次前缀），避免重复写名字。
+    const { text, multi } = joinBatchText(buf.texts, buf.senderLabels)
     // 关键：同一会话的两轮不能并发处理。之前是这里 delete 完就 await，
     // 对方在上一轮没回完时再发一条，会另起一次 handle，两轮分句互相插、后一轮可能先发完。
     const prev = sending.get(key) ?? Promise.resolve()
     const run = prev
       .catch(() => undefined)
       .then(() =>
-        handle({ ...buf.last, images: buf.images }, buf.texts.join('\n'), buf.passive, opts.getRules(), {
-          textsCount: buf.texts.length,
-          sendersCount: new Set(buf.senders).size,
-          spanMs: buf.lastAt - buf.firstAt,
-          prevAt: buf.prevAt,
-        }),
+        handle(
+          { ...buf.last, images: buf.images, ...(multi ? { speakerInText: true } : {}) },
+          text,
+          buf.passive,
+          opts.getRules(),
+          {
+            textsCount: buf.texts.length,
+            sendersCount: new Set(buf.senders).size,
+            spanMs: buf.lastAt - buf.firstAt,
+            prevAt: buf.prevAt,
+          },
+        ),
       )
     sending.set(key, run.finally(() => {
       if (sending.get(key) === run) sending.delete(key)
@@ -623,7 +668,21 @@ export function boot(transport: Transport, opts: BootOptions): void {
     // 走到这里说明消息已经进 raw 了，也更新过 lastTalk —— 这正是这一段的目的：
     // 它看得见群里的聊天，能学这个群怎么说话、能记住发生过什么，
     // 只是不插嘴。以前这类消息在 shouldHandle 就被丢了，等于全程聋着。
-    if (m.observeOnly) return
+    //
+    // 现在再往前一步：把这句话也记进 session 的「旁听」区。
+    // 只进 raw 是不够的 —— raw 是给 distill 用的长期材料，不参与这一轮的 prompt。
+    // 所以用户 @ 它问"刚才聊啥呢"，它其实完全不知道群里在聊什么。
+    if (m.observeOnly) {
+      // 只记群聊：私聊不存在"旁听"，而且私聊每条都进 turns。
+      if (m.from.kind === 'group' && displayText.trim()) {
+        pushHeard(scopeOf(m.from), {
+          role: 'user',
+          content: `${speakerLabel(m)}：${displayText}`,
+          at: m.at,
+        })
+      }
+      return
+    }
 
     // 聚合按"谁在哪个会话里说"分桶：群里两个人先后说话不能合并成一轮
     // 按「会话」合并，不按「会话+发送者」：同一群两个人同时说话时，
@@ -639,6 +698,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
         texts: [m.text],
         images: [...(m.images ?? [])],
         senders: [senderKey],
+        senderLabels: [speakerLabel(m)],
         last: m,
         passive: m.passive ?? false,
         addressed,
@@ -688,6 +748,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       // 分几条发的图只有最后一张进视觉
       existing.images = [...new Set([...existing.images, ...(m.images ?? [])])]
       existing.texts.push(m.text)
+      existing.senderLabels.push(speakerLabel(m))
       existing.senders.push(m.senderId ?? m.from.id)
       existing.last = m
       existing.lastAt = now
@@ -702,6 +763,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       texts: [m.text],
       images: [...(m.images ?? [])],
       senders: [m.senderId ?? m.from.id],
+      senderLabels: [speakerLabel(m)],
       last: m,
       passive: m.passive ?? false,
       addressed,

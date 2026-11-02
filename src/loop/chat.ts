@@ -1,4 +1,4 @@
-﻿import { existsSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
@@ -31,9 +31,9 @@ import { loadRelation } from '../relation/store.ts'
 import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
 import { loadCodeMapBrief } from '../self/codemap.ts'
 import { compressHistory, shouldCompress } from './compress.ts'
-import { buildPrompt, buildSystem } from './prompt.ts'
+import { buildPrompt, buildSystem, renderHeard } from './prompt.ts'
 import { loadCard, cardPromptBlock } from '../persona/card.ts'
-import { getSession, getTurns, historyMessages, pushTurn, sessionKey, setSummary } from './session.ts'
+import { getHeard, getSession, getTurns, historyMessages, pushTurn, sessionKey, setSummary } from './session.ts'
 
 export interface GenerateOptions {
   rules: Rules
@@ -108,6 +108,13 @@ export function isLocalTool(name: string): boolean {
 }
 
 
+/**
+ * 群聊里给这轮文本加上"谁说的"。
+ *
+ * 单条消息时加一次前缀；合批且批里有多个人时，boot 已经把每行写成
+ * 「名字：内容」了（并发 `speakerInText`），这里就不要再冠一次最后那个人的名字 ——
+ * 否则 A 的话会被算成 B 说的。
+ */
 export function formatUserText(scope: string, speaker: string | undefined, text: string): string {
   const name = (speaker ?? '').trim()
   return scope.startsWith('group:') && name ? `${name}：${text}` : text
@@ -285,8 +292,17 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // token 翻倍，而且模型容易去回一条旧消息。这里只保留召回的事实/经历/待办。
   recalled.recent = []
 
-  const groupBlock = scope.startsWith('group:')
-    ? [renderGroupContext(scope.slice('group:'.length)), renderJargon(explainJargon(text, scope.slice('group:'.length)))]
+  const inGroup = scope.startsWith('group:')
+  // 群里刚才在聊什么。只有群聊有：私聊不存在"旁听"。
+  // 不注入这段的话，用户 @ 它问"刚才聊啥呢"，它只看得到自己被叫的那几句。
+  const heardBlock = inGroup ? renderHeard(getHeard(key)) : ''
+
+  const groupBlock = inGroup
+    ? [
+        renderGroupContext(scope.slice('group:'.length)),
+        renderJargon(explainJargon(text, scope.slice('group:'.length))),
+        heardBlock,
+      ]
         .filter((s) => s.trim())
         .join('\n\n')
     : ''
@@ -358,8 +374,11 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     repeatHint: detectRepeat(key),
   })
 
-  // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人
-  let userContent = formatUserText(scope, m.senderName ?? m.senderNick ?? m.from.id, text)
+  // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人。
+  // 合批且多人时 boot 已经把每行写成「名字：内容」，这里不能再冠一次名字。
+  let userContent = m.speakerInText
+    ? text
+    : formatUserText(scope, m.senderName ?? m.senderNick ?? m.from.id, text)
 
   // 有图且有视觉模型：先"看"成文字，再混进这一轮的内容。
   // 主模型是纯文本的也照样能用——它读到的是描述，不是图。

@@ -34,6 +34,14 @@ export interface OnebotOptions {
   getPolicy?: () => AccessPolicy
   /** 最近和它说过话的人（`群号:QQ号` → 时间戳），由 transport 自己维护 */
   recentTalkers?: Map<string, number>
+  /**
+   * 它自己发过的消息 id。
+   *
+   * 由 transport 在构造时自己填，外部不用管。作用：OneBot 的 reply 段只给
+   * 被引用消息的 id，不给发送人 —— 有这份记录才知道"引的是它说的话"
+   * 还是"引的别人的话"。
+   */
+  ownIds?: Set<string>
   /** 连续对话窗口：多久之内不算"突然插话"，默认 2 分钟 */
   followUpWindowMs?: number
   /** 调用 action 的超时（毫秒） */
@@ -144,6 +152,23 @@ function atText(data: Record<string, string>): string {
   if (name) return `@${name}`
   return qq ? `@${qq}` : ''
 }
+
+/**
+ * 这条消息引用（回复）的是哪条消息的 id。
+ *
+ * OneBot v11 的 reply 段只有 `id`，没有发送人 —— 谁被引用了得靠调用方
+ * 拿自己发过的消息 id 去反查（见 OnebotTransport.ownIds）。
+ * 拿不到就返回空串。
+ */
+export function replyTargetId(message: OBEvent['message']): string {
+  for (const seg of messageSegments(message)) {
+    if (seg.type !== 'reply') continue
+    const id = (seg.data['id'] ?? '').trim()
+    if (id) return id
+  }
+  return ''
+}
+
 
 /** 把 OneBot 的 message 段数组压成纯文本，非文本段留占位。 */
 export function extractText(message: OBEvent['message']): string {
@@ -460,9 +485,31 @@ export class OnebotTransport implements Transport {
   private socket: WebSocket | null = null
   private readonly pending = new Map<string, Pending>()
   private handler: ((m: Incoming) => void) | null = null
+  /**
+   * 自己发出去的消息 id（有上限）。
+   *
+   * 用来判断「有人引用了一条消息」到底引的是谁的：
+   *   - 引的是自己刚说的话 → 这就是在跟它说，哪怕没 @；
+   *   - 引的是别人的话   → 多半是在跟别人说，不该抢答。
+   * OneBot 的 reply 段只给消息 id，不给发送人，所以只能靠这份记录反查。
+   */
+  private readonly ownIds = new Set<string>()
+
+  /** 记一条自己发的消息（超过 300 条丢最早的，够覆盖一次对话的引用范围） */
+  private rememberOwn(id: string | undefined): void {
+    if (!id) return
+    this.ownIds.add(id)
+    if (this.ownIds.size > 300) {
+      const first = this.ownIds.values().next().value
+      if (first !== undefined) this.ownIds.delete(first)
+    }
+  }
 
   constructor(opts: OnebotOptions) {
     this.opts = opts
+    // 把自己发过的消息表挂到 opts 上，判定函数就能看到。
+    // 传同一个 Set 引用，后续 send 往里加，判定侧实时可见。
+    if (!opts.ownIds) opts.ownIds = this.ownIds
     // 让 sendImage(target, filePath) 这种两参数写法也能找到当前通道
     setImageTransport(this)
   }
@@ -667,7 +714,7 @@ export class OnebotTransport implements Transport {
       //
       // 光说「被过滤」没有用 —— 用户只会看到「它不理我」，然后去翻配置瞎猜。
       // 所以顺带把具体卡在哪一步也算出来。
-      if (ev.message_type === 'group' && isAddressed(ev, this.opts.botNames)) {
+      if (ev.message_type === 'group' && isAddressed(ev, this.opts.botNames, this.opts.ownIds)) {
         warnAt('消息 @ 了我但被过滤', {
           群: ev.group_id,
           人: ev.user_id,
@@ -682,7 +729,7 @@ export class OnebotTransport implements Transport {
     const isPrivate = ev.message_type === 'private'
     const gid = String(ev.group_id ?? '')
     const uid = String(ev.user_id ?? '')
-    const addressed = isPrivate || isAddressed(ev, this.opts.botNames)
+    const addressed = isPrivate || isAddressed(ev, this.opts.botNames, this.opts.ownIds)
     // 刚才正在跟它说话的人，不 @ 也算接着聊，不算"突然插话"
     const followUp = !isPrivate && !addressed && isRecentTalker(this.opts, gid, uid)
     // 只在**它要回应这条**时才记"刚跟它说过话"。
@@ -690,7 +737,11 @@ export class OnebotTransport implements Transport {
     // 以前是无条件记：11-01 起所有群消息都进 onEvent（为了学群里的说法），
     // 于是任何人随便说一句，2 分钟内他的非 @ 消息都会被 isObserveOnly 当成
     // "接着聊"直接回 —— 「必须 @」形同虚设，还会插话/连回。
-    if (!isPrivate && (addressed || followUp)) markTalker(this.opts, gid, uid)
+    //
+    // 再往前一步：**followUp 命中的这条不再续期**（原来也 mark，等于自证）。
+    // 后果是一次 @ 换来两分钟内每句都必回，群里显得黏人 —— 人不会这样，
+    // 说完会等对方接，没人接就自然停下。只有"真的被叫到"才续期。
+    if (!isPrivate && addressed) markTalker(this.opts, gid, uid)
 
     // 「必须 @」现在只决定**回不回复**，不决定**看不看得见**。
     //
@@ -779,6 +830,7 @@ export class OnebotTransport implements Transport {
     try {
       const data = (await this.callAction(action, params)) as { message_id?: number | string } | null
       const id = data?.message_id
+      this.rememberOwn(id !== undefined && id !== null ? String(id) : undefined)
       return id !== undefined && id !== null ? { messageId: String(id) } : {}
     } catch (err) {
       // 引用失败（被引用那条已撤回/删除，retcode≠0）时去掉引用重发一次：
@@ -787,6 +839,7 @@ export class OnebotTransport implements Transport {
       warnAt('引用发送失败，去掉引用重发', { err: String(err).slice(0, 120) })
       const data = (await this.callAction(action, { ...params, message: plain })) as { message_id?: number | string } | null
       const id = data?.message_id
+      this.rememberOwn(id !== undefined && id !== null ? String(id) : undefined)
       return id !== undefined && id !== null ? { messageId: String(id) } : {}
     }
   }
@@ -805,6 +858,7 @@ export class OnebotTransport implements Transport {
         : { group_id: Number(to.id), message }
     const data = (await this.callAction(action, params)) as { message_id?: number | string } | null
     const id = data?.message_id
+    this.rememberOwn(id !== undefined && id !== null ? String(id) : undefined)
     return id !== undefined && id !== null ? { messageId: String(id) } : {}
   }
 
@@ -961,12 +1015,12 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
  */
 export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   if (ev.message_type === 'private') return false
-  if (isAddressed(ev, opts.botNames)) return false
+  if (isAddressed(ev, opts.botNames, opts.ownIds)) return false
 
   // 明确 @ 了别人：这是在跟那个人说话，不该插嘴。
   // 放在 "刚聊过" 之前 —— 否则上一句刚问过它，下一句「@小明 你试试」
   // 也会被当成接着聊，它回一句"试什么"，对方一脸问号。
-  if (isAtOthers(ev)) return true
+  if (isAtOthers(ev, opts.ownIds)) return true
 
   const gid = String(ev.group_id ?? '')
   const uid = String(ev.user_id ?? '')
@@ -1027,11 +1081,11 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
     const acc = checkAccess(p, gid, userId)
     // 白名单/黑名单的 reason 直接来自 checkAccess，和自己判断保持一致
     if (!acc.ok) return `${acc.reason ?? '权限拒绝'}（群 ${gid} / 人 ${userId}）`
-    if (mustAt && !isAddressed(ev, opts.botNames) && !called && !isRecentTalker(opts, gid, userId)) {
+    if (mustAt && !isAddressed(ev, opts.botNames, opts.ownIds) && !called && !isRecentTalker(opts, gid, userId)) {
       return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
     }
     // 和 isObserveOnly 保持一致：明确 @ 了别人 → 只记录不回复
-    if (isAtOthers(ev)) return '这条 @ 的是别人（不是它），只记录不回复'
+    if (isAtOthers(ev, opts.ownIds)) return '这条 @ 的是别人（不是它），只记录不回复'
     return '未知原因'
   }
 
@@ -1041,7 +1095,7 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   if (opts.memberAllow?.length && !opts.memberAllow.includes(userId)) {
     return `人不在白名单（${userId}）`
   }
-  if (mustAt && !isAddressed(ev, opts.botNames) && !called && !isRecentTalker(opts, gid, userId)) {
+  if (mustAt && !isAddressed(ev, opts.botNames, opts.ownIds) && !called && !isRecentTalker(opts, gid, userId)) {
     return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
   }
   return '未知原因'
@@ -1064,8 +1118,14 @@ function markTalker(opts: OnebotOptions, groupId: string, userId: string): void 
   }
 }
 
-/** 这条消息有没有 @ 它。数组格式和字符串 CQ 码格式都认。 */
-export function isAddressed(ev: OBEvent, botNames: string[] = []): boolean {
+/**
+ * 这条消息有没有 @ 它 / 叫它名字 / 引用它说过的话。
+ *
+ * 引用这一条是后加的：群里有人直接「回复」它刚才那句、但不 @，
+ * 按原来的判断算"没叫它"，于是永远不回 —— 而这在 QQ 群里是最常见的
+ * 追问方式之一。谁被引用了只能靠 ownIds 反查（reply 段不带发送人）。
+ */
+export function isAddressed(ev: OBEvent, botNames: string[] = [], ownIds?: Set<string>): boolean {
   if (ev.message_type === 'private') return true
   const selfId = String(ev.self_id ?? '').trim()
   const segs = messageSegments(ev.message)
@@ -1073,6 +1133,9 @@ export function isAddressed(ev: OBEvent, botNames: string[] = []): boolean {
   if (selfId && segs.some((s) => s.type === 'at' && (s.data['qq'] ?? '').trim() === selfId)) {
     return true
   }
+  // 引用的是它自己发过的消息 → 等于在跟它说话
+  const replyId = replyTargetId(ev.message)
+  if (replyId && ownIds?.has(replyId)) return true
   // 群里**直接叫它的名字**也算被叫到，和 @ 同级。
   // 以前名字只参与 rejectReason 的"要不要 @ 才能说话"，不参与 addressed，
   // 所以"小鲸鱼在吗"这种被当成普通群聊去打分，它可能装没看见。
@@ -1093,8 +1156,12 @@ export function isAddressed(ev: OBEvent, botNames: string[] = []): boolean {
  *
  * @全体成员 也算"不是单独叫它"：群公告式消息不该触发它接话。
  */
-export function isAtOthers(ev: OBEvent): boolean {
+export function isAtOthers(ev: OBEvent, ownIds?: Set<string>): boolean {
   if (ev.message_type === 'private') return false
+  // 引用的是别人的话 → 这是在跟那个人说，同样不该抢答。
+  // （引用的如果是它自己，isAddressed 已经先命中，走不到这里）
+  const replyId = replyTargetId(ev.message)
+  if (replyId && ownIds && !ownIds.has(replyId)) return true
   const selfId = String(ev.self_id ?? '').trim()
   for (const s of messageSegments(ev.message)) {
     if (s.type !== 'at') continue

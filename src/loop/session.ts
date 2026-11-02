@@ -25,6 +25,16 @@ export interface Session {
   key: string
   /** 最近的历史原文 */
   turns: Turn[]
+  /**
+   * 群里的「旁听」记录：没叫它、它也没回的那些话。
+   *
+   * 为什么要单独存、不塞进 turns：
+   *   turns 是"对话"（一问一答），旁听是"背景"。混在一起模型会以为自己
+   *   参与了那些对话，甚至在没人问它时接着答。
+   *   但完全不存又不行 —— 它就成了"只在被叫的那一瞬间才存在"，
+   *   接不上群里刚才在聊什么（用户反馈的"没联系上下文"）。
+   */
+  heard?: Turn[]
   /** 滚动摘要，默认空串 */
   summary: string
   /** 摘要最后更新时间（毫秒），默认 0 */
@@ -56,12 +66,13 @@ export function sessionPath(key: string): string {
 
 const sessions = new Map<string, Session>()
 
-const KNOWN_FIELDS = new Set(['key', 'turns', 'summary', 'summaryUpdatedAt', 'summaryCursor'])
+const KNOWN_FIELDS = new Set(['key', 'turns', 'heard', 'summary', 'summaryUpdatedAt', 'summaryCursor'])
 
 function emptySession(key: string): Session {
   return {
     key,
     turns: [],
+    heard: [],
     summary: '',
     summaryUpdatedAt: 0,
     summaryCursor: 0,
@@ -89,6 +100,9 @@ function normalizeSession(key: string, raw: Record<string, unknown>): Session {
     key,
     turns: Array.isArray(raw['turns'])
       ? raw['turns'].filter(isTurn).map((t) => ({ role: t.role, content: t.content, at: t.at }))
+      : [],
+    heard: Array.isArray(raw['heard'])
+      ? raw['heard'].filter(isTurn).map((t) => ({ role: t.role, content: t.content, at: t.at }))
       : [],
     summary: typeof raw['summary'] === 'string' ? raw['summary'] : '',
     summaryUpdatedAt: finiteNumber(raw['summaryUpdatedAt'], 0),
@@ -139,6 +153,7 @@ export function saveSession(session: Session): void {
   const ordered: Record<string, unknown> = {
     key: session.key,
     turns: session.turns,
+    heard: session.heard ?? [],
     summary: session.summary,
     summaryUpdatedAt: session.summaryUpdatedAt,
     summaryCursor: session.summaryCursor,
@@ -209,6 +224,32 @@ export function pushTurn(key: string, turn: Turn, maxTurns = 60): void {
 
 export function clearSessions(): void {
   sessions.clear()
+}
+
+/**
+ * 记一条「旁听」：群里别人说的话，没叫它、它也没回。
+ *
+ * 只保留最近 max 条。为什么不无限留：
+ * 旁听是背景信息，越老越没用；而且群聊消息量远大于对话，不设上限会把
+ * prompt 撑爆。
+ */
+export function pushHeard(key: string, turn: Turn, max = 12): void {
+  let session = sessions.get(key)
+  if (!session) session = loadSession(key)
+  const heard = session.heard ?? (session.heard = [])
+  heard.push(turn)
+  const keep = Math.max(1, Math.floor(max))
+  while (heard.length > keep) heard.shift()
+  try {
+    saveSession(session)
+  } catch {
+    /* 写不进去不影响这一轮 */
+  }
+}
+
+/** 取最近旁听到的几句话（老的在前） */
+export function getHeard(key: string): Turn[] {
+  return sessions.get(key)?.heard ?? []
 }
 
 /** 清理长时间没说话的会话，防止 Map 无限增长 */
