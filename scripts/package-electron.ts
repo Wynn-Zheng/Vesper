@@ -189,67 +189,15 @@ async function main(): Promise<void> {
       console.log('  · 跳过 ' + f + '（源文件没有）')
     }
   }
-
-  /* ---------- 5b. 内置 NapCat ---------- */
-  step('内置 NapCat（含 QQ 本体，约 1.2 GB）')
-  // 为什么要内置：从 GitHub 下 release 包实测拉不动（34MB 走镜像也断流）。
-  // 本机 E:\NapCat 那份是完整的（含 QQ 本体），复制过去最可靠，而且离线。
-  // 用户点 NapCat 页签的「一键安装」时，后端把这里复制到数据目录。
-  const NC_SRC = 'E:\\NapCat'
-  const ncDst = join(OUT, 'resources', 'napcat')
-  if (existsSync(NC_SRC)) {
-    mkdirSync(ncDst, { recursive: true })
-    cpSync(NC_SRC, ncDst, {
-      recursive: true,
-      force: true,
-      filter: (src) => {
-        const name = src.replace(/\\/g, '/').split('/').pop() ?? ''
-        const p = src.replace(/\\/g, '/')
-
-        // ---- 运行产物 ----
-        if (/\.log$/i.test(name)) return false
-        if (/\.bak\d*$/i.test(name)) return false
-        if (/\.db-(wal|shm)$/i.test(name)) return false
-        if (name === 'NapCat.Shell.zip') return false // 安装包本身
-
-        // ---- 用户数据，绝对不能带走 ----
-        //
-        // 这些是 NapCat 运行后生成的，里面有你自己的东西：
-        //   webui.json            WebUI 的 token（别人拿到能登你的 WebUI）
-        //   passkey.json          通行密钥
-        //   napcat_<QQ号>.json    账号配置（文件名就暴露 QQ 号）
-        //   onebot11_<QQ号>.json  里面有 WS token
-        //   qrcode.png            登录二维码
-        //   guild1.db             群缓存（群列表、成员）
-        if (/\/config\/webui\.json$/i.test(p)) return false
-        if (/\/config\/passkey\.json$/i.test(p)) return false
-        if (/\/config\/napcat_\d+\.json$/i.test(p)) return false
-        if (/\/config\/napcat_protocol_\d+\.json$/i.test(p)) return false
-        if (/\/config\/onebot11_\d+\.json$/i.test(p)) return false
-        if (/\/cache\/qrcode\.png$/i.test(p)) return false
-        if (/\/guild1\.db$/i.test(p)) return false
-
-        // ---- 开发/安装留下的杂项，运行不需要 ----
-        // 根目录的 OneKey 三件套（我们的 manager.ts 用 NapCatWinBootMain.exe，
-        // 它在 versions\<ver>\resources\app\napcat\ 里，不需要这些）
-        if (dirname(src) === NC_SRC) {
-          if (name === 'QQ.exe') return false // 和 versions 里那份重复，300MB
-          if (name === '7z.exe' || name === '7z.dll') return false // OneKey 解压用
-          if (name === 'NapCatInstaller.exe') return false // OneKey 安装器
-          if (name === 'open-webui.bat') return false
-          if (name.startsWith('启动NapCat')) return false
-          if (name === 'guild1.db') return false
-        }
-        // 目录本身传进来时没有结尾斜杠（E:/NapCat/bootmain），所以两种都匹配
-        if (/\/bootmain(\/|$)/i.test(p)) return false // OneKey 的壳模板
-
-        return true
-      },
-    })
-    ok(`resources/napcat（${dirSizeMB(ncDst).toFixed(0)} MB）`)
-  } else {
-    console.log('  · 跳过：本机没有 ' + NC_SRC)
+  // 附一张示例角色卡：新用户首启不至于面对空白页，直接能看到"一张卡长什么样"。
+  // 用仓库里的模板，**不要**用本机 persona/cards/ 下的真实卡（那是用户自己的数据）。
+  const tplCard = join(ROOT, 'scripts', 'templates', 'example.card.md')
+  if (existsSync(tplCard)) {
+    mkdirSync(join(tpl, 'cards'), { recursive: true })
+    cpSync(tplCard, join(tpl, 'cards', 'example.md'))
+    ok('persona-template/cards/example.md')
   }
+
 
   /* ---------- 6. 不打包 asar，保留裸目录 ---------- */
   step('保留 resources/app 裸目录（不打 asar）')
@@ -271,7 +219,9 @@ async function main(): Promise<void> {
   const UPD = join(ROOT, 'dist-update')
   rmSync(UPD, { recursive: true, force: true })
   mkdirSync(UPD, { recursive: true })
-  // 只打 resources/app（3 MB 左右）；exe 和内置 NapCat 不动
+  // 只打 resources/app（3 MB 左右）。exe、Electron 运行时、二维码等都不动。
+  // NapCat 不再内置（曾内置 1.2 GB，把整个包撑到 1.4 GB）：
+  // 用户首次启动时检测不到就引导去官方装，装完控制台能自动接上。
   execFileSync('tar', ['-czf', join(UPD, 'app.tar.gz'), '-C', join(OUT, 'resources'), 'app'], { stdio: 'inherit' })
   const gz = readFileSync(join(UPD, 'app.tar.gz'))
   const hash = createHash('sha256').update(gz).digest('hex')

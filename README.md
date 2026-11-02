@@ -3,6 +3,36 @@
 > 它不是一个"客服机器人"。它是一个**有记忆、有情绪、有自我认知、会自己反思**的对话体，
 > 通过 NapCat 接进 QQ，跑在你自己电脑上，数据全在本地。
 
+## 下载就能用（Windows）
+
+1. 去 [Releases](https://github.com/你的用户名/qqbot/releases) 下 `QQBot-x.x.x-win-x64.zip`
+2. 解压到任意目录（**别解压到 C 盘根目录或中文路径**）
+3. 双击 `QQBot.exe`
+4. 第一次启动会自动生成配置并打开控制台，按页面引导走
+
+> **安装包没有代码签名**，首次运行 Windows 会弹「未知发布者」。
+> 点「更多信息」→「仍要运行」即可（这是开源项目的常态，不是病毒）。
+
+**它需要两样东西才能连上 QQ：**
+
+| 依赖 | 怎么搞 |
+|---|---|
+| DeepSeek API Key | 控制台「设置 → 模型」里填（[申请地址](https://platform.deepseek.com/)） |
+| NapCat（QQ 协议端） | 控制台「插件 → 接入平台 → QQ → 配置 → 一键安装」，或看 [docs/NapCat安装.md](docs/NapCat安装.md) |
+
+**数据放哪**：安装版是 `%APPDATA%\QQBot\data-root`，绿色版是 exe 同目录的 `data-root\`。
+里面是 `persona/`（人格和记忆）、`data/`（日志和缓存）、`.env`（你的 Key）——**全在本地，不上传**。
+
+## 从源码跑（开发者）
+
+```bash
+npm install
+cp .env.example .env      # 填 DEEPSEEK_API_KEY / OWNER_QQ / 控制台 token
+npm start
+```
+
+完整开发说明见[第九节](#九怎么跑起来)。
+
 ---
 
 ## 一、它到底是什么
