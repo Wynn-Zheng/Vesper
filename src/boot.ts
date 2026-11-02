@@ -2,7 +2,7 @@ import { rand, say, sleep } from './channel/send.ts'
 import type { Rules } from './core/config.ts'
 import { talkValueOf, resolveDebounce } from './core/config.ts'
 import { scoreReply } from './loop/score.ts'
-import { pushHeard } from './loop/session.ts'
+import { popLastAssistant, pushHeard } from './loop/session.ts'
 import { decideQuote, QUOTE_THRESHOLD } from './loop/quote.ts'
 import { decayedMood, loadMood } from './persona/mood.ts'
 import { info, warnAt } from './core/log.ts'
@@ -410,6 +410,15 @@ export function boot(transport: Transport, opts: BootOptions): void {
       return
     }
 
+    // 群每分钟上限：**生成前**先看一眼，已经满了就别花钱了。
+    // 以前只在生成之后拦，等于每条被拦的都是"钱花了、话没发、历史还记着"。
+    // 这里用 peek（只看不计数），真正的计数在发送前那次 allow。
+    if (m.from.kind === 'group' && !peek('g:' + m.from.id, rules.行为.群每分钟上限)) {
+      info(`群 ${m.from.id} 已达每分钟上限，这条不生成`)
+      noteHeard(m, text)
+      return
+    }
+
     try {
       info(`← ${who}：${text.replace(/\n/g, ' / ')}`)
       // 先亮"正在输入"，再慢慢想。
@@ -469,6 +478,11 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
       if (m.from.kind === 'group' && !allow('g:' + m.from.id, rules.行为.群每分钟上限)) {
         info(`群 ${m.from.id} 触发限速，这条不发`)
+        // 这一步已经在生成之后了（钱花了）。但**不能让它留在历史里** ——
+        // 否则它以为自己说过，下一轮会接着自己的话说，甚至引用一句
+        // 对方根本没看见的内容。
+        popLastAssistant(scopeOf(m.from))
+        noteHeard(m, text)
         return
       }
       // 真的要回了，才记一次用户额度

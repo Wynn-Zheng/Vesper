@@ -253,6 +253,27 @@ export function pushHeard(key: string, turn: Turn, max = 12, maxAgeMs = 2 * 3_60
   }
 }
 
+/**
+ * 撤掉最后一条「它说过的话」。
+ *
+ * 用在"回复生成了但最终没发出去"的时候（群限速、发送全失败）。
+ * 不撤的话，历史里留着一条用户从没看到的话，下一轮它以为自己说过 ——
+ * 会接着自己的话说，或者理直气壮地引用一句对方根本没看见的内容。
+ */
+export function popLastAssistant(key: string): boolean {
+  const session = sessions.get(key)
+  if (!session || !session.turns.length) return false
+  const last = session.turns[session.turns.length - 1]
+  if (!last || last.role !== 'assistant') return false
+  session.turns.pop()
+  try {
+    saveSession(session)
+  } catch {
+    /* 写不进去也不影响内存里的正确性 */
+  }
+  return true
+}
+
 /** 取最近旁听到的几句话（老的在前，已按时间窗过滤） */
 export function getHeard(key: string, maxAgeMs = 2 * 3_600_000): Turn[] {
   const heard = sessions.get(key)?.heard

@@ -83,6 +83,56 @@ if (calledMissing.length) {
 const unused = [...routes].filter((r) => r !== '/api/events' && ![...called].some((c) => c === r))
 if (unused.length) console.log(`⚠ 后端有但前端没调：${unused.length} 个（多为面板/插件间接调用，仅供参考）`)
 
+/* ---------- 2.5 HTTP 方法 ---------- */
+// 只比对路径是不够的：曾经有个新设置漏写了 'PUT'（sendJson 默认 POST），
+// 路径对得上、审计一直绿，但那个设置在界面上根本存不进去（404）。
+// 这里把"后端只认 PUT、前端却按默认 POST 发"的调用挑出来。
+const putOnly = new Set<string>()
+const postOnly = new Set<string>()
+for (const f of apiFiles) {
+  const src = readFileSync(f, 'utf8')
+  for (const m of src.matchAll(/req\.method === '(PUT|POST)' && path === '(\/api\/[^']+)'/g)) {
+    if (m[1] === 'PUT') putOnly.add(m[2]!)
+    else postOnly.add(m[2]!)
+  }
+}
+const badMethod: string[] = []
+// 不能用简单的正则截参数：第二个参数里常常有 `x.trim()` 这种括号，
+// 一旦按 `[^)]*` 截断，就会把后面真正的 'PUT' 一起截掉（假阳性）。
+// 这里做一次括号配平扫描，取到完整的实参列表。
+for (let i = script.indexOf("sendJson('"); i >= 0; i = script.indexOf("sendJson('", i + 1)) {
+  const open = script.indexOf('(', i)
+  if (open < 0) continue
+  let depth = 0
+  let end = -1
+  for (let j = open; j < script.length; j++) {
+    const ch = script[j]
+    if (ch === '(') depth++
+    else if (ch === ')') {
+      depth--
+      if (depth === 0) {
+        end = j
+        break
+      }
+    }
+  }
+  if (end < 0) continue
+  const call = script.slice(i, end + 1)
+  const path = /^sendJson\(\s*'(\/api\/[^'?]+)'/.exec(call)?.[1]
+  if (!path) continue
+  const method = /,\s*'(PUT|POST|PATCH|DELETE)'\s*\)$/.exec(call)?.[1] ?? 'POST'
+  if (putOnly.has(path) && !postOnly.has(path) && method !== 'PUT') {
+    badMethod.push(`${path}（用了 ${method}，后端只认 PUT）`)
+  }
+}
+console.log('\n=== HTTP 方法 ===')
+if (badMethod.length) {
+  console.log('❌ 方法对不上（会被 404 或 405 挡掉）：')
+  for (const b of [...new Set(badMethod)]) console.log('   ' + b)
+} else {
+  console.log('✓ sendJson 的写操作方法都对得上')
+}
+
 /* ---------- 3. 数据文件格式 ---------- */
 console.log('\n=== 数据文件 ===')
 function walk(dir: string, out: string[] = []): string[] {

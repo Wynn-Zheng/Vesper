@@ -1873,13 +1873,29 @@ async function decideRequest(id, action, grant) {
 
 async function saveTalkStyle() {
   const val = (id) => $(id)?.value ?? ''
-  const body = {
-    每轮最多条数: Number(val('talk-max')),
-    每条最多字数: Number(val('talk-chars')),
-    引用频率: val('talk-quote'),
-    条间延迟: [Number(val('talk-gap0')), Number(val('talk-gap1'))],
-    回复前延迟: [Number(val('talk-before0')), Number(val('talk-before1'))],
+  // 空输入框不能当 0：Number('') === 0，服务端会把它夹成最小值 1，
+  // 于是"清空重新填"这个动作会把「每条最多字数」直接改成 1（一句一个字）。
+  // 空 = 这一项不改。
+  const numOrUndef = (id) => {
+    const raw = val(id).trim()
+    if (raw === '') return undefined
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : undefined
   }
+  const pairOrUndef = (a, b) => {
+    const x = numOrUndef(a)
+    const y = numOrUndef(b)
+    return x === undefined || y === undefined ? undefined : [x, y]
+  }
+  const body = {
+    每轮最多条数: numOrUndef('talk-max'),
+    每条最多字数: numOrUndef('talk-chars'),
+    引用频率: val('talk-quote'),
+    条间延迟: pairOrUndef('talk-gap0', 'talk-gap1'),
+    回复前延迟: pairOrUndef('talk-before0', 'talk-before1'),
+  }
+  // 去掉 undefined，让服务端走"没传就不改"
+  for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k]
   try {
     const r = await sendJson('/api/talk-style', body, 'PUT')
     const n = r.applied ? Object.keys(r.applied).length : 0
