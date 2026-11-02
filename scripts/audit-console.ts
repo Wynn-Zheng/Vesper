@@ -62,6 +62,16 @@ console.log(`router 定义了 ${routes.size} 个（另有 ${prefixes.length} 个
 const called = new Set(
   Array.from(script.matchAll(/(?:api|getData|sendJson)\(\s*'(\/api\/[^'?]+)/g)).map((m) => m[1]!),
 )
+// console/*.js 里那 40 来个调用以前从没被扫过（拆文件时留下的盲区）。
+// 它们跟 index.html 用同一套后端，一起纳入检查。
+const consoleJs = readdirSync('console').filter((f) => f.endsWith('.js'))
+const jsScripts: Array<{ file: string; src: string }> = consoleJs.map((f) => ({
+  file: `console/${f}`,
+  src: readFileSync(join('console', f), 'utf8'),
+}))
+for (const { src } of jsScripts) {
+  for (const m of src.matchAll(/'(\/api\/[^'?]+)'/g)) called.add(m[1]!.replace(/\/$/, ''))
+}
 
 /**
  * 精确命中，或者被前缀路由接住（如 /api/plugins/list）。
@@ -100,37 +110,41 @@ const badMethod: string[] = []
 // 不能用简单的正则截参数：第二个参数里常常有 `x.trim()` 这种括号，
 // 一旦按 `[^)]*` 截断，就会把后面真正的 'PUT' 一起截掉（假阳性）。
 // 这里做一次括号配平扫描，取到完整的实参列表。
-for (let i = script.indexOf("sendJson('"); i >= 0; i = script.indexOf("sendJson('", i + 1)) {
-  const open = script.indexOf('(', i)
-  if (open < 0) continue
-  let depth = 0
-  let end = -1
-  for (let j = open; j < script.length; j++) {
-    const ch = script[j]
-    if (ch === '(') depth++
-    else if (ch === ')') {
-      depth--
-      if (depth === 0) {
-        end = j
-        break
+function scanSendJson(src: string, label: string): void {
+  for (let i = src.indexOf("sendJson('"); i >= 0; i = src.indexOf("sendJson('", i + 1)) {
+    const open = src.indexOf('(', i)
+    if (open < 0) continue
+    let depth = 0
+    let end = -1
+    for (let j = open; j < src.length; j++) {
+      const ch = src[j]
+      if (ch === '(') depth++
+      else if (ch === ')') {
+        depth--
+        if (depth === 0) {
+          end = j
+          break
+        }
       }
     }
-  }
-  if (end < 0) continue
-  const call = script.slice(i, end + 1)
-  const path = /^sendJson\(\s*'(\/api\/[^'?]+)'/.exec(call)?.[1]
-  if (!path) continue
-  const method = /,\s*'(PUT|POST|PATCH|DELETE)'\s*\)$/.exec(call)?.[1] ?? 'POST'
-  if (putOnly.has(path) && !postOnly.has(path) && method !== 'PUT') {
-    badMethod.push(`${path}（用了 ${method}，后端只认 PUT）`)
+    if (end < 0) continue
+    const call = src.slice(i, end + 1)
+    const path = /^sendJson\(\s*'(\/api\/[^'?]+)'/.exec(call)?.[1]
+    if (!path) continue
+    const method = /,\s*'(PUT|POST|PATCH|DELETE)'\s*\)$/.exec(call)?.[1] ?? 'POST'
+    if (putOnly.has(path) && !postOnly.has(path) && method !== 'PUT') {
+      badMethod.push(`${path}（${label} 用了 ${method}，后端只认 PUT）`)
+    }
   }
 }
+scanSendJson(script, 'index.html')
+for (const { file, src } of jsScripts) scanSendJson(src, file)
 console.log('\n=== HTTP 方法 ===')
 if (badMethod.length) {
   console.log('❌ 方法对不上（会被 404 或 405 挡掉）：')
   for (const b of [...new Set(badMethod)]) console.log('   ' + b)
 } else {
-  console.log('✓ sendJson 的写操作方法都对得上')
+  console.log(`✓ 写操作方法都对得上（index.html + ${jsScripts.length} 个 console/*.js）`)
 }
 
 /* ---------- 3. 数据文件格式 ---------- */
