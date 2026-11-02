@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadRules, type Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
+import { onceAtATime } from '../core/timer.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { distill } from '../memory/distill.ts'
 import { pickForDistill } from '../memory/filter.ts'
@@ -158,9 +159,12 @@ export function startDistiller(opts: DistillerOptions): () => void {
   const interval = opts.intervalMs ?? 30 * 60_000
   let stopped = false
 
+  // 上一轮还没跑完就别再起一轮：一次整理要调模型，慢的时候可能超过 30 分钟
+  // 的间隔，叠加起来会重复花钱、也可能把同一条事实提炼两遍。
+  const runOnce = onceAtATime(() => tick(opts))
   const run = () => {
     if (stopped) return
-    void tick(opts).catch((err) => warnAt('自动整理失败', { err: String(err) }))
+    void runOnce().catch((err) => warnAt('自动整理失败', { err: String(err) }))
   }
 
   // 启动后延迟 1 分钟再第一次跑，避免和启动日志抢

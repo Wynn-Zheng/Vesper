@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { loadRules, stageOf } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
+import { onceAtATime } from '../core/timer.ts'
 import type { Transport } from '../core/transport.ts'
 import type { Target } from '../core/types.ts'
 import type { LlmOptions } from '../llm/types.ts'
@@ -612,9 +613,12 @@ export function startProactive(opts: ProactiveOptions): () => void {
   const interval = opts.intervalMs ?? 30 * 60_000
   let stopped = false
 
+  // 同上：一次尝试要调模型挑由头、再生成，慢的时候会超过间隔。
+  // 叠加起来的结果是**同一个人连着收到两条主动消息** —— 用户会觉得它抽风。
+  const runOnce = onceAtATime(() => attempt(opts))
   const run = () => {
     if (stopped) return
-    void attempt(opts).catch((err) => warnAt('主动消息失败', { err: String(err) }))
+    void runOnce().catch((err) => warnAt('主动消息失败', { err: String(err) }))
   }
 
   // 启动后 2 分钟先检查一次（错开其它定时器），不用等满 30 分钟
