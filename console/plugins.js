@@ -13,6 +13,7 @@
   let ROWS = [] // 最近一次拉到的插件列表
   let UPDATES = {} // 插件 id -> 更新信息
   let SHELL = false // 骨架是否已经画过
+  let PLUGIN_ERRORS = [] // 最近一次拉列表时后端报的插件问题（扫描错误 + 加载错误）
 
   /* ============================================================
    * 请求 + 错误提示
@@ -112,6 +113,13 @@
       'display:none;margin-top:8px;color:#f85149;font-size:12px;line-height:1.5;word-break:break-all'
     card.appendChild(err)
 
+    // 插件加载问题提示：不是"请求失败"，而是"这个插件为什么没出现在列表里 / 为什么没加载"
+    const loadErrs = el('div', 'hint', '')
+    loadErrs.id = 'plugins-load-errors'
+    loadErrs.style.cssText =
+      'display:none;margin-top:8px;color:#d29922;font-size:12px;line-height:1.6;word-break:break-all'
+    card.appendChild(loadErrs)
+
   // 两组：工具插件（type=tool）/ 已安装（其余）
   // 之前是一张表把所有插件平铺，现在按 v2 设计分组
   const g1 = el('div', 'grp')
@@ -149,6 +157,9 @@
     const list = Array.isArray(d)
       ? d
       : (d && (d.plugins || (d.data && d.data.plugins))) || []
+    // 顺带把"为什么没加载"也带出来（扫描错误 + 加载错误）
+    const errs = Array.isArray(d) ? [] : (d && (d.errors || (d.data && d.data.errors))) || []
+    PLUGIN_ERRORS = Array.isArray(errs) ? errs : []
     return Array.isArray(list) ? list : []
   }
 
@@ -156,6 +167,38 @@
   async function reloadList() {
     ROWS = await fetchPlugins()
     drawRows()
+    drawPluginErrors()
+  }
+
+  /**
+   * 列表顶部提示"有 N 个插件没加载/没出现"。
+   *
+   * 以前完全看不到：plugin.json 写坏的目录在列表里**根本不出现**，
+   * 加载失败只显示"未加载"，原因只有翻 data/logs/*.jsonl 才知道。
+   */
+  function drawPluginErrors() {
+    const box = document.getElementById('plugins-load-errors')
+    if (!box) return
+    if (!PLUGIN_ERRORS.length) {
+      box.style.display = 'none'
+      box.textContent = ''
+      return
+    }
+    box.style.display = ''
+    box.innerHTML = ''
+    const title = el('div', '', `有 ${PLUGIN_ERRORS.length} 个插件有问题：`)
+    title.style.cssText = 'font-weight:600;margin-bottom:6px'
+    box.appendChild(title)
+    for (const e of PLUGIN_ERRORS.slice(0, 6)) {
+      const line = el('div', '', `${e.id}：${e.message}`)
+      // 真正的失败（扫不出来 / 加载失败）用红色，只是"建议改一下"的用琥珀色
+      line.style.cssText =
+        e.kind === 'warn' ? 'opacity:.85;margin:2px 0;color:#d29922' : 'margin:2px 0;color:#f0883e'
+      box.appendChild(line)
+    }
+    if (PLUGIN_ERRORS.length > 6) {
+      box.appendChild(el('div', '', `…还有 ${PLUGIN_ERRORS.length - 6} 条，见「日志」页`))
+    }
   }
 
 /** 一张插件卡（工具插件 / 已安装共用） */

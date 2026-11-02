@@ -131,7 +131,7 @@ export function createPluginService(options: {
       method: 'GET',
       path: '/list',
       handler: safeHandler(async () => {
-        const { plugins } = await scanPlugins(pluginsRoot)
+        const { plugins, errors: scanErrors, warnings: scanWarnings } = await scanPlugins(pluginsRoot)
         const loadedIds = new Set(
           host
             .list()
@@ -159,7 +159,26 @@ export function createPluginService(options: {
             : { configSchema: plugin.manifest.configSchema as Record<string, unknown> }),
         }))
 
-        return { ok: true, data: { plugins: list } }
+        return {
+          ok: true,
+          data: {
+            plugins: list,
+            // 让"为什么没加载"看得见。
+            //
+            // 以前只返回成功扫描到的插件：plugin.json 写坏的目录在列表里
+            // **根本不出现**，加载失败的只显示"未加载"，原因只有翻
+            // data/logs/*.jsonl 才能看到。用户无从下手（实测 BUG3-27）。
+            // 现在把扫描错误 + 每个插件的最近加载错误一起交出去，前端在
+            // 列表顶部提示。
+            errors: [
+              ...scanErrors.map((e) => ({ id: e.id, message: e.message, kind: 'scan' as const })),
+              // 提示（不是失败）：比如目录名和清单 id 不一致。前端用不同颜色显示
+              ...scanWarnings.map((e) => ({ id: e.id, message: e.message, kind: 'warn' as const })),
+              // host.errors 是 [{id, message}] 数组
+              ...host.errors.map((e) => ({ id: e.id, message: e.message, kind: 'load' as const })),
+            ],
+          },
+        }
       }),
     },
     {
@@ -215,11 +234,17 @@ export function createPluginService(options: {
           return invalidBody('purgeData')
         }
 
-        // 已加载的插件必须先卸载，避免文件删掉了内存里还留着
+        // 已加载的插件必须先卸载，避免文件删掉了内存里还留着。
+        //
+        // ⚠ deactivate 抛错只记 warning，**不能中止卸载**：
+        // unload 的语义已经是"尽力反激活 + 强制从内存移除"，失败时内存里
+        // 其实已经没了。以前把这种失败当整次失败返回，用户看到"卸载失败"
+        // 但插件已经不在跑，再点一次才成功（实测 BUG3-26）。
+        const warnings: string[] = []
         if (isLoaded(id)) {
           const unloaded = await host.unload(id)
           if (!unloaded.ok && unloaded.error !== 'not loaded') {
-            return { ok: false, error: unloaded.error ?? '卸载插件失败' }
+            warnings.push(unloaded.error ?? '卸载时反激活失败（已强制移除）')
           }
         }
 
@@ -239,7 +264,7 @@ export function createPluginService(options: {
           /* 配置清理失败不影响卸载本身 */
         }
 
-        return { ok: true, data: { id } }
+        return { ok: true, data: { id, ...(warnings.length ? { warnings } : {}) } }
       }),
     },
     {
@@ -256,10 +281,11 @@ export function createPluginService(options: {
 
         // 停用前先卸载；启用后立刻加载 —— 之前只写标记不 load,
         // 控制台提示"启用成功"但插件根本没在跑，得用户自己再点一次重载。
+        const warnings: string[] = []
         if (!enabled && isLoaded(id)) {
           const unloaded = await host.unload(id)
           if (!unloaded.ok && unloaded.error !== 'not loaded') {
-            return { ok: false, error: unloaded.error ?? '卸载插件失败' }
+            warnings.push(unloaded.error ?? '停用时反激活失败（已强制移除）')
           }
         }
 
@@ -269,7 +295,7 @@ export function createPluginService(options: {
           const loaded = await host.load(id)
           if (!loaded.ok) return { ok: false, error: loaded.error ?? '插件已启用，但加载失败' }
         }
-        return { ok: true, data: { id, enabled } }
+        return { ok: true, data: { id, enabled, ...(warnings.length ? { warnings } : {}) } }
       }),
     },
     {

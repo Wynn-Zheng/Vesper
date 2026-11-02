@@ -198,6 +198,9 @@ export function createHost(options: {
   /** 记录错误：既进 errors 数组，也交给 logger，方便外部排查 */
   function recordError(id: string, message: string): void {
     errors.push({ id, message })
+    // 只留最近 50 条：这个数组会通过 /api/plugins/list 交给前端，
+    // 不设上限的话长期运行会一直涨（而且前端也没法显示几百条）
+    if (errors.length > 50) errors.splice(0, errors.length - 50)
     try {
       logger('error', `[plugin:${id}] ${message}`)
     } catch {
@@ -292,7 +295,27 @@ export function createHost(options: {
       clearTimeout: (token: PluginTimer) => untrack(token),
       registerTool: (tool: PluginTool) => {
         const name = String(tool?.name || '').trim()
-        if (!name) { recordError(id, 'registerTool 少了 name，忽略') ; return }
+        if (!name) {
+          recordError(id, 'registerTool 少了 name，忽略')
+          return
+        }
+        // 工具名会原样进模型的 function-calling。OpenAI/DeepSeek 对它有限制
+        // （^[a-zA-Z0-9_-]{1,64}$），不合法会让**整条请求 400** ——
+        // 只要这个插件加载着，bot 的所有回复都失败，而错误只出现在模型层，
+        // 用户看到的是"它不说话了"。所以在这里就挡掉。
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+          recordError(
+            id,
+            `工具名不合法：${JSON.stringify(name)}（只能用小写字母、数字、下划线和连字符，1-64 个字符），已忽略`,
+          )
+          return
+        }
+        // parameters 必须是 JSON Schema 对象，否则模型侧也会报参数错
+        const params = tool?.parameters
+        if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+          recordError(id, `工具 ${name} 的 parameters 必须是对象（JSON Schema），已忽略`)
+          return
+        }
         if (pluginTools.has(name)) {
           recordError(id, `工具重名，已忽略：${name}（已被 ${pluginTools.get(name)!.pluginId} 注册）`)
           return

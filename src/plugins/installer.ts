@@ -3,8 +3,8 @@
  * 所有失败都通过返回值报告，不向调用方抛异常。
  */
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { extname, join, resolve } from 'node:path'
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { compareVersions, parseManifest } from './manifest.ts'
 import { scanPlugins } from './registry.ts'
 
@@ -175,6 +175,15 @@ export async function installPlugin(options: {
 
     // 4. 目标目录已存在且未允许覆盖时，直接拒绝
     const targetDir = join(pluginsRoot, manifest.id)
+
+    // 源和目标重叠时直接拒绝 —— 否则下面"先 rm 目标、再 cp 源"会把源自己删掉。
+    // 实测：用户在「安装本地插件」里选中**已安装目录本身**并允许覆盖 →
+    // rm 掉目标 → cp 时源已经不存在 → 插件目录被删、数据还在，像"插件消失了"。
+    const relToTarget = relative(targetDir, sourcePath)
+    if (relToTarget === '' || (!relToTarget.startsWith('..') && !isAbsolute(relToTarget))) {
+      return { ok: false, error: '要安装的目录就是已安装的目标目录（或它的子目录），请换个目录' }
+    }
+
     if (existsSync(targetDir) && options.allowOverwrite !== true) {
       return { ok: false, error: 'already installed' }
     }
@@ -187,15 +196,21 @@ export async function installPlugin(options: {
     let wasDisabled = false
     if (existsSync(targetDir)) {
       wasDisabled = existsSync(disabledMark)
-      await rm(targetDir, { recursive: true, force: true })
     }
 
     // 3. 递归复制插件目录
+    //
+    // 先复制到同级临时目录，成功后再 rename 成正式目录：这样"复制到一半失败"
+    // 不会留下半个插件目录（以前直接 cp 到目标、失败再 rm，中间那一瞬扫描可见，
+    // 而且 rm 目标在 cp 之前 —— 源和目标相同时就把源删了）。
+    const stagingDir = join(pluginsRoot, `.staging-${manifest.id}-${Date.now()}`)
     try {
-      await cp(sourcePath, targetDir, { recursive: true, force: true })
-    } catch (err) {
-      // 复制中途失败时清掉半成品，不给后续扫描留下坏目录
+      await cp(sourcePath, stagingDir, { recursive: true, force: true })
       await rm(targetDir, { recursive: true, force: true }).catch(() => undefined)
+      await rename(stagingDir, targetDir)
+    } catch (err) {
+      await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined)
+      // 注意：这里**不要**再 rm targetDir —— 失败时旧版本可能还在（rename 之前）
       return { ok: false, error: `复制插件文件失败：${errorMessage(err)}` }
     }
 
@@ -225,6 +240,37 @@ export async function installPlugin(options: {
 }
 
 /**
+ * 找到某个插件 id 对应的**真实目录**。
+ *
+ * 为什么不能直接 `join(pluginsRoot, id)`：手动安装/复制目录时，
+ * 目录名不一定等于清单里的 id（文档还教过"复制个目录改名"）。
+ * 按 id 拼路径会找不到 → 卸载/停用永远返回 not installed，
+ * 插件删不掉也停不了（实测 BUG3-24）。
+ * 先看同名的，找不到再扫一遍看哪个目录的清单 id 是它。
+ */
+async function findPluginDir(pluginsRoot: string, id: string): Promise<string | null> {
+  const direct = join(pluginsRoot, id)
+  if (existsSync(direct)) return direct
+  try {
+    const entries = await readdir(pluginsRoot, { withFileTypes: true })
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue
+      const dir = join(pluginsRoot, e.name)
+      try {
+        const raw = await readFile(join(dir, 'plugin.json'), 'utf8')
+        const parsed = parseManifest(JSON.parse(raw.replace(/^\uFEFF/, '')))
+        if (parsed.ok && parsed.manifest.id === id) return dir
+      } catch {
+        /* 这个目录坏了，跳过 */
+      }
+    }
+  } catch {
+    /* 根目录读不了就当没找到 */
+  }
+  return null
+}
+
+/**
  * 卸载插件：删除插件目录；purgeData 为 true 且提供 dataRoot 时一并删除插件数据目录。
  */
 export async function uninstallPlugin(options: {
@@ -236,10 +282,13 @@ export async function uninstallPlugin(options: {
   if (!isSafeId(options.id)) return { ok: false, error: '非法的插件 id' }
 
   const pluginsRoot = resolve(options.pluginsRoot)
-  const targetDir = join(pluginsRoot, options.id)
+  // 按扫描到的**真实目录**删，不按 id 拼路径：
+  // 手动安装/复制目录时目录名可能不等于清单 id，按 id 拼会永远找不到 →
+  // 插件删不掉（实测 BUG3-24）。
+  const targetDir = await findPluginDir(pluginsRoot, options.id)
 
   try {
-    if (!existsSync(targetDir)) return { ok: false, error: 'not installed' }
+    if (!targetDir) return { ok: false, error: 'not installed' }
 
     await rm(targetDir, { recursive: true, force: true })
 
@@ -267,11 +316,12 @@ export async function setEnabled(options: {
 }): Promise<{ ok: boolean; error?: string }> {
   if (!isSafeId(options.id)) return { ok: false, error: '非法的插件 id' }
 
-  const pluginDir = join(resolve(options.pluginsRoot), options.id)
-  const marker = join(pluginDir, 'disabled')
+  // 同 uninstall：目录名可能不等于清单 id，按真实目录找
+  const pluginDir = await findPluginDir(resolve(options.pluginsRoot), options.id)
+  const marker = pluginDir ? join(pluginDir, 'disabled') : ''
 
   try {
-    if (!existsSync(pluginDir)) return { ok: false, error: 'not installed' }
+    if (!pluginDir) return { ok: false, error: 'not installed' }
 
     if (options.enabled) {
       // 文件不存在时 rm + force 也不会报错
