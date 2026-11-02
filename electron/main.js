@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Electron 主进程。
  *
  * 职责只有三件：
@@ -440,6 +440,7 @@ function createWindow(failInfo = null) {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0d1117',
+    autoHideMenuBar: true,
     title: 'Vesper 控制台 · 小暮',
     // 窗口/任务栏图标。exe 本身的图标是 PE 资源，改名改不了（要 rcedit），
     // 但运行时图标用这个就够看了。
@@ -549,6 +550,9 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
+  // 去掉默认的 File/Edit/View/Window/Help 菜单栏 —— 这是个控制台窗口，
+  // 没有任何一项对用户有用，反而占了 24px 还显得像半成品。
+  Menu.setApplicationMenu(null)
   trace('app ready；isPackaged=' + app.isPackaged + ' resources=' + process.resourcesPath)
   trace('APP_ROOT=' + APP_ROOT)
   trace('DATA_ROOT=' + DATA_ROOT)
