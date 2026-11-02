@@ -467,14 +467,29 @@ async function loadModel() {
             return
           }
           latest = r.latest
+          // 两个渠道：官网给的是 app.tar.gz（能一键增量更新）；
+          // GitHub Release 给的是整包 zip，只能跳过去手动下载 —— 文案要说清楚。
+          const fromGh = r.latest.source === 'github'
           if (!r.hasNew) {
             line.textContent = '已是最新版本（' + r.latest.version + '）'
             applyBtn.style.display = 'none'
             return
           }
           line.textContent =
-            '发现新版本 ' + r.latest.version + (r.latest.git ? '（' + r.latest.git + '）' : '') + '，可以更新'
+            '发现新版本 ' +
+            r.latest.version +
+            (r.latest.git ? '（' + r.latest.git + '）' : '') +
+            (fromGh ? '　来自 GitHub Release，需要手动下载整包' : '，可以一键更新')
+          applyBtn.textContent = fromGh ? '去下载' : '立即更新'
           applyBtn.style.display = ''
+          // GitHub 渠道：点按钮直接打开下载页，不走 downloadUpdate
+          if (fromGh) {
+            applyBtn.onclick = () => {
+              const url = r.latest.pageUrl || 'https://github.com/Wynn-Zheng/Vesper/releases/latest'
+              window.open(url, '_blank', 'noopener')
+              line.textContent = '已打开下载页；下载后解压覆盖安装目录即可（数据不会丢）'
+            }
+          }
         } catch (e) {
           line.textContent = '检查失败：' + e.message
         } finally {
