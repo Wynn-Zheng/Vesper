@@ -4,10 +4,10 @@
   "type": "module",
   "version": "0.1.6",
   "description": "Vesper（小暮）—— 有记忆、有情绪、会自己反思的 QQ 陪伴体",
-  "author": "wynn_zheng <https://github.com/wynn-zheng>",
+  "author": "wynn_zheng <https://github.com/Wynn-Zheng>",
   "license": "AGPL-3.0-or-later",
-  "homepage": "https://github.com/wynn-zheng/vesper",
-  "repository": { "type": "git", "url": "https://github.com/wynn-zheng/vesper.git" },
+  "homepage": "https://github.com/Wynn-Zheng/vesper",
+  "repository": { "type": "git", "url": "https://github.com/Wynn-Zheng/vesper.git" },
   "contributors": [],
   "engines": {
     "node": ">=22.6"

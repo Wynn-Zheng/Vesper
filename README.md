@@ -5,9 +5,9 @@
 
 ## 下载就能用（Windows）
 
-1. 去 [Releases](https://github.com/你的用户名/qqbot/releases) 下 `QQBot-x.x.x-win-x64.zip`
+1. 去 [Releases](https://github.com/Wynn-Zheng/Vesper/releases) 下 `Vesper-x.x.x-win-x64.zip`
 2. 解压到任意目录（**别解压到 C 盘根目录或中文路径**）
-3. 双击 `QQBot.exe`
+3. 双击 `Vesper.exe`
 4. 第一次启动会自动生成配置并打开控制台，按页面引导走
 
 > **安装包没有代码签名**，首次运行 Windows 会弹「未知发布者」。
@@ -20,7 +20,7 @@
 | DeepSeek API Key | 控制台「设置 → 模型」里填（[申请地址](https://platform.deepseek.com/)） |
 | NapCat（QQ 协议端） | 控制台「插件 → 接入平台 → QQ → 配置 → 一键安装」，或看 [docs/NapCat安装.md](docs/NapCat安装.md) |
 
-**数据放哪**：安装版是 `%APPDATA%\QQBot\data-root`，绿色版是 exe 同目录的 `data-root\`。
+**数据放哪**：安装版是 `%APPDATA%\Vesper\data-root`，绿色版是 exe 同目录的 `data-root\`。
 里面是 `persona/`（人格和记忆）、`data/`（日志和缓存）、`.env`（你的 Key）——**全在本地，不上传**。
 
 ## 从源码跑（开发者）
@@ -432,7 +432,7 @@ Electron 的 asar 补丁会去解析 QQ 自己的 `application.asar`，报 `Inva
 ### 8.2 打包后
 
 ```
-%APPDATA%\qqbot\data-root\
+%APPDATA%\Vesper\data-root\
 ├── .env                       token + API Key
 ├── persona\
 │   ├── self.md                它的自述（含所有权）
@@ -500,7 +500,7 @@ npm start
 
 ```powershell
 node scripts/package-electron.ts
-# 输出 release\QQBot\QQBot.exe（约 1.47 GB，含 NapCat）
+# 输出 release\Vesper\Vesper.exe（约 232 MB，不含 NapCat）
 ```
 
 ---
