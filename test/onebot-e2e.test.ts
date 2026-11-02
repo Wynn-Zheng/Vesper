@@ -80,6 +80,7 @@ const tick = (ms = 150) => new Promise((r) => setTimeout(r, ms))
 async function harness(
   mode: '只听' | '熟人续话' | '自己判断' = '熟人续话',
   rulesOverride?: () => Rules,
+  replyFn?: (m: { text: string; from: { kind: string; id: string } }) => Promise<string> | string,
 ) {
   const port = await freePort()
   const opts: OnebotOptions = {
@@ -96,7 +97,7 @@ async function harness(
     timeoutMs: 3000,
   }
   const transport = new OnebotTransport(opts)
-  boot(transport, { getRules: rulesOverride ?? rules, reply: () => '收到' })
+  boot(transport, { getRules: rulesOverride ?? rules, reply: replyFn ?? (() => '收到') })
   await transport.start()
 
   // 假的 NapCat：连上来，把收到的 action 都记下来，并一律回 ok
@@ -403,6 +404,130 @@ test('边界：防抖开着时两人先后说话，合成一轮只回一次', as
     h.push(groupAt('我接一句', 9002))
     await tick(900)
     assert.equal(h.sent().length, 1, '一批只该走一次生成、发一次')
+  } finally {
+    await h.close()
+  }
+})
+
+/* ---------------- 并发：它正在回话时又来了新消息 ---------------- */
+
+test('并发：同一会话两轮不交叠，按顺序回', async () => {
+  clearSessions()
+  const order: string[] = []
+  const h = await harness('熟人续话', undefined, async (m) => {
+    order.push('start:' + m.text)
+    await tick(250)
+    order.push('end:' + m.text)
+    return 'R:' + m.text
+  })
+  try {
+    h.push(groupAt('第一句'))
+    await tick(80) // 第一句还在"想"，第二句就到了
+    h.push(groupAt('第二句', 9002))
+    await tick(1200)
+
+    // 不能交叠：必须是 start→end→start→end，不能 start→start→end→end
+    // 注意 m.text 里带着 @ 段解析出来的前缀（@3），所以用 endsWith 比。
+    assert.equal(order.length, 4, JSON.stringify(order))
+    assert.ok(order[0]!.startsWith('start:') && order[0]!.endsWith('第一句'), JSON.stringify(order))
+    assert.ok(order[1]!.startsWith('end:') && order[1]!.endsWith('第一句'), '第一轮要先结束')
+    assert.ok(order[2]!.startsWith('start:') && order[2]!.endsWith('第二句'), '第二轮才能开始')
+    assert.ok(order[3]!.startsWith('end:') && order[3]!.endsWith('第二句'))
+    const out = h.sent()
+    assert.equal(out.length, 2, '两句都要回')
+    assert.ok(out[0]!.includes('第一句'), '先回先到的')
+    assert.ok(out[1]!.includes('第二句'))
+  } finally {
+    await h.close()
+  }
+})
+
+test('并发：群聊在慢慢回的时候，私聊不被堵住', async () => {
+  clearSessions()
+  const h = await harness('熟人续话', undefined, async (m) => {
+    // 群里那条故意慢，私聊那条快
+    if (m.from.kind === 'group') await tick(600)
+    return 'R:' + m.text
+  })
+  try {
+    h.push(groupAt('群里的话'))
+    await tick(60)
+    h.push({
+      message_type: 'private',
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [{ type: 'text', data: { text: '私聊的话' } }],
+    })
+    await tick(400)
+
+    const privateSends = h.seen.filter((s) => s.action === 'send_private_msg')
+    assert.equal(privateSends.length, 1, '私聊不该等群聊那条慢回复')
+    assert.equal(h.seen.filter((s) => s.action === 'send_group_msg').length, 0, '群里那条还在想')
+  } finally {
+    await h.close()
+  }
+})
+
+test('并发：三条一起进来，最终三条都回、且顺序不乱', async () => {
+  clearSessions()
+  const h = await harness('熟人续话', undefined, async (m) => {
+    await tick(120)
+    return 'R:' + m.text
+  })
+  try {
+    // 防抖关着，所以每条各成一轮，但要走同一条发送链
+    for (const [i, t] of ['一', '二', '三'].entries()) {
+      h.push(groupAt(t + '号', 9001 + i))
+      await tick(20)
+    }
+    await tick(2000)
+    const out = h.sent()
+    assert.equal(out.length, 3, `三条都要回，实际 ${JSON.stringify(out)}`)
+    assert.ok(out[0]!.includes('一号') && out[1]!.includes('二号') && out[2]!.includes('三号'))
+  } finally {
+    await h.close()
+  }
+})
+
+test('真链路：图片 + 文字混发 → 照常回（有文字就是在说话）', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [
+        { type: 'at', data: { qq: '3' } },
+        { type: 'image', data: { file: 'a.jpg', url: 'http://127.0.0.1:9/x.jpg' } },
+        { type: 'text', data: { text: ' 看这个' } },
+      ],
+    })
+    await tick(600)
+    assert.equal(h.sent().length, 1)
+  } finally {
+    await h.close()
+  }
+})
+
+test('真链路：同时 @ 它和别人 → 仍然回（它自己被叫到了）', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [
+        { type: 'at', data: { qq: '3' } },
+        { type: 'at', data: { qq: '777' } },
+        { type: 'text', data: { text: ' 你们俩看看' } },
+      ],
+    })
+    await tick(500)
+    assert.equal(h.sent().length, 1)
   } finally {
     await h.close()
   }

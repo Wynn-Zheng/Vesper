@@ -179,3 +179,19 @@ test('群聊：这条消息会被记进对话历史（下次能接上）', async
     await llm.close()
   }
 })
+
+test('长消息：prompt 里会被截断并标出来（不会把整篇塞进去）', async () => {
+  clearSessions()
+  const llm = await fakeLlm()
+  try {
+    await generateReply(groupMsg({ text: '啊'.repeat(5000) }), {
+      rules: DEFAULTS,
+      llm: { apiKey: 'k', baseUrl: llm.url, model: 'm' },
+    })
+    const text = allText(llm.bodies()[0] ?? '')
+    assert.ok(text.length < 12000, `整段 prompt 不该被撑爆，实际 ${text.length}`)
+    assert.ok(text.includes('这条太长了'), '截断了就要标出来，别让模型以为看完了')
+  } finally {
+    await llm.close()
+  }
+})
