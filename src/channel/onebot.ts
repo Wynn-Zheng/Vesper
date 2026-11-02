@@ -1169,24 +1169,20 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   if (!allowGroup) return '群聊总开关没开（控制台「设置 → 权限」里打开，或 .env 的 ALLOW_GROUP=true）'
 
   const gid = String(ev.group_id ?? '')
-  const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
-  const called = mentionsName(text, names)
-  const mustAt = opts.getPolicy ? opts.getPolicy().requireAt : opts.requireAt !== false
-  const mode = groupModeOf(opts)
 
+  // ⚠ 只保留**真实可达**的原因。
+  //
+  // 这个函数只在 shouldHandle 返回 false 时被调用，而 shouldHandle 在
+  // "权限通过 + 有内容"之后就 return true 了 —— 也就是说
+  // 「群聊模式是只听/自己判断」「要求 @ 或叫名字」这些分支**永远走不到**。
+  // 以前留着它们，日志里就永远只可能是黑名单/群开关/纯图这类原因，
+  // 而排障的人会以为"是模式挡的"（其实真实原因在 boot 那条「这次不接（N 分）」）。
+  // 「这一轮为什么没回」的诊断统一由 boot 输出。
   if (opts.getPolicy) {
     const p = opts.getPolicy()
     const acc = checkAccess(p, gid, userId)
-    // 白名单/黑名单的 reason 直接来自 checkAccess，和自己判断保持一致
     if (!acc.ok) return `${acc.reason ?? '权限拒绝'}（群 ${gid} / 人 ${userId}）`
-    // 和 isObserveOnly 的顺序保持一致，否则日志会撒谎
-    if (isAtOthers(ev, opts.ownIds)) return '这条 @ 的是别人（不是它），只记录不回复'
-    if (mode === '只听') return '群聊模式是「只听」：只在被 @ 或叫名字时才回'
-    if (mode === '自己判断') return '群聊模式是「自己判断」：这条没被选中（打分没过）'
-    if (mustAt && !isAddressed(ev, opts.botNames, opts.ownIds) && !called && !isRecentTalker(opts, gid, userId)) {
-      return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
-    }
-    return '未知原因'
+    return '未知原因（能进来但没处理，看 boot 日志）'
   }
 
   if (opts.groupAllow?.length && !opts.groupAllow.includes(gid)) {
@@ -1194,9 +1190,6 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   }
   if (opts.memberAllow?.length && !opts.memberAllow.includes(userId)) {
     return `人不在白名单（${userId}）`
-  }
-  if (mustAt && !isAddressed(ev, opts.botNames, opts.ownIds) && !called && !isRecentTalker(opts, gid, userId)) {
-    return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
   }
   return '未知原因'
 }

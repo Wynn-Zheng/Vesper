@@ -149,3 +149,17 @@ test('旁听：超预算时保留最近的，丢掉最早的', () => {
   )
   assert.ok(text.includes('新消息：在吗'))
 })
+
+test('旁听：乱序写入时，砍掉的是最老的，不是最新那条', () => {
+  clearSessions()
+  const base = Date.now()
+  // 观察模式立刻写（最新），批次的沉默出口后写（更早的 at）——
+  // 这种乱序在真实链路里会发生，按插入位置裁剪会砍反。
+  pushHeard('group:g-out-of-order', { role: 'user', content: '最新', at: base }, 2)
+  pushHeard('group:g-out-of-order', { role: 'user', content: '五秒前', at: base - 5000 }, 2)
+  pushHeard('group:g-out-of-order', { role: 'user', content: '四秒前', at: base - 4000 }, 2)
+  const heard = getHeard('group:g-out-of-order')
+  assert.equal(heard.length, 2)
+  assert.equal(heard[1]!.content, '最新', '最新那条必须留下')
+  assert.equal(heard[0]!.content, '四秒前')
+})

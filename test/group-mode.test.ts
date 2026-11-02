@@ -87,10 +87,21 @@ test('自己判断：@ 别人仍然不抢答', () => {
 
 /* ---------------- 日志要跟判定一致 ---------------- */
 
-test('拒绝原因会说清是哪个档位挡的', () => {
+test('拒绝原因只报真实可达的原因（模式不在这里诊断）', () => {
   const p = { allowGroup: true, groupAllow: [], groupDeny: [], memberAllow: [], memberDeny: [], requireAt: true }
   const o: OnebotOptions = { ...base, allowGroup: true, getPolicy: () => p, getGroupMode: () => '只听' }
-  assert.match(rejectReason(groupText('今天好热'), o), /只听/)
+  // 这条函数只在 shouldHandle=false 时被调用，而 shouldHandle 在权限通过后
+  // 就放行了 —— 所以"模式挡的""要求 @"这些分支永远走不到。
+  // 以前这里断言 /只听/，其实断言的是死路径（BUG2-10）。
+  const why = rejectReason(groupText('今天好热'), o)
+  assert.equal(/只听|自己判断/.test(why), false, `不该声称是模式挡的，实际：${why}`)
+
+  // 真实可达的两种：群开关关着 / 黑名单
+  const off: OnebotOptions = { ...base, allowGroup: false, getPolicy: () => ({ ...p, allowGroup: false }) }
+  assert.match(rejectReason(groupText('在吗'), off), /群聊总开关/)
+
+  const banned: OnebotOptions = { ...base, allowGroup: true, getPolicy: () => ({ ...p, groupDeny: ['123'] }) }
+  assert.match(rejectReason(groupText('在吗'), banned), /黑名单/)
 })
 
 /* ---------------- 配置层 ---------------- */

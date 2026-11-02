@@ -231,8 +231,11 @@ const botNames = [loadSelf().name, rules.人格.名字].filter((n) => n && n !==
 
 // 权限策略：第一次运行会从 .env 生成 persona/access.yaml，之后控制台改这个文件
 const policy = loadAccess()
+// 这一行以前打的是「必须@ 是/否」—— 但那个字段已经是僵尸：
+// 真正决定"群里要不要 @ 才回"的是 rules.yaml 的 行为.群聊模式（BUG-13）。
+// 继续打它，排障时会一路往错误方向找（明明是「只听」档，日志却说"不用 @"）。
 info(
-  `权限：群白 ${policy.groupAllow.length || '不限'} / 群黑 ${policy.groupDeny.length} / 成员白 ${policy.memberAllow.length || '不限'} / 成员黑 ${policy.memberDeny.length} / 必须@ ${policy.requireAt ? '是' : '否'}`,
+  `权限：群白 ${policy.groupAllow.length || '不限'} / 群黑 ${policy.groupDeny.length} / 成员白 ${policy.memberAllow.length || '不限'} / 成员黑 ${policy.memberDeny.length} / 群聊模式 ${getRules().行为.群聊模式}`,
 )
 
 const onebotOpts: OnebotOptions = {

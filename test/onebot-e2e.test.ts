@@ -732,3 +732,37 @@ test('群限速也管住「撤回」：额度用完后不再回「撤了」', as
     else process.env['OWNER_QQ'] = prev
   }
 })
+
+test('合批回复后，整批的人都算"刚聊过"（不只最后那个）', async () => {
+  clearSessions()
+  let batchCount = 0
+  const h = await harness(
+    '熟人续话',
+    () => ({
+      ...rules(),
+      行为: {
+        ...rules().行为,
+        防抖: { 档位: '自定义', 安静: 0.3, 活跃: 0.3, 同人续发: 0.3, 换人: 0.3, 被at最多: 0.3, 批次上限: 2 },
+      },
+    }),
+    (m) => {
+      batchCount++
+      return '收到:' + (m.text.includes('甲') ? '甲' : '乙')
+    },
+  )
+  try {
+    // 同一批里两个人先后 @ 它（用独立群号 558 避开前面用例的限流额度）
+    h.push({ ...groupAt('我是甲', 9001), group_id: 558 })
+    await tick(60)
+    h.push({ ...groupAt('我是乙', 9002), group_id: 558 })
+    await tick(900)
+    assert.equal(batchCount, 1, '应该合成一轮')
+
+    // 甲紧接着说一句不 @ 的：他也在刚才那批里，算"刚聊过"，该回
+    h.push({ ...groupPlain('那我接着说', 9001), group_id: 558 })
+    await tick(500)
+    assert.equal(h.sent().length, 2, '同批里第一个人也该被续期，不然像聊到一半不理人')
+  } finally {
+    await h.close()
+  }
+})

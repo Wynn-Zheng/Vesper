@@ -322,6 +322,15 @@ export function boot(transport: Transport, opts: BootOptions): void {
     spanMs: number
     /** 这批之前最后一次说话的时间（先取后写的快照）。0 = 第一次。 */
     prevAt: number
+    /**
+     * 这批里每一个发过言的 QQ 号（去重）。
+     *
+     * 为什么需要：回复成功后要给他们逐个续"刚聊过"的窗口。
+     * 只用 `m.senderId`（批次里最后一个人）的话，同批里前一个人
+     * 的窗口不会续期 —— 他接着说一句不 @ 的，就被判成"没叫它"，
+     * 像聊到一半突然不搭理人。
+     */
+    senders?: string[]
   }
 
   async function handle(
@@ -487,15 +496,12 @@ export function boot(transport: Transport, opts: BootOptions): void {
         return
       }
 
-      if (m.from.kind === 'group' && !allow('g:' + m.from.id, rules.行为.群每分钟上限)) {
-        info(`群 ${m.from.id} 触发限速，这条不发`)
-        // 这一步已经在生成之后了（钱花了）。但**不能让它留在历史里** ——
-        // 否则它以为自己说过，下一轮会接着自己的话说，甚至引用一句
-        // 对方根本没看见的内容。
-        popLastAssistant(scopeOf(m.from))
-        noteHeard(m, text)
-        return
-      }
+      // 群额度在进来时就 peek 过了（不够直接 return，不会走到这里）。
+      // 这里只做计数，不再判断 —— 以前这里还留了一段"allow 失败就撤历史"
+      // 的兜底，但它**不可能失败**：同一会话被 sending 链串行化，
+      // `g:` 这个键也只有这里一个消费者。留着只会误导后来人，
+      // 而且真跑到的话会把同一句话同时写进 turns 和 heard。
+      if (m.from.kind === 'group') hit('g:' + m.from.id)
       // 真的要回了，才记一次用户额度
       hit(rateKey)
 
@@ -548,7 +554,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
         // 既然它刚接过这个人一句，对方接着说下一句就该顺下去。
         // 只在群里有意义：连续对话窗口本来就是群聊的概念，
         // 私聊每条都必回，不需要这个锚（硬记还会在 recentTalkers 里留脏键）。
-        if (m.from.kind === 'group') opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
+        //
+        // 整批的人都续，不只是最后那个：同批里两个人先后说话、
+        // 它回了一句，两个人此刻都算"刚跟它聊过"。
+        if (m.from.kind === 'group') {
+          const talked = batch.senders?.length ? batch.senders : [m.senderId ?? m.from.id]
+          for (const uid of talked) opts.touchTalker?.(m.from.id, uid)
+        }
         appendRaw({ ts: Date.now(), scope, role: 'assistant', text: reply.trim() })
       }
       info(`→ ${who}：${ids.length} 条`)
@@ -689,6 +701,8 @@ export function boot(transport: Transport, opts: BootOptions): void {
             sendersCount: new Set(buf.senders).size,
             spanMs: buf.lastAt - buf.firstAt,
             prevAt: buf.prevAt,
+            // 整批的发信人，用来给他们逐个续「刚聊过」的窗口
+            senders: [...new Set(buf.senders)],
           },
         ),
       )

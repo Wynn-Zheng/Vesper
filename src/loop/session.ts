@@ -240,6 +240,15 @@ export function pushHeard(key: string, turn: Turn, max = 12, maxAgeMs = 2 * 3_60
   if (!session) session = loadSession(key)
   const heard = session.heard ?? (session.heard = [])
   heard.push(turn)
+
+  // 按时间排序再裁剪，不能按"插入位置"裁。
+  //
+  // 旁听有两条写入路径：观察模式在收到消息时**立刻**写，
+  // 而合批之后"决定不说话"的出口是在处理完才写（用的还是批次的 at）。
+  // 于是一条早几秒的消息可能后写进来 —— 按位置 shift() 砍掉的是队头，
+  // 也就是**最新那条**，正好砍反了。
+  heard.sort((a, b) => a.at - b.at)
+
   const keep = Math.max(1, Math.floor(max))
   while (heard.length > keep) heard.shift()
   // 顺手清掉过期的。用**当前时间**做锚，不是用最后一条的时间 ——
