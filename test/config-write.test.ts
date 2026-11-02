@@ -64,3 +64,28 @@ test('CRLF 文件也能补键', () => {
   const r = setConfigPath(crlf, '行为.群聊模式', '只听')
   assert.equal(r.ok, true, r.error)
 })
+
+test('父级是列表时拒绝补键（否则会写出非法 YAML）', () => {
+  const listYaml = `关系:
+  阶段:
+    - 名字: 陌生
+      值: 0
+    - 名字: 眼熟
+      值: 20
+`
+  const r = setConfigPath(listYaml, '关系.阶段.测试新键', 1)
+  assert.equal(r.ok, false, '列表里不能加键')
+  assert.match(r.error ?? '', /列表/)
+  // 关键：原文件必须原样返回，不能被改坏
+  assert.equal(r.text, listYaml)
+})
+
+test('普通映射父级照常补键（别把这条规则用过头）', () => {
+  const yaml = `行为:
+  改口概率: 0
+  静默时段: ["23:30", "08:30"]
+`
+  const r = setConfigPath(yaml, '行为.群聊模式', '熟人续话')
+  assert.equal(r.ok, true, r.error)
+  assert.ok(r.text.includes('群聊模式: "熟人续话"'))
+})

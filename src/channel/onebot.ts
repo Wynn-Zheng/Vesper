@@ -704,13 +704,20 @@ export class OnebotTransport implements Transport {
   }
 
   private onEvent(ev: OBEvent): void {
-    // 畸形事件先挡掉：群消息没有 group_id 的话，后面任何
-    // "按群号找目录"的地方都会抛错（groupcache 的 dirOf 会拒绝空串），
-    // 而那是在消息回调里 —— 一条坏数据就能把整条链路弄停。
-    // 实测：不带 group_id 的 group 消息会让 isKnownMember/refreshGroupMembers 抛
-    // "群号不合法"，之后的消息也处理不了。
-    if (ev.message_type === 'group' && !String(ev.group_id ?? '').trim()) {
-      warnAt('收到没有群号的群消息，已丢弃', { 人: ev.user_id, 类型: ev.message_type })
+    // 畸形事件先挡掉：**不是私聊就必须有数字群号**。
+    //
+    // 下游的判断是"只要不是 private 就当群"（shouldHandle / boot 都这么分），
+    // 所以这里的准入标准必须和它一致 —— 之前写成"message_type === 'group'
+    // 才检查群号"，结果 discuss（讨论组）、guild（频道）、以及干脆没有
+    // message_type 的事件都从缝里漏了进去，带着空群号一路走到
+    // groupcache.dirOf('') 抛「群号不合法」。一条坏数据就能把消息回调打断。
+    // 顺带挡住 group_id:'abc' 这种非数字：dirOf 会把非数字剔除成空。
+    if (ev.message_type !== 'private' && !/^\d+$/.test(String(ev.group_id ?? '').trim())) {
+      warnAt('收到没有有效群号的消息，已丢弃', {
+        类型: ev.message_type ?? '(缺失)',
+        群: ev.group_id,
+        人: ev.user_id,
+      })
       return
     }
 

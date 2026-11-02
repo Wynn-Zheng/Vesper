@@ -32,12 +32,28 @@ test('合批：逐条超长时截断，不会把整篇原文塞进 prompt', () =
   assert.ok(out.includes('这条太长了'))
 })
 
-test('合批：总量超预算时保留最近的，老的整条丢掉', () => {
-  const lines = Array.from({ length: 10 }, (_, i) => ({ name: '甲', text: `第${i}条` + 'y'.repeat(1500) }))
+test('合批：超预算时保住第一条（那通常是叫它那句），并说明丢了几条', () => {
+  const lines = [
+    { name: '小明', text: '@它 你看这个' },
+    ...Array.from({ length: 10 }, (_, i) => ({ name: '人' + i, text: `第${i}条` + 'y'.repeat(1500) })),
+  ]
   const out = renderBatch(lines)
-  assert.ok(out.length <= 8000 + 200, `总长应受控，实际 ${out.length}`)
-  assert.ok(out.includes('第9条'), '最近那条要在')
-  assert.equal(out.includes('第0条'), false, '最早那条应被丢掉')
+  assert.ok(out.length <= 8200, `总长应受控，实际 ${out.length}`)
+  // 第一条往往是"@ 它 你看这个"——这一轮的由头，不能被挤掉
+  assert.ok(out.includes('@它 你看这个'), '第一条必须保住')
+  // 最近那条要在
+  assert.ok(out.includes('第9条'), '最近的要在')
+  // 丢了几条要说出来，不然模型以为它看到了整批
+  assert.match(out, /前面还有 \d+ 条没贴出来/)
+})
+
+test('合批：预算够时什么都不丢，也不加省略提示', () => {
+  const out = renderBatch([
+    { name: '小明', text: '在吗' },
+    { name: '小红', text: '在' },
+  ])
+  assert.equal(out, '小明：在吗\n小红：在')
+  assert.equal(out.includes('前面还有'), false)
 })
 
 test('合批：正常短消息全保留', () => {

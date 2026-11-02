@@ -71,15 +71,24 @@ export function setConfigPath(raw: string, key: string, value: unknown): { text:
   // 只支持"改已有的键"的话，凡是我们新加的设置项，在老安装上
   // 都会变成"界面上有、点保存报找不到键" —— 实测部署实例就是这样。
   if (parentLine >= 0) {
-    // 插到父级段落已有子键的最后一个后面，保持同级缩进
+    // 插到父级段落已有子键的最后一个后面，保持同级缩进。
+    // 同时判断这个父级是不是**列表**：段落下面全是 `- xxx` 的话，
+    // 往里插 `key: value` 会写出非法 YAML（实测 `关系.阶段.新键` → 解析失败），
+    // 那比"找不到键"更糟 —— 下次启动整份配置都读不出来。
     let insertAt = parentLine + 1
+    let parentIsList = false
     for (let i = parentLine + 1; i < lines.length; i++) {
       const l = lines[i]!
       if (!l.trim()) continue
       const ind = /^(\s*)/.exec(l)![1]!.length
       if (ind <= parentIndent) break
+      if (/^\s*-\s/.test(l)) parentIsList = true
       insertAt = i + 1
     }
+    if (parentIsList) {
+      return { text: raw, ok: false, error: `${parents[parents.length - 1]} 是个列表，不能往里加键` }
+    }
+
     const pad = ' '.repeat(targetIndent)
     lines.splice(insertAt, 0, `${pad}${leaf}: ${formatValue(value)}`)
     return { text: lines.join('\n'), ok: true }

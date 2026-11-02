@@ -520,10 +520,22 @@ export function boot(transport: Transport, opts: BootOptions): void {
       const ids = await say(transport, target, reply, rules)
       // 表情包等文字发完再补：之前它是在 generateReply 里发的，早于文字，
       // 文字被限流/为空/失败时表情包已经出去了。
-      void maybeSendEmoji(m, rules)
-      if (qd.quote && m.id) lastQuoteAt.set(scopeNow, Date.now())
-      backoff.delete(scopeOf(m.from))
-      if (ids.length) {
+      // 一个字都没发出去时也别补表情包：那会变成"只有一堆图，没有话"。
+      if (ids.length) void maybeSendEmoji(m, rules)
+
+      // 一条都没发出去（NapCat 断线、被平台拒、或者 stripMentions 把整条清空了）：
+      // 历史里那条 assistant 必须撤掉。
+      //
+      // 这条以前没人管：`reply` 已经由 chat.ts 写进 turns，而这里无条件 appendRaw，
+      // 于是用户一个字没收到，它下一轮却"记得自己说过"，会接着自己的话说，
+      // 甚至引用一句对方根本没看见的内容。日志里只有 `→ 小明：0 条`。
+      const sentNothing = ids.length === 0
+      if (sentNothing) {
+        popLastAssistant(scopeOf(m.from))
+        warnAt('这条一个字都没发出去，已从历史里撤掉', { 会话: scopeOf(m.from), 条数: reply.length })
+      } else {
+        if (qd.quote && m.id) lastQuoteAt.set(scopeNow, Date.now())
+        backoff.delete(scopeOf(m.from))
         const scope = scopeOf(m.from)
         lastSent.set(scope, { ids, at: Date.now() })
         const arr = replyTimes.get(scope) ?? []
@@ -537,8 +549,8 @@ export function boot(transport: Transport, opts: BootOptions): void {
         // 只在群里有意义：连续对话窗口本来就是群聊的概念，
         // 私聊每条都必回，不需要这个锚（硬记还会在 recentTalkers 里留脏键）。
         if (m.from.kind === 'group') opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
+        appendRaw({ ts: Date.now(), scope, role: 'assistant', text: reply.trim() })
       }
-      appendRaw({ ts: Date.now(), scope: scopeOf(m.from), role: 'assistant', text: reply.trim() })
       info(`→ ${who}：${ids.length} 条`)
 
       if (opts.llm) {

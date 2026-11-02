@@ -127,24 +127,45 @@ const MAX_INPUT_CHARS = 2000
  *
  * 逐条截断（和单条消息一样 2000 字），整体再封顶 ——
  * 群里刷屏时，一轮 prompt 被撑到几万字既烧钱又直接超上下文。
- * 从最近的往前装，装不下的老消息整条丢掉（不留半条，免得模型看到的
- * 是被砍断的句子）。
+ *
+ * 两条规则，都是踩出来的：
+ *   1. **第一条必须保住**。一批里最前面那条往往就是"@ 它 你看这个"，
+ *      也就是这一轮的由头。只按"从新往旧装"的话，刷屏时它会被挤掉，
+ *      模型看到一堆别人的长文，却不知道有人在叫它。
+ *   2. 丢了几条要**说出来**。不标注的话，模型以为它看到了整批。
  */
 export function renderBatch(
   lines: Array<{ name: string; text: string }>,
   maxChars = MAX_INPUT_CHARS * 4,
 ): string {
-  const out: string[] = []
+  if (!lines.length) return ''
+  const cap = (t: string): string =>
+    t.length > MAX_INPUT_CHARS ? t.slice(0, MAX_INPUT_CHARS) + '…（这条太长了，没看完）' : t
+  const render = (i: number): string => `${lines[i]!.name}：${cap(lines[i]!.text)}`
+
   let budget = maxChars
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const l = lines[i]!
-    const body = l.text.length > MAX_INPUT_CHARS ? l.text.slice(0, MAX_INPUT_CHARS) + '…（这条太长了，没看完）' : l.text
-    const line = `${l.name}：${body}`
-    if (line.length > budget) break
+
+  // 先给第一条留位置（最多占一半预算，防止它自己就把预算吃光）
+  const firstLine = render(0)
+  const firstKept = firstLine.length <= Math.floor(maxChars / 2)
+  if (firstKept) budget -= firstLine.length
+
+  const tail: string[] = []
+  let dropped = 0
+  for (let i = lines.length - 1; i >= 1; i--) {
+    const line = render(i)
+    if (line.length > budget) {
+      dropped = i // 剩下的 1..i 都没装进来
+      break
+    }
     budget -= line.length
-    out.unshift(line)
+    tail.unshift(line)
   }
-  return out.join('\n')
+
+  const head = firstKept ? [firstLine] : []
+  const omitted = dropped > 0 ? dropped - (firstKept ? 0 : 1) : 0
+  const note = omitted > 0 ? [`（前面还有 ${omitted} 条没贴出来，太长了）`] : []
+  return [...head, ...note, ...tail].filter(Boolean).join('\n')
 }
 
 /** 和 emoji/store.ts 的默认根目录保持一致 */
