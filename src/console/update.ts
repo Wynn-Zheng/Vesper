@@ -9,6 +9,7 @@
  * Electron 主进程在**下次启动后端之前**读 pending.json 完成替换（那时文件没被占用）。
  */
 import { createHash } from 'node:crypto'
+import { writeAtomic } from '../store/fs.ts'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -189,6 +190,8 @@ export async function downloadUpdate(latest: LatestInfo): Promise<{ ok: boolean;
     }
     const hash = createHash('sha256').update(buf).digest('hex')
     if (hash !== latest.app.sha256) return { ok: false, error: '校验失败：包可能下坏了，重试一次' }
+    // tar 是**先校验 sha256 再写**的下载产物，写坏了下次解压会报错、
+    // 不会静默生效；而且动辄上百 MB，走原子写要来回拷一遍，不值。
     writeFileSync(tar, buf)
 
     // 用系统 tar 解压（Windows 10+ / Linux 都自带）
@@ -201,10 +204,11 @@ export async function downloadUpdate(latest: LatestInfo): Promise<{ ok: boolean;
       }
     }
 
-    writeFileSync(
+    // pending.json 必须原子写：它是"有待应用的更新"的标记，
+    // 半截 JSON 会让下次启动解析失败 —— 要么更新丢了、要么启动报错。
+    writeAtomic(
       join(dir, 'pending.json'),
       JSON.stringify({ version: latest.version, at: Date.now(), from: latest.git ?? '' }, null, 2),
-      'utf8',
     )
     rmSync(tar, { force: true })
     return { ok: true }

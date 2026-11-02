@@ -4,7 +4,7 @@
  * 单独一个文件——server.ts 已经 1200 行，往里加东西风险太大（改坏过两次）。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import { loadRules } from '../core/config.ts'
@@ -15,6 +15,7 @@ import { parseJsonBody } from './http.ts'
 import * as NC from '../napcat/manager.ts'
 import { installStatus, startInstall } from '../napcat/install.ts'
 import { wireOnebot } from '../napcat/wire.ts'
+import { writeAtomic } from '../store/fs.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
@@ -101,7 +102,7 @@ export async function handleMiscApi(
       json(res, 400, { error: r.error ?? '改不了' })
       return true
     }
-    writeFileSync('persona/rules.yaml', r.text, 'utf8')
+    writeAtomic('persona/rules.yaml', r.text)
 
     const after = NC.locate()
     json(res, 200, {
@@ -161,7 +162,7 @@ export async function handleMiscApi(
       json(res, 400, { error: r.error ?? '改不了' })
       return true
     }
-    writeFileSync('persona/rules.yaml', r.text, 'utf8')
+    writeAtomic('persona/rules.yaml', r.text)
     json(res, 200, { ok: true, 记录日志: body.记录日志 === true })
     return true
   }

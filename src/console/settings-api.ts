@@ -5,7 +5,7 @@
  *   misc-api     → NapCat 状态、余额（仪表盘在用）
  *   这个文件      → 数据目录、磁盘、备份、模型配置、版本（设置页在用）
  */
-import { copyFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 
 /**
  * 读程序自身的版本信息。
@@ -36,6 +36,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { execFileSync } from 'node:child_process'
 import { loadRules } from '../core/config.ts'
 import { parseJsonBody } from './http.ts'
+import { writeAtomic } from '../store/fs.ts'
 
 type Json = (res: ServerResponse, code: number, body: unknown) => void
 
@@ -111,7 +112,7 @@ export async function handleSettingsApi(
       json(res, 400, { error: r.error ?? '改不了' })
       return true
     }
-    writeFileSync('persona/rules.yaml', r.text, 'utf8')
+    writeAtomic('persona/rules.yaml', r.text)
     json(res, 200, { ok: true, 保留天数: days, note: '下次启动时生效' })
     return true
   }
@@ -248,7 +249,9 @@ export async function handleSettingsApi(
           changed.push(k)
         }
 
-        writeFileSync(envPath, lines.join('\n'), 'utf8')
+        // .env 里存着 API Key：半截文件比没有文件更糟 ——
+        // 下次启动会因为读不到 key 而静默进回显模式，用户只看到"它不说话了"。
+        writeAtomic(envPath, lines.join('\n'))
       } catch (e) {
         errors.push('.env 写入失败：' + String(e).slice(0, 80))
       }
@@ -261,7 +264,7 @@ export async function handleSettingsApi(
         const raw = readFileSync('persona/rules.yaml', 'utf8')
         const r = setConfigPath(raw, '视觉.模型', body.visionModel.trim())
         if (r.ok) {
-          writeFileSync('persona/rules.yaml', r.text, 'utf8')
+          writeAtomic('persona/rules.yaml', r.text)
           changed.push('视觉.模型')
         } else {
           errors.push('rules.yaml 写入失败：' + (r.error ?? '?'))
