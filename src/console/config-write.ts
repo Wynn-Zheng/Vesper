@@ -64,6 +64,27 @@ export function setConfigPath(raw: string, key: string, value: unknown): { text:
     return { text: lines.join('\n'), ok: true }
   }
 
+  // 键不存在：往父级段落里补一行。
+  //
+  // 为什么必须补而不是报错：老用户升级后，rules.yaml 里没有新版本加的键
+  // （默认值来自代码里的 DEFAULTS，文件里根本没有那一行）。
+  // 只支持"改已有的键"的话，凡是我们新加的设置项，在老安装上
+  // 都会变成"界面上有、点保存报找不到键" —— 实测部署实例就是这样。
+  if (parentLine >= 0) {
+    // 插到父级段落已有子键的最后一个后面，保持同级缩进
+    let insertAt = parentLine + 1
+    for (let i = parentLine + 1; i < lines.length; i++) {
+      const l = lines[i]!
+      if (!l.trim()) continue
+      const ind = /^(\s*)/.exec(l)![1]!.length
+      if (ind <= parentIndent) break
+      insertAt = i + 1
+    }
+    const pad = ' '.repeat(targetIndent)
+    lines.splice(insertAt, 0, `${pad}${leaf}: ${formatValue(value)}`)
+    return { text: lines.join('\n'), ok: true }
+  }
+
   return { text: raw, ok: false, error: `找不到键 ${key}` }
 }
 
