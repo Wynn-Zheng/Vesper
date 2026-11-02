@@ -86,13 +86,17 @@ const STEPS: Step[] = [
   { name: '冒烟', cmd: 'node scripts/smoke.ts', expect: /\d+ \/ \d+ 通过/ },
   { name: '数据体检', cmd: 'node scripts/check-data.ts', expect: /数据检查通过/ },
   { name: '配置检查', cmd: 'node scripts/check-config.ts', expect: /\S/ },
-  { name: '控制台审计', cmd: 'node scripts/audit-console.ts', expect: /关键函数都在/ },
+  // 匹配结论行而不是某句固定文案：以前那句「✓ 关键函数都在」是无条件打印的，
+  // 于是这项检查永远通过。现在脚本有问题会打「发现 N 类问题」并以 1 退出。
+  { name: '控制台审计', cmd: 'node scripts/audit-console.ts', expect: /审计结果：OK/ },
   { name: 'API 边界', cmd: 'node scripts/test-api-edges.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
   { name: '并发', cmd: 'node scripts/test-concurrency.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
   { name: '隐私边界', cmd: 'node scripts/test-privacy.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '自修复', cmd: 'node scripts/test-selfrepair.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '自我观察边界', cmd: 'node scripts/test-self-bugs.ts', expect: /通过 \d+ \/ 失败 0/ },
-  { name: '功能交互', cmd: 'node scripts/test-deep.ts', expect: /通过 \d+ \/ 失败 0/ },
+  // test-deep 要连控制台（它自己 fetch 127.0.0.1:7788）。不标 live 的话，
+  // 服务没起时它会以「退出码 1」失败，看起来像功能坏了，其实只是没环境。
+  { name: '功能交互', cmd: 'node scripts/test-deep.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
   { name: '资源增长', cmd: 'node --env-file-if-exists=.env scripts/test-growth.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '新功能', cmd: 'node --env-file-if-exists=.env scripts/test-features.ts', expect: /通过 \d+ \/ 失败 0/ },
   { name: '看图', cmd: 'node --env-file-if-exists=.env scripts/test-vision.ts', expect: /通过 \d+ \/ 失败 0/ },
@@ -189,13 +193,18 @@ interface Result {
   ms: number
   /** 为什么失败 */
   why?: string
+  /** 需要服务、但服务没跑，这一项其实**没验证** */
+  skipped?: boolean
 }
 
 const results: Result[] = []
 
 for (const [index, step] of STEPS.entries()) {
   if (step.live && !live) {
-    results.push({ name: step.name, ok: true, ms: 0, why: '跳过（服务没跑）' })
+    // 以前这里记成 ok:true —— 于是没起服务时，集成检查全都"通过"，
+    // 最后还打印"全部通过 83 项"。这是最危险的一种假绿：
+    // 看起来验证过了，其实一个接口都没打过。
+    results.push({ name: step.name, ok: true, ms: 0, why: '跳过（服务没跑）', skipped: true })
     continue
   }
 
@@ -237,11 +246,21 @@ for (const [index, step] of STEPS.entries()) {
 }
 
 const failed = results.filter((r) => !r.ok)
+const skipped = results.filter((r) => r.skipped)
 const total = results.length
+const ran = total - skipped.length
 console.log('')
 console.log('─'.repeat(50))
+if (skipped.length) {
+  // 把"跳过"单独说出来，不能混进"通过"里：
+  // 需要服务的检查没跑，就等于集成部分完全没验证过。
+  console.log(`⚠ 有 ${skipped.length} 项需要服务、没跑（这些**不算验证过**）：`)
+  for (const s of skipped) console.log(`  - ${s.name}`)
+  console.log('  想跑全的话：先启动服务（node --env-file=.env src/index.ts），再执行本命令')
+}
 if (failed.length === 0) {
-  console.log(`全部通过：${total} 项`)
+  if (skipped.length) console.log(`实际通过：${ran} 项（另有 ${skipped.length} 项跳过）`)
+  else console.log(`全部通过：${total} 项`)
   process.exit(0)
 } else {
   console.log(`失败 ${failed.length} / ${total} 项：`)

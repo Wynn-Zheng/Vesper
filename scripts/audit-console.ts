@@ -13,6 +13,11 @@ const script = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g))
   .map((m) => m[1] ?? '')
   .join('\n')
 
+/** 发现问题就 +1；脚本最后据此决定退出码。以前这里从不设非零退出码，
+ * 而 check-all 只认最后那句「✓ 关键函数都在」—— 于是这项检查**永远通过**，
+ * 不管前面报了多少 ❌。*/
+let problems = 0
+
 /* ---------- 1. DOM id 引用 ---------- */
 const definedIds = new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g)).map((m) => m[1]!))
 // 运行时动态创建的也要算：xx.id = 'foo'
@@ -27,6 +32,7 @@ const missing = [...usedIds].filter((id) => !definedIds.has(id))
 console.log('=== DOM 引用检查 ===')
 console.log(`定义 ${definedIds.size} 个 id，脚本引用 ${usedIds.size} 个`)
 if (missing.length) {
+  problems++
   console.log('❌ 引用了不存在的 id：')
   for (const id of missing) {
     // 找出在哪个函数里
@@ -84,6 +90,7 @@ const known = (p: string): boolean =>
   (p.endsWith('/') && [...routes].some((r) => r.startsWith(p)))
 const calledMissing = [...called].filter((p) => !known(p))
 if (calledMissing.length) {
+  problems++
   console.log('❌ 前端调了不存在接口：', calledMissing.join(', '))
 } else {
   console.log('✓ 前端调用的接口都存在')
@@ -141,6 +148,7 @@ scanSendJson(script, 'index.html')
 for (const { file, src } of jsScripts) scanSendJson(src, file)
 console.log('\n=== HTTP 方法 ===')
 if (badMethod.length) {
+  problems++
   console.log('❌ 方法对不上（会被 404 或 405 挡掉）：')
   for (const b of [...new Set(badMethod)]) console.log('   ' + b)
 } else {
@@ -193,6 +201,7 @@ for (const f of personaFiles) {
   }
 }
 if (!bad) console.log('✓ 所有 JSON/JSONL/YAML 都能解析')
+else problems++
 
 /* ---------- 4. self.md 结构 ---------- */
 console.log('\n=== self.md 结构 ===')
@@ -202,6 +211,7 @@ try {
   const hasWho = self.includes('# 我是谁')
   const hasThink = self.includes('## 我最近在想')
   console.log(`frontmatter ${hasFront ? '✓' : '❌'} / 我是谁 ${hasWho ? '✓' : '❌'} / 我最近在想 ${hasThink ? '✓' : '❌'}`)
+  if (!hasFront || !hasWho || !hasThink) problems++
   // 2026-11-01 起 self.md 不再存 traits（性格/喜好归角色卡），旧的 `我·xxx` 行可以忽略
   const oldTraits = Array.from(self.matchAll(/^我·([^:]+):\s*(.+)$/gm))
   if (oldTraits.length) console.log(`（旧格式特征 ${oldTraits.length} 条，已废弃，可忽略）`)
@@ -228,6 +238,19 @@ for (const n of deadNames) {
 }
 const okChecks = ['showGroup', 'runLoaders', 'doSearch', 'loadSelfV2', 'loadDashboard', 'loadHistory']
 for (const n of okChecks) {
-  if (!script.includes(n)) console.log(`❌ 缺少 ${n}`)
+  if (!script.includes(n)) {
+    problems++
+    console.log(`❌ 缺少 ${n}`)
+  }
 }
-console.log('✓ 关键函数都在')
+
+// 结尾必须有**结论行**，而且它要反映真实结果。
+// 以前这里无条件打印「✓ 关键函数都在」，check-all 又只匹配这句 ——
+// 于是不管前面报了多少 ❌，这项检查永远"通过"。这类假绿比没有检查更危险：
+// 它会让人以为控制台被验证过了。
+if (problems) {
+  console.log(`\n审计结果：发现 ${problems} 类问题`)
+  process.exitCode = 1
+} else {
+  console.log('\n审计结果：OK')
+}
