@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { GROUP_CHAT_MODES, asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
-import { info, warnAt, logBus, type LogRecord } from '../core/log.ts'
+import { errorAt, info, warnAt, logBus, type LogRecord } from '../core/log.ts'
 import type { Transport } from '../core/transport.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { distill } from '../memory/distill.ts'
@@ -630,6 +630,18 @@ async function runAction(
 
 export async function startConsole(opts: ConsoleOptions): Promise<void> {
   consoleOpts = opts
+  // 没设 token 又监听在非本机地址 = 同一网段任何人都能改配置、发消息、导数据。
+  // 这种组合直接拒绝启动，比"默默开着"安全 —— 用户会在日志里看到明确原因。
+  const bindHost = opts.host ?? '127.0.0.1'
+  const loopbackHost = ['127.0.0.1', 'localhost', '::1'].includes(bindHost)
+  if (!opts.token && !loopbackHost) {
+    errorAt(
+      '控制台没设 CONSOLE_TOKEN，却监听在 ' +
+        bindHost +
+        ' —— 已拒绝启动控制台（同网段任何人都能操作）。在 .env 里补一个随机 token 再启动。',
+    )
+    return
+  }
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const path = url.pathname
@@ -698,8 +710,16 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 例外：panel 插件的静态页面。iframe 的 src 是浏览器自己发的 GET，
     // 带不了自定义 header，所以只能用 query 传 token（前端拼在 src 上）。
     // 这个页面本身不含任何数据，是插件自带的静态文件。
+    //
+    // ⚠ token 为空**不再等于"免鉴权"**。以前是 `if (opts.token && …)`，
+    // 于是 `.env` 里留空（`.env.example` 还写着"留空则每次启动随机生成"）
+    // 就等于同一网段任何人都能改配置、发消息、导数据。
+    // 现在：空 token 只允许**本机**访问；非本机监听 + 空 token 启动时直接拒绝。
     const given = url.searchParams.get('token') ?? req.headers['x-console-token']
-    if (opts.token && given !== opts.token) {
+    const remote = req.socket.remoteAddress ?? ''
+    const fromLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
+    const authorized = opts.token ? given === opts.token : fromLoopback
+    if (!authorized) {
       // 浏览器直接打开时给一个人话页面 —— 裸 401 只会让人以为程序坏了。
       // 接口请求（fetch）还是回 JSON，前端好处理。
       const wantsHtml = String(req.headers['accept'] ?? '').includes('text/html')

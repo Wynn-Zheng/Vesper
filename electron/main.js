@@ -46,7 +46,7 @@ process.on('unhandledRejection', (e) => {
   trace('unhandledRejection: ' + (e && e.stack ? e.stack : String(e)))
 })
 
-const { app, BrowserWindow, shell, Menu, Tray, nativeImage } = require('electron')
+const { app, BrowserWindow, shell, Menu, Tray, nativeImage, dialog } = require('electron')
 trace('electron 模块已加载')
 const { spawn } = require('node:child_process')
 const { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, appendFileSync, rmSync } = require('node:fs')
@@ -74,9 +74,18 @@ const DATA_ROOT = app.isPackaged
   ? path.join(app.getPath('userData'), 'data-root')
   : APP_ROOT
 
-// 端口跟着 .env 走（后端从 .env 读）：写死 7788 的话，用户改端口后永远"后端起不来"
-const CONSOLE_PORT = Number(readDotEnv().CONSOLE_PORT || process.env.CONSOLE_PORT || 7788) || 7788
-const CONSOLE_URL = `http://127.0.0.1:${CONSOLE_PORT}`
+// 端口跟着 .env 走（后端从 .env 读）：写死 7788 的话，用户改端口后永远"后端起不来"。
+//
+// ⚠ 必须**现算**，不能在模块加载时定成常量：老用户升级上来时 .env 是在
+// ensureDataRoot() 里才被迁移过来的，而模块加载早于它。定成常量就会用迁移前的
+// 空配置（=7788），后端却按老 .env 里的端口监听 —— 窗口显示"后端 25 秒内没响应"，
+// 其实后端好好跑着，关掉重开又正常。
+function consolePort() {
+  return Number(readDotEnv().CONSOLE_PORT || process.env.CONSOLE_PORT || 7788) || 7788
+}
+function consoleUrl() {
+  return `http://127.0.0.1:${consolePort()}`
+}
 
 let backend = null
 /** 后端异常退出的自动重启次数（防崩溃循环） */
@@ -241,15 +250,22 @@ function ensureDataRoot() {
     writeFileSync(envPath, lines.filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n') + '\n', 'utf8')
     console.log('[main] 首次启动：已生成 .env')
   } else {
-    // 老 .env：只补**缺失**的键，不动用户已有的值。
+    // 老 .env：只补**缺失或为空**的键，不动用户已有的值。
     // 之前只补 UPDATE_* 两项，所以老用户升级上来 ALLOW_GROUP 仍然是缺的。
     try {
       const text = readFileSync(envPath, 'utf8')
       const add = []
       for (const [k, v] of ENV_DEFAULTS) {
-        if (k === 'CONSOLE_TOKEN') continue // 已有 .env 一定有，没有也不该悄悄换掉
-        const re = new RegExp('^\\s*' + k + '\\s*=', 'm')
-        if (!re.test(text)) add.push([k, v])
+        const re = new RegExp('^\\s*' + k + '\\s*=(.*)$', 'm')
+        const m = re.exec(text)
+        // CONSOLE_TOKEN 特殊：只有**为空**时才补随机值（没有这一行也一样补）。
+        // 跳过它的话，`.env` 里写 `CONSOLE_TOKEN=` 就等于控制台不鉴权 ——
+        // 同一网段谁都能进来改配置。
+        if (!m) {
+          add.push([k, v])
+          continue
+        }
+        if (k === 'CONSOLE_TOKEN' && !m[1].trim()) add.push([k, randomBytes(16).toString('hex')])
       }
       if (add.length) {
         appendFileSync(
@@ -287,7 +303,7 @@ function ensureDataRoot() {
  * ============================================================ */
 function probe() {
   return new Promise((resolve) => {
-    const req = http.get(`${CONSOLE_URL}/api/status`, { timeout: 1500 }, (res) => {
+    const req = http.get(`${consoleUrl()}/api/status`, { timeout: 1500 }, (res) => {
       res.resume()
       resolve(res.statusCode === 200 || res.statusCode === 401)
     })
@@ -474,6 +490,11 @@ async function ensureBackend() {
     trace('[main] ' + reason)
     return { ok: false, reason, log: collected.join('') }
   }
+  // 后端起来了就把崩溃计数清零。
+  // 不清零的话它是"进程生命周期内累计"：今天崩 3 次、明天再崩 1 次，
+  // 第 4 次就不会自动拉起了，而且用户完全不知道为什么 —— 明明之前一直好好的。
+  if (crashRestarts > 0) trace('[main] 后端已就绪，崩溃计数清零（原来是 ' + crashRestarts + '）')
+  crashRestarts = 0
   return { ok: true, reason: '', log: '' }
 }
 
@@ -540,7 +561,7 @@ function createWindow(failInfo = null) {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(failPage(failInfo)))
   } else {
     const token = consoleToken()
-    const url = token ? `${CONSOLE_URL}/?token=${encodeURIComponent(token)}` : CONSOLE_URL
+    const url = token ? `${consoleUrl()}/?token=${encodeURIComponent(token)}` : consoleUrl()
     win.loadURL(url)
   }
 
@@ -637,15 +658,38 @@ app.whenReady().then(async () => {
   trace('app ready；isPackaged=' + app.isPackaged + ' resources=' + process.resourcesPath)
   trace('APP_ROOT=' + APP_ROOT)
   trace('DATA_ROOT=' + DATA_ROOT)
-  ensureDataRoot()
-  trace('ensureDataRoot 完成')
 
-  const backendResult = await ensureBackend()
-  trace('ensureBackend 完成，ok=' + backendResult.ok + (backendResult.ok ? '' : ' 原因=' + backendResult.reason))
+  // 启动期的任何异常都必须落到"用户看得见的地方"。
+  //
+  // 以前这一整段没有 try/catch：`%APPDATA%` 不可写（域账户 / 漫游配置 /
+  // 杀软锁目录 / 磁盘满）时 ensureDataRoot() 一抛，后面的 createWindow /
+  // createTray 全部跳过 —— 用户双击图标后**什么都没有**，
+  // 任务管理器里却有个进程。那是最难自查的一种"坏了"。
+  let backendResult
+  try {
+    ensureDataRoot()
+    trace('ensureDataRoot 完成')
+    backendResult = await ensureBackend()
+    trace('ensureBackend 完成，ok=' + backendResult.ok + (backendResult.ok ? '' : ' 原因=' + backendResult.reason))
+  } catch (e) {
+    const reason = `启动失败：${e && e.message ? e.message : String(e)}`
+    trace('[main] ' + reason + '\n' + (e && e.stack ? e.stack : ''))
+    backendResult = { ok: false, reason, log: String((e && e.stack) || '') }
+  }
 
   // 后端没起来就把原因画在窗口里，而不是让用户看 ERR_CONNECTION_REFUSED
-  createWindow(backendResult)
-  trace('createWindow 完成')
+  try {
+    createWindow(backendResult)
+    trace('createWindow 完成')
+  } catch (e) {
+    trace('[main] 开窗口失败：' + (e && e.stack))
+    // 连窗口都开不了，至少给一个系统弹窗，别静默
+    try {
+      dialog.showErrorBox('Vesper 打不开界面', String((e && e.message) || e))
+    } catch {
+      /* 连弹窗都不行，就只能靠日志了 */
+    }
+  }
   try {
     createTray()
     trace('createTray 完成')

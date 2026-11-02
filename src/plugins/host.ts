@@ -65,7 +65,8 @@ export type PluginContext = {
   exec?: (cmd: string, args?: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
-type Handler = (payload: unknown) => void
+/** 允许 async：插件作者很自然会写 async 处理器，宿主必须接住它的拒绝 */
+type Handler = (payload: unknown) => void | Promise<void>
 
 /**
  * shell 权限的白名单。
@@ -226,7 +227,15 @@ export function createHost(options: {
     // 先复制一份，避免 handler 内部增删订阅影响本次遍历
     for (const handler of [...handlers]) {
       try {
-        handler(payload)
+        // handler 可能是 async 的：try/catch 抓不到它返回的 Promise 的拒绝，
+        // 那个拒绝会一路冒到进程级的 unhandledRejection，日志只剩一句
+        // 「未处理的拒绝」—— 分不清是哪个插件、哪个事件。这里显式接住。
+        const r = handler(payload) as unknown
+        if (r && typeof (r as { then?: unknown }).then === 'function') {
+          ;(r as Promise<unknown>).catch((err) => {
+            recordError(id, `事件 ${event} 的处理器执行失败（异步）：${errorMessage(err)}`)
+          })
+        }
       } catch (err) {
         recordError(id, `事件 ${event} 的处理器执行失败：${errorMessage(err)}`)
       }
