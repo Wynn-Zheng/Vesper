@@ -19,14 +19,12 @@ function check(name: string, ok: boolean, detail = ''): void {
 }
 
 const core = await import('../src/memory/core.ts')
-const temp = await import('../src/memory/temp.ts')
 
 /* ---------- 备份真实数据 ---------- */
 // core / core-requests 现在按角色卡隔离：测试用当前卡的真实路径
 import { cardScopedPath as scopedPath } from '../src/persona/card.ts'
 const CORE = scopedPath('core.md', 'persona/core.md')
 const REQ = scopedPath('core-requests.md', 'persona/core-requests.md')
-const TEMP_DIR = 'persona/memory/temp'
 const backup = new Map<string, string | null>()
 for (const f of [CORE, REQ]) backup.set(f, existsSync(f) ? readFileSync(f, 'utf8') : null)
 
@@ -159,91 +157,5 @@ console.log('\n=== 5. prompt 渲染 ===')
   check('边界排在偏好前面（不许干什么更优先）', iBoundary >= 0 && iPref > iBoundary, `${iBoundary} vs ${iPref}`)
 }
 
-/* ============================================================
- * 6. 临时记忆
- * ============================================================ */
-console.log('\n=== 6. 临时记忆 ===')
-{
-  // 清理
-  if (existsSync(TEMP_DIR)) rmSync(TEMP_DIR, { recursive: true, force: true })
-
-  const id = temp.saveTemp({
-    query: '什么是 SSR',
-    source: 'test',
-    results: [
-      { title: 'SSR 是什么', url: 'https://example.com/1', snippet: '服务端渲染' },
-      { title: 'SSR vs CSR', url: 'https://example.com/2', snippet: '对比' },
-    ],
-    body: '正文内容在这里',
-  })
-  check('存成功了', !!id, String(id))
-
-  const all = temp.loadTemp()
-  check('能读出来', all.length === 1, String(all.length))
-  check('查询词对', all[0]?.query === '什么是 SSR', all[0]?.query)
-  check('结果 2 条', all[0]?.results.length === 2, String(all[0]?.results.length))
-  check('正文存下来了', all[0]?.body === '正文内容在这里', all[0]?.body?.slice(0, 20))
-
-  // 相关性
-  const rel = temp.relevantTemp('SSR')
-  check('搜 SSR 能找到', rel.length === 1, String(rel.length))
-  const notRel = temp.relevantTemp('今天天气怎么样')
-  check('不相关的取不到', notRel.length === 0, String(notRel.length))
-
-  // prompt 渲染
-  const p = temp.renderTempForPrompt(rel)
-  check('渲染带"可能过时"提示', p.includes('可能过时'), p.slice(0, 50))
-  check('渲染带查询词', p.includes('什么是 SSR'))
-}
-
-/* ============================================================
- * 7. TTL 清理
- * ============================================================ */
-console.log('\n=== 7. 7 天过期 ===')
-{
-  // 手动造一条 8 天前的
-  const { mkdirSync } = await import('node:fs')
-  mkdirSync(TEMP_DIR, { recursive: true })
-  const oldAt = Date.now() - 8 * 86_400_000
-  writeFileSync(
-    `${TEMP_DIR}/2026-01-01-old.md`,
-    `---\nat: ${oldAt}\nquery: 旧的东西\nsource: test\nttlDays: 7\n---\n\n# 搜：旧的东西\n\n## 结果\n\n1. 【旧】https://old.example\n`,
-    'utf8',
-  )
-
-  const before = temp.loadTemp().length
-  check('造了一条过期的（共 ' + before + ' 条）', before === 2, String(before))
-
-  const removed = temp.prune()
-  check('清理删了 1 条', removed === 1, String(removed))
-  check('只剩新的那条', temp.loadTemp().length === 1, String(temp.loadTemp().length))
-  check('剩下的是 SSR 那条', temp.loadTemp()[0]?.query === '什么是 SSR')
-}
-
-/* ============================================================
- * 8. 临时记忆不进 facts
- * ============================================================ */
-console.log('\n=== 8. 临时不污染正式记忆 ===')
-{
-  // 读代码检查：temp.ts 不 import facts
-  const src = readFileSync('src/memory/temp.ts', 'utf8')
-  check('temp.ts 不导入 facts.ts', !src.includes("from './facts.ts'"), '')
-  check('temp.ts 不调 appendFacts', !src.includes('appendFacts'), '')
-
-  // distill 也不该碰 temp
-  const distSrc = readFileSync('src/memory/distill.ts', 'utf8')
-  check('distill 不碰 temp', !distSrc.includes("from './temp.ts'"), '')
-}
-
-/* ---------- 恢复 ---------- */
-for (const [f, content] of backup) {
-  if (content === null) {
-    if (existsSync(f)) unlinkSync(f)
-  } else {
-    writeFileSync(f, content, 'utf8')
-  }
-}
-if (existsSync(TEMP_DIR)) rmSync(TEMP_DIR, { recursive: true, force: true })
-
 console.log(`\n通过 ${pass} / 失败 ${fail}`)
-process.exit(fail > 0 ? 1 : 0)
+

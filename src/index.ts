@@ -1,4 +1,4 @@
-import { OnebotTransport } from './channel/onebot.ts'
+﻿import { OnebotTransport } from './channel/onebot.ts'
 import { createEmojiStore } from './emoji/store.ts'
 import { boot } from './boot.ts'
 import { ToolRegistry, tools as globalTools } from './tools/registry.ts'
@@ -357,13 +357,6 @@ if (apiKey) {
 
   info(`模型已就绪：${llm.model}`)
   boot(transport, { getRules, reply: (m, r) => generateReply(m, { rules: r, llm: llm!, tools: registry }), llm })
-
-  // 临时记忆 7 天过期，启动时清一次。
-  // 这里在顶层模块作用域（不在 setTimeout 回调里），所以可以用 await。
-  {
-    const { prune: pruneTemp } = await import('./memory/temp.ts')
-    pruneTemp()
-  }
 
   // 定时器错开启动：六个都在同一秒触发的话，distiller 和 proactive 会同时调模型
   const llmRef = llm
