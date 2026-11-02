@@ -102,35 +102,57 @@ async function harness(
 
   // 假的 NapCat：连上来，把收到的 action 都记下来，并一律回 ok
   const seen: Array<{ action: string; params: Record<string, unknown>; id: number }> = []
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/onebot/v11/ws?access_token=test-token`)
   let seq = 1000
-  ws.on('message', (raw) => {
-    let obj: Record<string, unknown>
-    try {
-      obj = JSON.parse(String(raw)) as Record<string, unknown>
-    } catch {
-      return
-    }
-    const action = String(obj['action'] ?? '')
-    if (!action) return
-    // 每个 action 都分配一个 message_id：测试要靠它模拟"引用它刚说的话"。
-    // 注意连接时 loadSelfInfo 也会发一个 action，所以不能假设第一个就是发送。
-    const id = ++seq
-    seen.push({ action, params: (obj['params'] ?? {}) as Record<string, unknown>, id })
-    ws.send(
-      JSON.stringify({
-        status: 'ok',
-        retcode: 0,
-        data: { message_id: id, nickname: '小满', user_id: 3 },
-        echo: obj['echo'],
-      }),
-    )
-  })
-  await new Promise<void>((resolve, reject) => {
-    ws.once('open', () => resolve())
-    ws.once('error', reject)
-  })
-  await tick(120)
+  // 用一个可替换的引用：测试里要模拟"NapCat 断开又重连"
+  let ws: WebSocket
+  const attach = (sock: WebSocket): void => {
+    ws = sock
+    sock.on('message', (raw) => {
+      let obj: Record<string, unknown>
+      try {
+        obj = JSON.parse(String(raw)) as Record<string, unknown>
+      } catch {
+        return
+      }
+      const action = String(obj['action'] ?? '')
+      if (!action) return
+      // 每个 action 都分配一个 message_id：测试要靠它模拟"引用它刚说的话"。
+      // 注意连接时 loadSelfInfo 也会发一个 action，所以不能假设第一个就是发送。
+      const id = ++seq
+      seen.push({ action, params: (obj['params'] ?? {}) as Record<string, unknown>, id })
+      sock.send(
+        JSON.stringify({
+          status: 'ok',
+          retcode: 0,
+          data: { message_id: id, nickname: '小满', user_id: 3 },
+          echo: obj['echo'],
+        }),
+      )
+    })
+  }
+
+  const connect = async (): Promise<void> => {
+    const sock = new WebSocket(`ws://127.0.0.1:${port}/onebot/v11/ws?access_token=test-token`)
+    await new Promise<void>((resolve, reject) => {
+      sock.once('open', () => resolve())
+      sock.once('error', reject)
+    })
+    attach(sock)
+    await tick(120)
+  }
+  await connect()
+
+  /** 模拟 NapCat 断开后重连 */
+  const reconnect = async (): Promise<void> => {
+    ws.close()
+    await tick(150)
+    await connect()
+  }
+  /** 模拟 NapCat 掉线（不断开进程，只是链路没了） */
+  const dropConnection = async (): Promise<void> => {
+    ws.close()
+    await tick(150)
+  }
 
   const push = (ev: Record<string, unknown>): void => {
     ws.send(JSON.stringify({ post_type: 'message', self_id: 3, ...ev }))
@@ -150,6 +172,8 @@ async function harness(
     sent,
     seen,
     lastGroupMsgId,
+    reconnect,
+    dropConnection,
     close: async () => {
       ws.close()
       await transport.stop()
@@ -528,6 +552,154 @@ test('真链路：同时 @ 它和别人 → 仍然回（它自己被叫到了）
     })
     await tick(500)
     assert.equal(h.sent().length, 1)
+  } finally {
+    await h.close()
+  }
+})
+
+/* ---------------- 网络：掉线重连 ---------------- */
+
+test('网络：NapCat 断开再重连，之后的消息照常处理', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push(groupAt('断开前'))
+    await tick(400)
+    assert.equal(h.sent().length, 1)
+
+    await h.dropConnection()
+    await h.reconnect()
+
+    h.push(groupAt('重连后'))
+    await tick(500)
+    assert.equal(h.sent().length, 2, '重连后要能继续正常工作')
+  } finally {
+    await h.close()
+  }
+})
+
+test('网络：重连后「引用它刚说的话」仍然认得（ownIds 没丢）', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push(groupAt('说个事'))
+    await tick(400)
+    const ownId = h.lastGroupMsgId()
+    await h.dropConnection()
+    await h.reconnect()
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9002,
+      sender: { nickname: '小红' },
+      message: [
+        { type: 'reply', data: { id: ownId } },
+        { type: 'text', data: { text: '你刚才说的那个' } },
+      ],
+    })
+    await tick(500)
+    assert.equal(h.sent().length, 2, '重连不该把"自己说过什么"忘掉')
+  } finally {
+    await h.close()
+  }
+})
+
+/* ---------------- 畸形输入：不能崩、不能被注入 ---------------- */
+
+test('畸形输入：消息里带 CQ 码文本，出站也不能真的 @ 人', async () => {
+  clearSessions()
+  const h = await harness('熟人续话', undefined, () => '[CQ:at,qq=all] 大家好')
+  try {
+    h.push(groupAt('你 @ 一下全体'))
+    await tick(500)
+    const out = h.sent()[0] ?? ''
+    assert.equal(out.includes('[CQ:at'), false, '模型吐的 CQ 码不能原样发出去')
+  } finally {
+    await h.close()
+  }
+})
+
+test('畸形输入：未知消息段（json/xml/mface）不会让处理崩掉', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [
+        { type: 'json', data: { data: '{"app":"x"}' } },
+        { type: 'mface', data: { emoji_id: '1' } },
+        { type: 'at', data: { qq: '3' } },
+        { type: 'text', data: { text: ' 看这个' } },
+      ],
+    })
+    await tick(500)
+    assert.equal(h.sent().length, 1, '不认识的段要当占位跳过，不能整条丢掉')
+  } finally {
+    await h.close()
+  }
+})
+
+test('畸形输入：控制字符 / 超长文本不会把服务撑坏', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push(groupAt('零宽\u200b字符\ufeff和\u0000空字节'))
+    await tick(500)
+    assert.equal(h.sent().length, 1, '奇怪字符也要能正常回一句')
+
+    h.push(groupAt('长'.repeat(20000)))
+    await tick(800)
+    assert.equal(h.sent().length, 2, '超长也不能崩')
+  } finally {
+    await h.close()
+  }
+})
+
+test('畸形输入：@ 的 qq 是空串（坏数据）不算叫它，也不算叫别人', async () => {
+  clearSessions()
+  const h = await harness()
+  try {
+    h.push({
+      message_type: 'group',
+      group_id: 555,
+      user_id: 9001,
+      sender: { nickname: '小明' },
+      message: [
+        { type: 'at', data: { qq: '' } },
+        { type: 'text', data: { text: ' 在吗' } },
+      ],
+    })
+    await tick(400)
+    assert.deepEqual(h.sent(), [], '空 @ 是坏数据，不该当成叫它')
+  } finally {
+    await h.close()
+  }
+})
+
+test('出站：模型写"@全体成员"这种纯文本，也会被去掉', async () => {
+  clearSessions()
+  const h = await harness('熟人续话', undefined, () => '@全体成员 都来看这个')
+  try {
+    h.push(groupAt('你看这个'))
+    await tick(500)
+    const out = h.sent()[0] ?? ''
+    assert.equal(out.includes('@全体成员'), false, '不该真的点名全体')
+    assert.ok(out.includes('都来看这个'), '去掉 @ 就行，别把话删光')
+  } finally {
+    await h.close()
+  }
+})
+
+test('出站：模型返回空内容时一个字段都不发', async () => {
+  clearSessions()
+  const h = await harness('熟人续话', undefined, () => '   ')
+  try {
+    h.push(groupAt('随便说点什么'))
+    await tick(500)
+    assert.deepEqual(h.sent(), [], '沉默也是一种回答，不能发一条空白消息')
   } finally {
     await h.close()
   }
