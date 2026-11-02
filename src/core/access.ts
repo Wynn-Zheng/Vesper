@@ -66,14 +66,14 @@ export function accessFile(): string {
  * 读权限策略。
  * 文件不在就用 .env 生成一份——第一次运行后，控制台改的就是这个文件，不再碰 .env。
  */
-export function loadAccess(): AccessPolicy {
-  if (!existsSync(FILE)) {
+export function loadAccess(file: string = FILE): AccessPolicy {
+  if (!existsSync(file)) {
     const initial = fromEnv()
-    saveAccess(initial)
+    saveAccess(initial, file)
     return initial
   }
   try {
-    const raw = YAML.parse(readFileSync(FILE, 'utf8')) as Record<string, unknown> | null
+    const raw = YAML.parse(readFileSync(file, 'utf8')) as Record<string, unknown> | null
     if (!raw || typeof raw !== 'object') return { ...EMPTY }
     const group = (raw['群'] ?? {}) as Record<string, unknown>
     const member = (raw['成员'] ?? {}) as Record<string, unknown>
@@ -103,12 +103,12 @@ export function loadAccess(): AccessPolicy {
   }
 }
 
-export function saveAccess(p: AccessPolicy): void {
+export function saveAccess(p: AccessPolicy, file: string = FILE): void {
   const doc = {
     群: { 开启: p.allowGroup, 白名单: p.groupAllow, 黑名单: p.groupDeny },
     成员: { 白名单: p.memberAllow, 黑名单: p.memberDeny, 必须at: p.requireAt },
   }
-  writeAtomic(FILE, `${YAML.stringify(doc)}\n`)
+  writeAtomic(file, `${YAML.stringify(doc)}\n`)
 }
 
 export interface AccessResult {
