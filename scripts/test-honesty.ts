@@ -140,9 +140,21 @@ console.log('\n=== 2. 说不能 → 代码里确实没有 ===')
   for (const m of SRC.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) domains.add(m[1]!.toLowerCase())
   // qzone.qq.com 只是 Referer（防盗链用的请求头），不是"打开网页"
   // localhost / 127.0.0.1 是本地假服务（测试和探针用的）
-  const ALLOW = ['bilibili', 'deepseek', 'qlogo', 'qzone.qq.com', 'localhost', '127.0.0.1', 'example']
+  // github.com / api.github.com 是**更新检查**（update.ts 查 Release），
+// 不是"它能上网"的能力 —— 那是用户在设置页点「检查更新」才发的请求。
+const ALLOW = [
+  'bilibili',
+  'deepseek',
+  'qlogo',
+  'qzone.qq.com',
+  'localhost',
+  '127.0.0.1',
+  'example',
+  'github.com',
+  'api.github.com',
+]
   const external = [...domains].filter((d) => !ALLOW.some((a) => d.includes(a)))
-  check('打开网页/搜索: 没有别的外部域名（只剩 bili/deepseek/referer/本地）', external.length === 0, external.join(','))
+  check('打开网页/搜索: 没有别的外部域名（只剩 bili/deepseek/referer/github/本地）', external.length === 0, external.join(','))
 }
 {
   const c = claim('看视频画面')
