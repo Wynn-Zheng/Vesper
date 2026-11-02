@@ -50,3 +50,6 @@ browser-screenshots/
 
 # 本地调研素材（不公开）
 dy_imgs/
+
+# 私人文档（不想公开的笔记/真实对话）
+.private-docs/

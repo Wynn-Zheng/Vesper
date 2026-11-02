@@ -1,7 +1,7 @@
 /**
  * 记忆层的"别无限涨"部分：insights 去重/上限、episodes 缓存、raw 清理。
  *
- * 对应 docs/交接文档.md §5.6 / §5.8 / §5.7。
+ * 对应 （内部交接文档，未公开） §5.6 / §5.8 / §5.7。
  * 全部在临时目录里跑，不碰 data/ 和 persona/。
  */
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
