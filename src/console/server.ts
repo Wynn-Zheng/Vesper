@@ -168,6 +168,25 @@ function json(res: ServerResponse, code: number, data: unknown): void {
   res.end(JSON.stringify(data))
 }
 
+/**
+ * 读一份**当前磁盘上**的规则。
+ *
+ * 为什么不能一律用 opts.getRules()：那个返回的是进程内存里的快照，
+ * 靠 watchFile 每 1.5 秒轮询才发现文件变了。于是"刚保存完立刻刷新"的页面
+ * 会读回**旧值** —— 实测点能力开关后，列表弹回原状态（配置其实已经写进文件了），
+ * 用户会以为"开关坏了"。
+ *
+ * 控制台是"人刚刚改了东西"的场景，宁可多读一次文件也要读到最新的。
+ * 文件读坏了就退回内存快照（总比整个页面报错好）。
+ */
+function freshRules(opts: ConsoleOptions): Rules {
+  try {
+    return loadRules().rules
+  } catch {
+    return opts.getRules()
+  }
+}
+
 function text(res: ServerResponse, code: number, body: string, type = 'text/plain; charset=utf-8'): void {
   // 原来只 end(body)，code/type 两个参数被丢掉 —— 401/404 页面实际都返回 200。
   res.writeHead(code, { 'Content-Type': type })
@@ -904,7 +923,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           nameReason: self.nameReason || null,
           selfVersions: listSelfVersions(5),
           drifts: loadDrifts(5),
-          phase: phaseOf(opts.getRules(), new Date()),
+          phase: phaseOf(freshRules(opts), new Date()),
           mood: mood ? { emotion: mood.emotion, intensity: mood.intensity, at: mood.at } : null,
           relation: s.relation,
           person: person ? { id: person.id, name: person.name, firstSeen: person.firstSeen } : null,
@@ -917,7 +936,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
               return []
             }
           })(),
-          watchConf: opts.getRules().外部?.刷视频 ?? null,
+          watchConf: freshRules(opts).外部?.刷视频 ?? null,
           issues: (() => {
             try {
               return findIssues({ days: 3, minCount: 2 })
@@ -1881,7 +1900,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       // 这个是给人看的（"怎么开、参数是什么、用过几次"）。
       if (req.method === 'GET' && path === '/api/ability') {
         const { abilityCards } = await import('./ability.ts')
-        json(res, 200, { cards: abilityCards(opts.getRules()) })
+        json(res, 200, { cards: abilityCards(freshRules(opts)) })
         return
       }
 
@@ -1889,7 +1908,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       if (req.method === 'PUT' && path === '/api/ability/toggle') {
         const body = await readJson(req) as { id?: string; on?: boolean }
         const { abilityCards } = await import('./ability.ts')
-        const card = abilityCards(opts.getRules()).find((c) => c.id === body.id)
+        const card = abilityCards(freshRules(opts)).find((c) => c.id === body.id)
         if (!card) {
           json(res, 404, { error: '没有这个能力' })
           return
@@ -2026,7 +2045,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         json(res, 200, {
           self: loadSelf(),
           life: loadLife().reverse(),
-          phase: phaseOf(opts.getRules(), new Date()),
+          phase: phaseOf(freshRules(opts), new Date()),
         })
         return
       }

@@ -260,6 +260,38 @@ async function main(): Promise<void> {
     check(`${p} 坏 JSON 有响应`, r.status >= 400 && r.status < 600, `${r.status}`)
   }
 
+  /* ============ 7.5 刚保存完，紧接着读必须读到新值 ============ */
+  //
+  // 这条治的是"改了但界面弹回去"：服务端的 getRules() 是内存快照，
+  // 靠文件轮询（1.5 秒）才更新。控制台保存完立刻刷新时，如果拿快照回话，
+  // 用户会看到开关自己弹回原状 —— 其实配置已经写进文件了。
+  console.log('\n=== 7.5 保存后立刻读 ===')
+  {
+    const list = JSON.parse((await api('/api/ability')).body) as {
+      cards: Array<{ id: string; on: boolean; toggleKey?: string }>
+    }
+    const card = list.cards?.find((c) => c.toggleKey)
+    if (!card) {
+      check('有可开关的能力（否则这条测不了）', false)
+    } else {
+      const orig = card.on
+      const w = await api('/api/ability/toggle', {
+        method: 'PUT',
+        body: JSON.stringify({ id: card.id, on: !orig }),
+      })
+      check('能力切换 200', w.status === 200, `${w.status}`)
+      const after = JSON.parse((await api('/api/ability')).body) as {
+        cards: Array<{ id: string; on: boolean }>
+      }
+      const got = after.cards?.find((c) => c.id === card.id)?.on
+      check('紧接着读到的就是新状态（不能读回内存快照）', got === !orig, `${orig} → ${got}`)
+      // 拨回原状，别把用户配置改了
+      await api('/api/ability/toggle', { method: 'PUT', body: JSON.stringify({ id: card.id, on: orig }) })
+      const back = JSON.parse((await api('/api/ability')).body) as { cards: Array<{ id: string; on: boolean }> }
+      check('能拨回原状', back.cards?.find((c) => c.id === card.id)?.on === orig)
+    }
+  }
+
   /* ============ 8. 服务还活着（前面折腾完没崩） ============ */
   console.log('\n=== 8. 服务健在 ===')
   {
