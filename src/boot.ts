@@ -196,7 +196,9 @@ function speakerLabel(m: Incoming): string {
 /**
  * 把一批消息拆成「谁说了什么」。
  *
- * 只要这一批不止一条消息就逐条带名字，**包括同一个人连发**。
+ * 只要这一批不止一条消息就逐条带名字，**包括同一个人连发**；
+ * 私聊永远返回 null —— 那边只有一个人，前缀名字会很怪
+ * （私聊的 formatUserText 本来也不加前缀）。
  *
  * 为什么同人连发也必须带名字：`people/group.ts` 里告诉模型
  * 「带名字前缀的是别人说的；没有前缀的是你自己刚说过的」。
@@ -206,11 +208,13 @@ function speakerLabel(m: Incoming): string {
  *
  * 为什么用**条数**而不是"不同名字数"判：QQ 同群允许重名名片，
  * 两个人同名时按名字数会判成单人，等于没修。
- *
- * 返回的是给 prompt 的逐行文本；判定/打分用的是原始拼接文本（见 flush），
- * 免得名字污染"嗯""哦"这类短回复识别和内容过滤。
  */
-export function batchLines(texts: string[], labels: string[]): Array<{ name: string; text: string }> | null {
+export function batchLines(
+  kind: string,
+  texts: string[],
+  labels: string[],
+): Array<{ name: string; text: string }> | null {
+  if (kind !== 'group') return null
   if (texts.length <= 1) return null
   return texts.map((t, i) => ({ name: labels[i] ?? '?', text: t }))
 }
@@ -495,7 +499,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
         // 只锚 @ 的话：有人连聊三分钟、它每条都回，一到那个 120 秒就突然不回，
         // 像聊着聊着走了。锚在"刚回过"才对得上人的直觉 ——
         // 既然它刚接过这个人一句，对方接着说下一句就该顺下去。
-        opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
+        // 只在群里有意义：连续对话窗口本来就是群聊的概念，
+        // 私聊每条都必回，不需要这个锚（硬记还会在 recentTalkers 里留脏键）。
+        if (m.from.kind === 'group') opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
       }
       appendRaw({ ts: Date.now(), scope: scopeOf(m.from), role: 'assistant', text: reply.trim() })
       info(`→ ${who}：${ids.length} 条`)
@@ -617,7 +623,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
     // 内容过滤也会被群友的名字误伤，回复预算还会被名字长度抬高。
     // 逐行带名字的版本单独交给 chat.ts 拼 prompt。
     const text = buf.texts.join('\n')
-    const lines = batchLines(buf.texts, buf.senderLabels)
+    // 只有群聊需要「名字：内容」 —— 私聊里对方就一个人，前缀名字会很怪
+    // （私聊的 formatUserText 本来也不加前缀）。
+    const lines = batchLines(buf.last.from.kind, buf.texts, buf.senderLabels)
     // 关键：同一会话的两轮不能并发处理。之前是这里 delete 完就 await，
     // 对方在上一轮没回完时再发一条，会另起一次 handle，两轮分句互相插、后一轮可能先发完。
     const prev = sending.get(key) ?? Promise.resolve()
