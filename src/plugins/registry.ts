@@ -84,6 +84,18 @@ export async function scanPlugins(
         message: `目录名（${entry.name}）和清单里的 id（${parsed.manifest.id}）不一样。能正常跑，但卸载/停用按目录走，建议改成一致。`,
       })
     }
+
+    // 声明了已移除的权限：说清楚"为什么这个能力没给"，别让插件作者猜。
+    // 未知权限一律被静默忽略（见 parseManifest），但 shell 是**曾经有、现在没有**，
+    // 悄悄消失比报错更难受 —— 插件会以为自己拿到了 ctx.exec。
+    const declared = (raw as { permissions?: unknown }).permissions
+    if (Array.isArray(declared) && declared.includes('shell')) {
+      warnings.push({
+        id: entry.name,
+        message:
+          '声明了 shell 权限，但它已被移除（白名单里的 node/python 等于任意代码执行；其余命令在 Windows 上大半不是可执行文件）。ctx.exec 不会存在，请改用插件自己的代码。',
+      })
+    }
   }
 
   // 按 id 升序，保证多次扫描顺序稳定

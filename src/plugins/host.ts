@@ -58,13 +58,6 @@ export type PluginContext = {
   readFile?: (relPath: string) => Promise<string>
   writeFile?: (relPath: string, content: string) => Promise<void>
   /**
-   * permissions 含 shell 时存在：跑一条命令。
-   *
-   * 只接受**白名单里的可执行文件**（见 SHELL_ALLOW），不经过 shell
-   * （所以 `;` `|` `&&` 不会生效，参数按数组传）。超时 10 秒。
-   */
-  exec?: (cmd: string, args?: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
-  /**
    * 定时器：**请用这几个，别直接用全局 setInterval**。
    *
    * 为什么：插件是热重载的，但 ESM 模块卸载不了。插件用全局 setInterval 起的
@@ -85,21 +78,6 @@ export type PluginTimer = { readonly __pluginTimer: true } & Record<string, unkn
 
 /** 允许 async：插件作者很自然会写 async 处理器，宿主必须接住它的拒绝 */
 type Handler = (payload: unknown) => void | Promise<void>
-
-/**
- * shell 权限的白名单。
- *
- * 为什么是白名单：可执行文件太多，黑名单永远列不全；
- * 而且这功能的定位是"给它一个小工具"（看个时间、算个数、查个目录），
- * 不是通用终端。真需要更多能力，应该写进插件代码里而不是加白名单。
- *
- * 刻意不含：rm/del/mv/curl/wget/powershell/cmd/sh —— 这些能造成不可逆破坏。
- */
-const SHELL_ALLOW = new Set([
-  'echo', 'date', 'dir', 'ls', 'cat', 'type', 'findstr', 'grep',
-  'node', 'python', 'python3', 'git', 'wc', 'head', 'tail', 'sort', 'uniq',
-])
-
 
 
 type LoadedPlugin = {
@@ -371,40 +349,6 @@ export function createHost(options: {
               const p = resolvePluginPath(dataDir, relPath)
               mkdirSync(dirname(p), { recursive: true })
               writeFileSync(p, String(content ?? ''), 'utf8')
-            },
-          }
-        : {}),
-      ...(permissions.includes('shell')
-        ? {
-            // 跑命令：只允许白名单里的程序，不经过 shell，10 秒超时。
-            //
-            // 为什么白名单而不是黑名单：可执行文件太多，黑名单永远列不全；
-            // 而且这是"给它一个小工具"的场景，不是通用终端。
-            exec: async (cmd: string, args: string[] = []) => {
-              const name = String(cmd || '').trim()
-              if (!SHELL_ALLOW.has(name)) {
-                throw new Error(`不允许执行 ${name}（只允许：${[...SHELL_ALLOW].join(', ')}）`)
-              }
-              const { execFile } = await import('node:child_process')
-              const list = args.map((a) => String(a))
-              return await new Promise((resolveP, rejectP) => {
-                execFile(
-                  name,
-                  list,
-                  { timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true },
-                  (err, stdout, stderr) => {
-                    if (err && (err as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
-                      rejectP(new Error(`${name} 超时（10 秒）`))
-                      return
-                    }
-                    resolveP({
-                      code: err && typeof (err as { code?: unknown }).code === 'number' ? (err as { code: number }).code : 0,
-                      stdout: String(stdout ?? '').slice(0, 64 * 1024),
-                      stderr: String(stderr ?? '').slice(0, 64 * 1024),
-                    })
-                  },
-                )
-              })
             },
           }
         : {}),

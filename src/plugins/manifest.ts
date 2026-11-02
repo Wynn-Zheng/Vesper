@@ -16,8 +16,18 @@ export const PERMISSIONS = {
   net: { label: '联网', desc: '访问外部网络（调第三方 API）' },
   memory: { label: '读记忆', desc: '读 persona/ 下的记忆、档案、聊天记录' },
   message: { label: '发消息', desc: '主动给你或群里发消息' },
-  files: { label: '读写文件', desc: '读写项目目录内的文件（不能出项目根，越界会被拒）' },
-  shell: { label: '执行命令', desc: '跑白名单里的命令（echo/date/git/node/python 等，10 秒超时，不经过 shell）' },
+  files: {
+    label: '读写文件',
+    desc: '读写**这个插件自己 dataDir** 里的文件（越界、junction 都会被拒）',
+  },
+  // ⚠ shell 权限已移除（2026-11）。两个原因：
+  //   1. 白名单里原来有 node/python —— `node -e "…"` 就是任意代码执行，
+  //      等于白名单不存在。
+  //   2. 剩下的命令在 Windows 上大半不是可执行文件（echo/dir/type/ls/cat/
+  //      grep/wc/head/tail/uniq/date 都是 cmd 内置或根本没有），
+  //      实测 `execFile('echo')` 直接 ENOENT —— 功能在目标平台上几乎不可用。
+  // 声明了 shell 的插件现在会收到一条提示（见 registry.ts）。
+  // 真需要跑命令的场景，请写进插件自己的 index.mjs（那里本来就能用 child_process）。
 } as const
 
 export type PluginPermission = keyof typeof PERMISSIONS
