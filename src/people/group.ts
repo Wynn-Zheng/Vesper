@@ -67,6 +67,11 @@ export function renderGroupContext(groupId: string): string {
   const mates = peopleInGroup(groupId)
   const lines: string[] = []
 
+  // 群聊记录的格式：「说话人：内容」。
+  // prompt 里的历史就是这么存的（见 formatUserText），但从来没跟模型解释过，
+  // 于是它偶尔分不清"这句是谁说的"，也会把自己的回复当成别人说的。
+  lines.push('群里的聊天记录写成「说话人：内容」。带名字前缀的是**别人**说的；没有前缀的是**你自己**刚说过的。')
+
   if (members.length) {
     const names = members.map((m) => m.name).slice(0, 25)
     lines.push(`这个群一共 ${members.length} 人：${names.join('、')}${members.length > 25 ? '……' : ''}`)

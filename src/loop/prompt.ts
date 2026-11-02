@@ -119,6 +119,10 @@ export function buildSystem(parts: PromptParts): string {
   const role = personRole?.trim() || roleOfPerson(personName)
   const who = personName ? `「${personName}」` : '一个人'
   lines.push(`你在 QQ 上跟${who}${role ? `（关系：${role}）` : ''}聊天。这不是客服，是两个人说话。`)
+  // 人称：模型的通病是把对方那句里的「我」照搬成自己说的「你」。
+  // 实际出现过：他问「我是在和谁说话」，它回「跟你，群代肝」——
+  // 该说「跟我」才对。这条明确一次，比让它自己悟可靠。
+  lines.push('- 人称别弄反：你说「我」指你自己，说「你」指对方。对方问「我在跟谁说话」时，答案是「跟我」。')
   // 控制台对话：它得知道自己不在 QQ 上，而且这里说的不会自动进正式记忆
   if (parts.consoleMode) {
     lines.push(
