@@ -3,6 +3,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { parse as parseYaml } from 'yaml'
 
 const html = readFileSync('console/index.html', 'utf8')
 // 匹配**所有**内联 <script> 块再拼起来。
@@ -14,7 +15,12 @@ const script = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g))
 
 /* ---------- 1. DOM id 引用 ---------- */
 const definedIds = new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g)).map((m) => m[1]!))
-// 动态创建的也算（el('div',...,...) 里没有 id；但 querySelector 用的要算）
+// 运行时动态创建的也要算：xx.id = 'foo'
+for (const m of html.matchAll(/\.id\s*=\s*'([^']+)'/g)) definedIds.add(m[1]!)
+for (const f of readdirSync('console').filter((n) => n.endsWith('.js'))) {
+  const js = readFileSync(join('console', f), 'utf8')
+  for (const m of js.matchAll(/\.id\s*=\s*'([^']+)'/g)) definedIds.add(m[1]!)
+}
 const usedIds = new Set(Array.from(script.matchAll(/\$\('([^']+)'\)/g)).map((m) => m[1]!))
 
 const missing = [...usedIds].filter((id) => !definedIds.has(id))
@@ -35,16 +41,38 @@ if (missing.length) {
 }
 
 /* ---------- 2. 后端 API 路由 ---------- */
-const serverSrc = readFileSync('src/console/server.ts', 'utf8')
-const routes = new Set(Array.from(serverSrc.matchAll(/path === '([^']+)'/g)).map((m) => m[1]!))
+// 路由早就拆到 src/console/*-api.ts 了，只读 server.ts 会漏掉一大半，
+// 于是一堆"前端调了不存在接口"的假阳性。全部扫一遍。
+const apiDir = 'src/console'
+const apiFiles = readdirSync(apiDir)
+  .filter((f) => f.endsWith('.ts'))
+  .map((f) => join(apiDir, f))
+const routes = new Set<string>()
+/** 前缀路由（path.startsWith(...)），前端拼 id 的那种 */
+const prefixes: string[] = []
+for (const f of apiFiles) {
+  const src = readFileSync(f, 'utf8')
+  for (const m of src.matchAll(/path === '(\/api\/[^']+)'/g)) routes.add(m[1]!)
+  for (const m of src.matchAll(/path\.startsWith\('(\/api\/[^']+)'\)/g)) prefixes.push(m[1]!)
+}
 console.log('\n=== API 路由 ===')
-console.log(`router 定义了 ${routes.size} 个`)
+console.log(`router 定义了 ${routes.size} 个（另有 ${prefixes.length} 个前缀路由）`)
 
-// 前端调用的 api(...) 路径
+// 前端调用的 api(...) / getData(...) / sendJson(...) 路径
 const called = new Set(
-  Array.from(script.matchAll(/api\('([^'?]+)/g)).map((m) => m[1]!),
+  Array.from(script.matchAll(/(?:api|getData|sendJson)\(\s*'(\/api\/[^'?]+)/g)).map((m) => m[1]!),
 )
-const calledMissing = [...called].filter((p) => !routes.has(p))
+
+/**
+ * 精确命中，或者被前缀路由接住（如 /api/plugins/list）。
+ * 另外前端有 '/api/self/requests/' + action 这种拼接写法：末尾带 / 时，
+ * 只要后端有以它开头的路由就算对得上。
+ */
+const known = (p: string): boolean =>
+  routes.has(p) ||
+  prefixes.some((pre) => p.startsWith(pre)) ||
+  (p.endsWith('/') && [...routes].some((r) => r.startsWith(p)))
+const calledMissing = [...called].filter((p) => !known(p))
 if (calledMissing.length) {
   console.log('❌ 前端调了不存在接口：', calledMissing.join(', '))
 } else {
@@ -53,7 +81,7 @@ if (calledMissing.length) {
 
 // 后端有但前端没用的
 const unused = [...routes].filter((r) => r !== '/api/events' && ![...called].some((c) => c === r))
-if (unused.length) console.log(`⚠ 后端有但前端没调：${unused.join(', ')}`)
+if (unused.length) console.log(`⚠ 后端有但前端没调：${unused.length} 个（多为面板/插件间接调用，仅供参考）`)
 
 /* ---------- 3. 数据文件格式 ---------- */
 console.log('\n=== 数据文件 ===')
@@ -89,14 +117,11 @@ for (const f of personaFiles) {
       }
     }
     if (f.endsWith('.yaml')) {
-      // 粗略：每行要么空、要么注释、要么 key: value 或 列表项
-      for (const line of text.split('\n')) {
-        const t = line.trim()
-        if (!t || t.startsWith('#') || t.startsWith('-')) continue
-        if (!/^[\p{L}\p{N}_·「」()（）、。：: -]+[:：]/u.test(t) && !t.endsWith(':') && !t.includes(':')) {
-          throw new Error(`第 ${text.split('\n').indexOf(line) + 1} 行不像 yaml: ${t.slice(0, 40)}`)
-        }
-      }
+      // 用真正的解析器，别用手写正则 —— `{}`、`[]`、块标量都是合法 YAML，
+      // 正则版会把空对象判成"不像 yaml"，属于工具误报，不是数据坏了。
+      const doc = parseYaml(text)
+      // 解析成功即可；null 代表空文件，也算合法
+      void doc
     }
   } catch (e) {
     bad++
@@ -137,7 +162,7 @@ const deadNames = ['loadOverview', 'renderRelation', 'titles[']
 for (const n of deadNames) {
   if (script.includes(n)) console.log(`⚠ 还有 ${n}`)
 }
-const okChecks = ['showGroup', 'runLoaders', 'loadState', 'loadTrend', 'renderSched', 'doSearch', 'renderPicker']
+const okChecks = ['showGroup', 'runLoaders', 'doSearch', 'loadSelfV2', 'loadDashboard', 'loadHistory']
 for (const n of okChecks) {
   if (!script.includes(n)) console.log(`❌ 缺少 ${n}`)
 }

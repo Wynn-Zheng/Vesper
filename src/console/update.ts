@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 在线更新：查版本、下载更新包、解压、标记待替换。
  *
  * 真正"替换 resources/app"这步不在这里做 —— 后端正跑在 app 目录里，
@@ -55,6 +55,27 @@ function normVer(v: string): string {
   return String(v ?? '').trim().replace(/^v/i, '')
 }
 
+/**
+ * 远端版本是否**比当前高**。
+ *
+ * 必须按版本号大小比，不能比「不相等」—— 线上版本回滚、或者某个源落后
+ * （比如 GitHub Release 还停在 0.1.6，用户装的是 0.1.8）时，用 !== 会把
+ * 「旧版本」当成「新版本」，弹窗引导用户降级，用户点一下就真的降级了。
+ */
+export function isNewer(latest: string, current: string): boolean {
+  const a = normVer(latest)
+  const b = normVer(current)
+  if (!a || !b) return false
+  try {
+    return compareVersions(a, b) > 0
+  } catch {
+    // 版本号格式不合法（线上文件写坏了 / 本地是改过的构建）。
+    // 这时判断不了新旧，就不提示更新 —— 宁可少提示一次，也不能把用户往
+    // 一个说不清的版本上带。
+    return false
+  }
+}
+
 /** 从官网拉 latest.json（能增量更新） */
 async function checkSelf(current: string): Promise<CheckResult> {
   if (!baseUrl()) return { ok: false, error: '没配置 UPDATE_URL' }
@@ -66,7 +87,7 @@ async function checkSelf(current: string): Promise<CheckResult> {
     return {
       ok: true,
       latest: { ...latest, source: 'self' },
-      hasNew: normVer(latest.version) !== normVer(current),
+      hasNew: isNewer(latest.version, current),
     }
   } catch (err) {
     return { ok: false, error: String(err).slice(0, 120) }
@@ -109,7 +130,7 @@ async function checkGitHub(current: string): Promise<CheckResult> {
           ? { app: { url: asset.browser_download_url, sha256: '', size: asset.size ?? 0 } }
           : {}),
       },
-      hasNew: version !== normVer(current),
+      hasNew: isNewer(version, current),
     }
   } catch (err) {
     return { ok: false, error: String(err).slice(0, 120) }

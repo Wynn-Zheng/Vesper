@@ -457,47 +457,8 @@ async function loadModel() {
 
       let latest = null
 
-      checkBtn.onclick = async () => {
-        checkBtn.disabled = true
-        line.textContent = '检查中…'
-        try {
-          const r = await api('/api/settings/check-update')
-          if (!r.ok) {
-            line.textContent = r.error || '检查失败'
-            return
-          }
-          latest = r.latest
-          // 两个渠道：官网给的是 app.tar.gz（能一键增量更新）；
-          // GitHub Release 给的是整包 zip，只能跳过去手动下载 —— 文案要说清楚。
-          const fromGh = r.latest.source === 'github'
-          if (!r.hasNew) {
-            line.textContent = '已是最新版本（' + r.latest.version + '）'
-            applyBtn.style.display = 'none'
-            return
-          }
-          line.textContent =
-            '发现新版本 ' +
-            r.latest.version +
-            (r.latest.git ? '（' + r.latest.git + '）' : '') +
-            (fromGh ? '　来自 GitHub Release，需要手动下载整包' : '，可以一键更新')
-          applyBtn.textContent = fromGh ? '去下载' : '立即更新'
-          applyBtn.style.display = ''
-          // GitHub 渠道：点按钮直接打开下载页，不走 downloadUpdate
-          if (fromGh) {
-            applyBtn.onclick = () => {
-              const url = r.latest.pageUrl || 'https://github.com/Wynn-Zheng/Vesper/releases/latest'
-              window.open(url, '_blank', 'noopener')
-              line.textContent = '已打开下载页；下载后解压覆盖安装目录即可（数据不会丢）'
-            }
-          }
-        } catch (e) {
-          line.textContent = '检查失败：' + e.message
-        } finally {
-          checkBtn.disabled = false
-        }
-      }
-
-      applyBtn.onclick = async () => {
+      /** 走官网渠道：下载 app.tar.gz、校验、标记待替换 */
+      const doDownload = async () => {
         if (!latest) return
         applyBtn.disabled = true
         const old = applyBtn.textContent
@@ -524,6 +485,51 @@ async function loadModel() {
         } finally {
           applyBtn.disabled = false
           if (applyBtn.textContent === '下载中…') applyBtn.textContent = old
+        }
+      }
+
+      checkBtn.onclick = async () => {
+        checkBtn.disabled = true
+        line.textContent = '检查中…'
+        try {
+          const r = await api('/api/settings/check-update')
+          if (!r.ok) {
+            line.textContent = r.error || '检查失败'
+            return
+          }
+          latest = r.latest
+          // 两个渠道：官网给的是 app.tar.gz（能一键增量更新）；
+          // GitHub Release 给的是整包 zip，只能跳过去手动下载 —— 文案要说清楚。
+          const fromGh = r.latest.source === 'github'
+          if (!r.hasNew) {
+            // 显示"当前版本"，不是远端版本 —— 远端可能比本地还旧
+            // （比如线上回滚过、或 GitHub Release 落后），显示远端版本会让人以为降级了
+            line.textContent = '已是最新版本（' + (r.current || r.latest.version) + '）'
+            applyBtn.style.display = 'none'
+            return
+          }
+          line.textContent =
+            '发现新版本 ' +
+            r.latest.version +
+            (r.latest.git ? '（' + r.latest.git + '）' : '') +
+            (fromGh ? '　来自 GitHub Release，需要手动下载整包' : '，可以一键更新')
+          applyBtn.textContent = fromGh ? '去下载' : '立即更新'
+          applyBtn.style.display = ''
+          // 每次检查都重绑：上一次可能是 GitHub 渠道（onclick=打开网页），
+          // 这一次如果回到官网渠道，必须换回下载逻辑，否则点"立即更新"会跑去开网页
+          if (fromGh) {
+            applyBtn.onclick = () => {
+              const url = r.latest.pageUrl || 'https://github.com/Wynn-Zheng/Vesper/releases/latest'
+              window.open(url, '_blank', 'noopener')
+              line.textContent = '已打开下载页；下载后解压覆盖安装目录即可（数据不会丢）'
+            }
+          } else {
+            applyBtn.onclick = doDownload
+          }
+        } catch (e) {
+          line.textContent = '检查失败：' + e.message
+        } finally {
+          checkBtn.disabled = false
         }
       }
 
