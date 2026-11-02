@@ -841,8 +841,13 @@ export class OnebotTransport implements Transport {
     } catch (err) {
       // 引用失败（被引用那条已撤回/删除，retcode≠0）时去掉引用重发一次：
       // 不然第一条就失败，say() 抛错，整轮回复全丢。
-      if (!replyId) throw err
-      warnAt('引用发送失败，去掉引用重发', { err: String(err).slice(0, 120) })
+      //
+      // ⚠ 超时**不能**重发：超时意味着"不知道对方收没收到"，
+      // 重发很可能让同一句话在群里出现两遍。只有明确的业务失败
+      // （retcode≠0，说明这条确实没发出去）才值得重试。
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!replyId || !shouldRetryWithoutReply(err)) throw err
+      warnAt('引用发送失败，去掉引用重发', { err: msg.slice(0, 120) })
       const data = (await this.callAction(action, { ...params, message: plain })) as { message_id?: number | string } | null
       const id = data?.message_id
       this.rememberOwn(id !== undefined && id !== null ? String(id) : undefined)
@@ -1259,4 +1264,16 @@ export function isAtOthers(ev: OBEvent, ownIds?: Set<string>): boolean {
     return true
   }
   return false
+}
+/**
+ * 引用发送失败后，要不要去掉引用重发一次。
+ *
+ * 只有"这条确实没发出去"才值得重试：
+ *   - retcode≠0 的业务失败（比如被引用的那条已经被撤回/删掉了）→ 重发
+ *   - 超时 → **不重发**。超时意味着"不知道对方收没收到"，
+ *     重发很可能让同一句话在群里出现两遍 —— 比丢一句话更难解释。
+ */
+export function shouldRetryWithoutReply(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return !msg.includes('超时')
 }

@@ -90,3 +90,15 @@ test('私聊 prompt：不加这两条（私聊不存在"插不插话"的问题�
   // 人称规则两边都要有
   assert.ok(s.includes('人称别弄反'))
 })
+
+/* ---------------- 超时不能重发（会重复发言） ---------------- */
+
+test('引用发送超时：不重发（避免同一句话发两遍）', async () => {
+  const { shouldRetryWithoutReply } = await import('../src/channel/onebot.ts')
+  assert.equal(shouldRetryWithoutReply(new Error('action send_group_msg 超时')), false)
+})
+
+test('引用被撤回/删除（retcode≠0）：可以重发一次', async () => {
+  const { shouldRetryWithoutReply } = await import('../src/channel/onebot.ts')
+  assert.equal(shouldRetryWithoutReply(new Error('action 失败：消息不存在')), true)
+})
