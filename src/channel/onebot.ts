@@ -1009,6 +1009,33 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
 }
 
 /**
+ * 这段文字里有没有"叫它的名字"。
+ *
+ * 为什么要词边界：原来一律 `text.includes(name)`，名字短就会天天误触发 ——
+ * 叫「小鱼」的，"小鱼干」"小鱼儿"全算叫它；叫「小满」的，"满意""满满"都算。
+ * 群里因此会突然插一句完全不搭的话，比不回还怪。
+ *
+ * 规则（宁可漏一次，也别乱接）：
+ *   - 名字单独成词：句首/句尾、两边是空白或标点；
+ *   - 名字后面紧跟呼语标点（在吗 / 呢 / 啊 …）也算 —— 中文里"小鱼在吗"没有空格；
+ *   - 名字长度 < 2 时只认"单独成词"（单字名字几乎必然误伤）。
+ */
+export function mentionsName(text: string, names: string[]): boolean {
+  const valid = names.map((n) => n.trim()).filter((n) => n && n !== '未定')
+  if (!valid.length) return false
+  for (const name of valid) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // 中文没有空格，"问一下小鱼"也该算叫她 —— 所以左边**不设约束**。
+    // 全部严格性放在右边：名字后面如果紧跟别的字，多半是另一个词
+    // （小鱼干 / 小鱼儿 / 满意 / 满满的），不该触发。
+    const right =
+      '($|[\\s，。！？、,.!?~～:：;；"\'「」『』（）()\\[\\]【】]|在|呢|啊|呀|吗|吧|嘛|哦|噢|你好|早|晚安|醒着|睡了|出来|过来)'
+    if (new RegExp(esc + right, 'i').test(text)) return true
+  }
+  return false
+}
+
+/**
  * 当前生效的群聊模式。
  *
  * 优先用注入的 getGroupMode（rules.yaml 热重载）；没注入就按老开关
@@ -1053,7 +1080,7 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
 
   const text = extractText(ev.message)
   const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
-  if (names.some((n) => text.includes(n))) return false
+  if (mentionsName(text, names)) return false
 
   // 纯图片（只发一张图、不配字）也会走到这里，而且这里**故意不放行**：
   // 它已经被 shouldHandle 放进来了（能进历史），但没 @ 就是没叫它，
@@ -1103,7 +1130,7 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
 
   const gid = String(ev.group_id ?? '')
   const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
-  const called = names.some((n) => text.includes(n))
+  const called = mentionsName(text, names)
   const mustAt = opts.getPolicy ? opts.getPolicy().requireAt : opts.requireAt !== false
   const mode = groupModeOf(opts)
 
@@ -1181,7 +1208,7 @@ export function isAddressed(ev: OBEvent, botNames: string[] = [], ownIds?: Set<s
   const names = botNames.filter((n) => n && n !== '未定')
   if (names.length) {
     const text = extractText(ev.message)
-    if (names.some((n) => text.includes(n))) return true
+    if (mentionsName(text, names)) return true
   }
   return false
 }

@@ -172,10 +172,34 @@ export function redactSecrets(text: string): string {
   return out
 }
 
+/**
+ * 去掉它自己想 @ 人的企图。
+ *
+ * 中文群里 @ 是「加急 + 强义务」：被 @ 的人有立刻回应的压力，滥用还会让 @ 失效。
+ * 它是个在群里待着的角色，不该有"点名要求别人"的权力 —— 那不是它的位置。
+ *
+ * 两种来源都要挡：
+ *   - 模型直接吐 CQ 码（`[CQ:at,qq=123]`）；
+ *   - 模型写 `@某人` 这种纯文本（有些平台/插件会把它渲染成真 @）。
+ * 保留 @全体成员 的拦截同理，而且更严格：那是管理员才该做的事。
+ */
+export function stripMentions(text: string): string {
+  return text
+    // CQ 码形态：整段删掉
+    .replace(/\[CQ:at,[^\]]*\]/gi, '')
+    // 文本形态的 @所有人 / @全体成员 / @everyone
+    // 注意别加 \b：CJK 字符不是 \w，"员" 和后面的空格之间没有词边界，
+    // 加了 \b 这条永远匹配不上（实测 "@全体成员 开会了" 会漏）。
+    .replace(/@(?:全体成员|所有人|everyone|all)/gi, '')
+    // 文本形态的 @昵称：只去掉 @ 符号，名字留着 —— 可能是在说"@小明 刚才那句"，
+    // 直接删名字会把句子弄断。去掉 @ 就不构成点名。
+    .replace(/(^|\s)@([^\s@，。！？,.!?]{1,20})/g, '$1$2')
+}
+
 /** 分句 + 间隔发送。返回实际发出的每条消息 id（平台支持时）。 */
 export async function say(t: Transport, to: Target, text: string, rules: Rules): Promise<string[]> {
   // 出站兜底：模型被套话时可能吐出 key / 私钥，发出去就收不回了
-  const safe = redactSecrets(text)
+  const safe = stripMentions(redactSecrets(text))
   const parts = splitBySentence(safe, rules.说话.每条最多字数, rules.说话.每轮最多条数)
   const ids: string[] = []
   for (let i = 0; i < parts.length; i++) {

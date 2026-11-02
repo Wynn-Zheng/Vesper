@@ -256,6 +256,18 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
   async function tryRecall(m: Incoming, rules: Rules): Promise<boolean> {
     if (!transport.recall) return false
+    // 群里谁都能说"撤回"，但只有主人能真的让它撤回。
+    //
+    // 以前不看人：群里任何一个人打一句"撤回"，它就把刚发的话收了 ——
+    // 别人能替它说话、也能拿这个捉弄它。私聊本来就是主人，不用判。
+    if (m.from.kind === 'group') {
+      const owner = String(process.env['OWNER_QQ'] ?? '').trim()
+      const speaker = String(m.senderId ?? '').trim()
+      if (!owner || speaker !== owner) {
+        info(`不是主人说撤回，忽略：${speaker || '?'}`)
+        return false
+      }
+    }
     const scope = scopeOf(m.from)
     const last = lastSent.get(scope)
     if (!last || Date.now() - last.at > RECALL_WINDOW) return false

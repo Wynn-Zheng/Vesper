@@ -372,6 +372,8 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     userChars: m.text.length,
     phase: buildPhaseBlock(opts.rules),
     repeatHint: detectRepeat(key),
+    // 群聊：prompt 里要说明"你可以选择这次不说话"、以及不要 @ 人
+    groupChat: inGroup,
   })
 
   // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人。
