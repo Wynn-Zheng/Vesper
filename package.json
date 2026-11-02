@@ -2,7 +2,7 @@
   "name": "vesper",
   "private": true,
   "type": "module",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Vesper（小暮）—— 有记忆、有情绪、会自己反思的 QQ 陪伴体",
   "author": "wynn_zheng <https://github.com/Wynn-Zheng>",
   "license": "AGPL-3.0-or-later",

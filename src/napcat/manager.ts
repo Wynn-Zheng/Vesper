@@ -1,4 +1,4 @@
-﻿/**
+/**
  * NapCat 管理器：启动 / 停止 / 状态查询。
  *
  * 所有路径都从 locate.ts 推导（配置里的 Shell目录 → 自动探测），
@@ -309,15 +309,30 @@ export async function stop(): Promise<{ ok: boolean; detail: string }> {
 async function stopNow(): Promise<{ ok: boolean; detail: string }> {
   const { execFile } = await import('node:child_process')
 
-  const kill = (): Promise<{ ok: boolean; msg: string }> =>
-    new Promise((resolve) => {
-      execFile('taskkill', ['/IM', 'NapCatWinBootMain.exe', '/F'], (err, _out, stderr) => {
+  /**
+   * 杀掉 NapCatWinBootMain.exe。
+   *
+   * 两个坑：
+   *  1. taskkill 在进程不存在时会失败，但这不是"停止失败"——本来就没在跑，是成功。
+   *     以前靠 `/找不到/` 正则判，可 Windows 中文版 taskkill 的输出是 **GBK**，
+   *     Node 按 UTF-8 解出来是乱码，正则永远匹配不上 → 用户点"停止"看到
+   *     「停止失败：?????? ü????? "NapCatWinBootMain.exe"???"」。
+   *  2. 所以改成**先查进程在不在**（tasklist 的输出是 ASCII，不受编码影响），
+   *     不在就直接算成功；真失败时也不把 stderr 原文抛给用户，只给一句能看懂的话。
+   */
+  const kill = async (): Promise<{ ok: boolean; msg: string }> => {
+    const running = await imageRunning('NapCatWinBootMain.exe')
+    if (running === false) return { ok: true, msg: '' } // 本来就没在跑
+    return new Promise((resolve) => {
+      execFile('taskkill', ['/IM', 'NapCatWinBootMain.exe', '/F'], (err) => {
         if (!err) return resolve({ ok: true, msg: '' })
-        const msg = String(stderr || err.message).trim()
-        if (/not found|找不到/i.test(msg)) return resolve({ ok: true, msg: '' })
-        resolve({ ok: false, msg })
+        // 不转发 stderr（GBK 乱码）；再查一次，进程确实没了就当成功
+        void imageRunning('NapCatWinBootMain.exe').then((still) => {
+          resolve(still === false ? { ok: true, msg: '' } : { ok: false, msg: '进程还在，可能被别的程序占用或权限不够' })
+        })
       })
     })
+  }
 
   // 先停我们自己 spawn 的进程。
   // Shell 型只能这么停：它的进程名也是 node.exe，taskkill /IM 会连本进程一起杀。
