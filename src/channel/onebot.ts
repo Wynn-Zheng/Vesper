@@ -1105,8 +1105,13 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   // 于是「发言频率」「退避」「偶尔不回」在群里从来没生效过。
   if (mode === '自己判断') return false
 
-  const policy = opts.getPolicy?.()
-  return policy ? policy.requireAt : opts.requireAt !== false
+  // 走到这里只剩「熟人续话」：没被叫到、也不是刚聊过 → 不回复。
+  //
+  // 这里**不再读 policy.requireAt**：模式和 access.yaml 的「必须 @」是同一件事
+  // 的两个入口，两边都读就会打架 —— 用户手改 access.yaml 或从权限页保存时，
+  // 实际生效的和界面上显示的可能不是一回事（BUG-13）。
+  // 现在模式是唯一权威：熟人续话 = 必须 @ 或被叫到。
+  return true
 }
 
 /** 这个人是不是刚刚还在跟它说话 */

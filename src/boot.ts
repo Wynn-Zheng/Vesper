@@ -669,9 +669,16 @@ export function boot(transport: Transport, opts: BootOptions): void {
           },
         ),
       )
-    sending.set(key, run.finally(() => {
-      if (sending.get(key) === run) sending.delete(key)
-    }))
+    // 收尾要挂在这一轮真正让"链"等到的那个 promise 上：run 本身还没收尾
+    // （finally 返回的是另一个 promise），拿 run 去比 `sending.get(key)` 永远不等 ——
+    // 于是每个会话都会永久留一个已 resolve 的 promise 在 map 里（有界但不干净）。
+    let tail: Promise<void>
+    tail = run
+      .catch(() => undefined)
+      .then(() => {
+        if (sending.get(key) === tail) sending.delete(key)
+      })
+    sending.set(key, tail)
     await run
   }
   // 名单为空时让渲染那层能踢一脚刷新
