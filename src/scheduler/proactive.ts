@@ -590,11 +590,11 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   }
 
   // 和正常回复走同一条发送路径：分句、条间延迟，手感才一致
-  const ids = await say(opts.transport, opts.target, text, rules)
-  // say 内部逐句 catch 只 warn，全失败时返回空数组。以前不看返回值：
+  const { sent } = await say(opts.transport, opts.target, text, rules)
+  // say 内部逐句 catch 只 warn，全失败时 sent 为 0。以前不看返回值：
   // NapCat 掉线/没连上时会**假装发成功** —— 额度被吃掉、raw 记了"我说过"、
   // 还照样补一张表情包，用户什么都没收到，它以为自己说过了。
-  if (!ids.length) {
+  if (sent === 0) {
     warnAt('主动消息没发出去（通道没连？），本次不计入额度', { 文本: text.slice(0, 30) })
     saveState({ ...state, lastAt: Date.now(), noReply })
     return

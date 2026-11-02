@@ -251,6 +251,33 @@ export function pushHeard(key: string, turn: Turn, max = 12, maxAgeMs = 2 * 3_60
 
   const keep = Math.max(1, Math.floor(max))
   while (heard.length > keep) heard.shift()
+
+  // 一个人把 12 条刷满：群里有人连发十几条，旁听就只剩他一个人说的话，
+  // 它再被问"刚才聊啥"只能复述那个人。按人限个额：
+  // 每条旁听的格式是「名字：内容」，前缀就是发言人。
+  // 超额的从**这个人最早的那条**开始删，别删别人的。
+  const quota = Math.max(2, Math.floor(keep / 3))
+  const senderOf = (t: Turn): string => {
+    const i = t.content.indexOf('：')
+    return i > 0 ? t.content.slice(0, i) : ''
+  }
+  const counts = new Map<string, number>()
+  for (const t of heard) {
+    const s = senderOf(t)
+    // 没有「名字：」前缀的（老数据 / 私聊）不参与按人限额
+    if (!s) continue
+    counts.set(s, (counts.get(s) ?? 0) + 1)
+  }
+  for (const [sender, n] of counts) {
+    if (n <= quota) continue
+    let over = n - quota
+    for (let i = 0; i < heard.length && over > 0; i++) {
+      if (senderOf(heard[i]!) !== sender) continue
+      heard.splice(i, 1)
+      i--
+      over--
+    }
+  }
   // 顺手清掉过期的。用**当前时间**做锚，不是用最后一条的时间 ——
   // 那个锚等于"永远认为最新那条是现在"，隔天的记录永远清不掉。
   const now = Date.now()

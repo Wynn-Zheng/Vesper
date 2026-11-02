@@ -163,3 +163,22 @@ test('旁听：乱序写入时，砍掉的是最老的，不是最新那条', ()
   assert.equal(heard[1]!.content, '最新', '最新那条必须留下')
   assert.equal(heard[0]!.content, '四秒前')
 })
+
+test('旁听：一个人刷屏不能把别人挤掉', () => {
+  clearSessions()
+  // 话痨连发 10 条
+  for (let i = 0; i < 10; i++) {
+    pushHeard('group:12', { role: 'user', content: `话痨：第${i}句`, at: now + i * 1000 })
+  }
+  // 另一个人说一句
+  pushHeard('group:12', { role: 'user', content: '小红：我说一句', at: now + 20_000 })
+  const heard = getHeard('group:12')
+  const bySender = new Map<string, number>()
+  for (const t of heard) {
+    const who = t.content.split('：')[0]!
+    bySender.set(who, (bySender.get(who) ?? 0) + 1)
+  }
+  // 一个人的上限是 max/3（12 → 4），别人必须还在
+  assert.ok((bySender.get('话痨') ?? 0) <= 4, `话痨占了 ${bySender.get('话痨')} 条`)
+  assert.ok((bySender.get('小红') ?? 0) >= 1, '另一个人的话不能被挤掉')
+})

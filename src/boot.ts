@@ -242,6 +242,12 @@ export function boot(transport: Transport, opts: BootOptions): void {
   const buffers = new Map<string, Buffer>()
   /** 每个会话最近发出去的消息，用于撤回 */
   const lastSent = new Map<string, { ids: string[]; at: number }>()
+  /**
+   * 「刚聊过」窗口的续期次数（会话+人 → 已续几次）。
+   * 每次它成功回复 +1，对方再 @ 时清零。到 3 就不再续 ——
+   * 否则一次 @ 会让它对这个人的每句话都必回，群里显得黏人。
+   */
+  const talkRenewals = new Map<string, number>()
   /** 每个会话最后一次有人说话的时间，用来算"多久没聊" */
   const lastTalk = new Map<string, number>()
   /** 每个会话最近它自己回过几次（5 分钟窗口），用来压制刷屏 */
@@ -371,13 +377,22 @@ export function boot(transport: Transport, opts: BootOptions): void {
     const senderKey = m.senderId ?? m.from.id
     const rateKey = `u:${scopeOf(m.from)}:${senderKey}`
     if (!peek(rateKey, rules.行为.每分钟上限)) {
+      // 丢弃也要记旁听：它确实没处理这条，但"没处理"和"没看见"不一样 ——
+      // 不记的话，用户问"刚才聊啥"它会说不知道，而那句话明明就在面前。
+      // 群上限丢弃（下面那个分支）和退避都是这么处理的，这里以前漏了。
       warnAt(`触发限流，丢弃：${who}`)
+      noteHeard(m, text)
       return
     }
 
     // 退避：连续决定不说话后慢一点再看。
     // 被 @ 是有事找你，无视退避；否则攒够 几条消息打断 才提前醒。
     const scopeKey = scopeOf(m.from)
+    // 对方**真的又叫了它一次** → 续期计数清零（重新给三次"接着聊"的机会）。
+    // 计数只在成功发送那里 +1，到 3 就不再续窗口。
+    if (m.from.kind === 'group' && !passive) {
+      talkRenewals.delete(scopeKey + ':' + (m.senderId ?? m.from.id))
+    }
     const bo = rules.行为.退避 ? backoff.get(scopeKey) : undefined
     if (bo && m.passive) {
       bo.pending += 1
@@ -538,11 +553,11 @@ export function boot(transport: Transport, opts: BootOptions): void {
         info(`引用判定 ${qd.score} 分（${qd.reasons.join('，')}）→ ${qd.quote ? '引用' : '不引'}`)
       }
       const target = qd.quote && m.id ? { ...m.from, replyTo: m.id } : m.from
-      const ids = await say(transport, target, reply, rules)
+      const { ids, sent } = await say(transport, target, reply, rules)
       // 表情包等文字发完再补：之前它是在 generateReply 里发的，早于文字，
       // 文字被限流/为空/失败时表情包已经出去了。
       // 一个字都没发出去时也别补表情包：那会变成"只有一堆图，没有话"。
-      if (ids.length) void maybeSendEmoji(m, rules)
+      if (sent > 0) void maybeSendEmoji(m, rules)
 
       // 一条都没发出去（NapCat 断线、被平台拒、或者 stripMentions 把整条清空了）：
       // 历史里那条 assistant 必须撤掉。
@@ -550,7 +565,8 @@ export function boot(transport: Transport, opts: BootOptions): void {
       // 这条以前没人管：`reply` 已经由 chat.ts 写进 turns，而这里无条件 appendRaw，
       // 于是用户一个字没收到，它下一轮却"记得自己说过"，会接着自己的话说，
       // 甚至引用一句对方根本没看见的内容。日志里只有 `→ 小明：0 条`。
-      const sentNothing = ids.length === 0
+      // 用"真发出去几条"判断，不用 ids：平台不回 message_id 时 ids 永远是空的
+      const sentNothing = sent === 0
       if (sentNothing) {
         popLastAssistant(scopeOf(m.from))
         warnAt('这条一个字都没发出去，已从历史里撤掉', { 会话: scopeOf(m.from), 条数: reply.length })
@@ -579,7 +595,19 @@ export function boot(transport: Transport, opts: BootOptions): void {
         // 记成"刚聊过"，之后两分钟内说什么它都必回（实测「自己判断」档
         // 从 0 条变成连回 2 条无关注闲聊）。回的是谁，就只跟谁"接着聊"。
         if (m.from.kind === 'group') {
-          opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
+          // 续期有上限：连着回同一个人 3 次、对方都没再 @ 过，就不再续。
+          //
+          // 不设上限的话，一次 @ 会变成"这个人之后说什么都必须回"：
+          // 它每回一句就把窗口往后推 2 分钟，只要对方还在说话就永远续下去。
+          // onebot.ts 那边的注释写的是"只有真的被叫到才续期"，这里让它成立。
+          // 对方再 @ 一次会把这个计数清零（见 handle 开头）。
+          const uid = m.senderId ?? m.from.id
+          const renewKey = scope + ':' + uid
+          const n = talkRenewals.get(renewKey) ?? 0
+          if (n < 3) {
+            opts.touchTalker?.(m.from.id, uid)
+            talkRenewals.set(renewKey, n + 1)
+          }
         }
         appendRaw({ ts: Date.now(), scope, role: 'assistant', text: reply.trim() })
       }
@@ -855,7 +883,18 @@ export function boot(transport: Transport, opts: BootOptions): void {
     const addressed = !(m.passive ?? false)
 
     // 档位是「关闭」：不聚合，每条立刻处理。
+    //
+    // ⚠ 但上一次还是「非关闭」时可能攒着一批没送走：以前这里直接
+    // `buffers.set(key, single)` 覆盖，旧 buffer 的 timer 没清、内容也没 flush ——
+    // 用户在设置里把防抖切到「关闭」，正好写了一半的那批话就静默消失
+    // （它没回过，也没进旁听，像根本没收到）。
+    // 所以覆盖之前先把旧的送走。
     if (resolveDebounce(rules.行为.防抖) === null) {
+      const leftover = buffers.get(key)
+      if (leftover) {
+        clearTimeout(leftover.timer)
+        void flush(key)
+      }
       const single: Buffer = {
         texts: [m.text],
         images: [...(m.images ?? [])],

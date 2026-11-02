@@ -784,9 +784,11 @@ export class OnebotTransport implements Transport {
       text,
       at: Date.now(),
       senderId: uid,
-      senderName: ev.sender?.card ?? ev.sender?.nickname,
+      // 群名片可能是**空串**（QQ 允许），?? 不会回落到昵称 → 群历史里就丢了名字前缀，
+      // 模型看到一串没有主人的话。用 || 并且 trim。
+      senderName: (ev.sender?.card ?? '').trim() || (ev.sender?.nickname ?? '').trim() || uid,
       // QQ 昵称单独留一份：群名片每个群不同，全局名必须用它
-      senderNick: ev.sender?.nickname ?? ev.sender?.card,
+      senderNick: (ev.sender?.nickname ?? '').trim() || (ev.sender?.card ?? '').trim() || uid,
       passive: !isPrivate && !addressed && !followUp,
       ...(observeOnly ? { observeOnly: true } : {}),
       ...(() => {

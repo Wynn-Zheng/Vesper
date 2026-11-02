@@ -200,18 +200,37 @@ export function stripMentions(text: string): string {
     .replace(/(^|[\s，。！？、；：,.!?;:（）【】「」『』])@([^\s@，。！？,.!?]{1,20})/g, '$1$2')
 }
 
-/** 分句 + 间隔发送。返回实际发出的每条消息 id（平台支持时）。 */
-export async function say(t: Transport, to: Target, text: string, rules: Rules): Promise<string[]> {
+/**
+ * 分句 + 间隔发送。
+ *
+ * 返回 `{ ids, sent }`：
+ * - `ids`：平台回了 message_id 的那些（**平台不支持时就是空的**）
+ * - `sent`：真正发出去几条（不看平台回不回 id）
+ *
+ * 为什么要分开：调用方以前用 `ids.length === 0` 判断"一个字都没发出去"，
+ * 而很多通道 send 成功但返回 `{}`（或不返回 message_id）——
+ * 消息明明到群里了，却被当成没发出去：历史里的 assistant 被撤掉，
+ * 它下一轮"不记得自己说过"，还会重复说一遍。
+ */
+export async function say(
+  t: Transport,
+  to: Target,
+  text: string,
+  rules: Rules,
+): Promise<{ ids: string[]; sent: number }> {
   // 出站兜底：模型被套话时可能吐出 key / 私钥，发出去就收不回了
   const safe = stripMentions(redactSecrets(text))
   const parts = splitBySentence(safe, rules.说话.每条最多字数, rules.说话.每轮最多条数)
   const ids: string[] = []
+  let sent = 0
   for (let i = 0; i < parts.length; i++) {
     if (i > 0) await sleep(rand(rules.说话.条间延迟))
     // 只有第一条引用：不然分句发 3 条会引用同一条三次，像刷屏
     const here = i === 0 ? to : { ...to, replyTo: undefined }
     try {
       const res = await t.send(here, parts[i]!)
+      // send 没抛错就算发出去了（平台可能不回 message_id）
+      sent += 1
       if (res && typeof res === 'object' && res.messageId) ids.push(res.messageId)
     } catch (err) {
       // 某一句失败不能把后面几句一起丢：之前 throw 出去后，
@@ -219,7 +238,7 @@ export async function say(t: Transport, to: Target, text: string, rules: Rules):
       warnAt('这一句发送失败，跳过继续', { 第几句: i + 1, err: String(err).slice(0, 120) })
     }
   }
-  return ids
+  return { ids, sent }
 }
 
 /** 单张图片上限：2MB。和表情包库保持一致，超了平台也多半不收。 */

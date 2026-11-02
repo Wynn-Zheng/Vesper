@@ -611,6 +611,15 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     return ''
   }
 
+  // 空回复（模型只吐了空白/代码围栏，或工具循环到上限也没说人话）：
+  // **不要**往历史里塞一条空的 assistant。
+  // 以前无条件 pushTurn，于是 turns 里留下 `{role:'assistant', content:''}`，
+  // 下一轮原样带进 prompt、甚至原样发给模型（有些实现会因此报错）。
+  if (!sendable.trim()) {
+    info('这一轮没有可发的内容，不写历史')
+    return ''
+  }
+
   // 通过拦截才补历史（用户这条在调模型之前已经记过了，这里只补回复）
   pushTurn(key, { role: 'assistant', content: sendable, at: Date.now() }, keepTurns)
   // 压缩放到**发送之后**、不 await：它要一次 1200-token 的模型调用，
