@@ -208,12 +208,18 @@ async function compressIfNeeded(key: string, opts: GenerateOptions): Promise<voi
       return
     }
 
-    // oldest 就是这次被压掉的那截；recent 原样留作新的历史
+    // oldest 就是这次被压掉的那截；recent 原样留作新的历史。
+    //
+    // ⚠ 必须按"压掉了多少条"从头切，不能按"当前长度倒推 keep 条"：
+    // 压缩要一次模型调用（几秒），这期间很可能又来了新消息、已经 push 进 turns。
+    // 用 `slice(当前长度 - keep)` 的话，窗口会被新消息挤着往前挪，
+    // 于是「没进摘要、也还没轮到保留」的那几条被静默丢掉 ——
+    // 既不在摘要里，也不在原文里。
     const oldestCount = Math.max(0, history.length - result.recent.length)
-    const keep = Math.min(result.recent.length, session.turns.length)
-    session.turns = session.turns.slice(session.turns.length - keep)
+    const drop = Math.min(oldestCount, session.turns.length)
+    session.turns = session.turns.slice(drop)
     setSummary(session, result.summary, oldestCount)
-    info('历史已压缩', { 会话: key, 压掉: oldestCount, 保留: keep })
+    info('历史已压缩', { 会话: key, 压掉: drop, 保留: session.turns.length })
   } catch (err) {
     warnAt('历史压缩失败，本轮照常回复', {
       err: err instanceof Error ? err.message : String(err),

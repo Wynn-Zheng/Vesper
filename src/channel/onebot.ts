@@ -1018,7 +1018,10 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
  * 规则（宁可漏一次，也别乱接）：
  *   - 名字单独成词：句首/句尾、两边是空白或标点；
  *   - 名字后面紧跟呼语标点（在吗 / 呢 / 啊 …）也算 —— 中文里"小鱼在吗"没有空格；
- *   - 名字长度 < 2 时只认"单独成词"（单字名字几乎必然误伤）。
+ *   - 单字名字更严格：前后都要边界或呼语。
+ *
+ * 曾经的做法是一律 `text.includes(name)`，于是"小鱼干""小鱼儿"全算叫它 ——
+ * 那是已经修掉的 bug，别改回去。
  */
 export function mentionsName(text: string, names: string[]): boolean {
   const valid = names.map((n) => n.trim()).filter((n) => n && n !== '未定')
@@ -1172,7 +1175,8 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
 }
 
 
-export function isRecentTalker(opts: OnebotOptions, groupId: string, userId: string): boolean {  const at = opts.recentTalkers?.get(`${groupId}:${userId}`) ?? 0
+export function isRecentTalker(opts: OnebotOptions, groupId: string, userId: string): boolean {
+  const at = opts.recentTalkers?.get(`${groupId}:${userId}`) ?? 0
   return Date.now() - at < (opts.followUpWindowMs ?? 120_000)
 }
 
