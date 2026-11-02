@@ -1,7 +1,7 @@
 {
-  "name": "qqbot-desktop",
+  "name": "vesper-desktop",
   "version": "0.1.0",
-  "description": "QQ Bot 控制台的桌面壳",
+  "description": "Vesper 控制台的桌面壳",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -14,8 +14,8 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "com.qqbot.console",
-    "productName": "QQBot",
+    "appId": "com.vesper.console",
+    "productName": "Vesper",
     "directories": {
       "output": "dist"
     },

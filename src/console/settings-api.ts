@@ -298,6 +298,31 @@ export async function handleSettingsApi(
       /* 不是 git 仓库 */
     }
 
+    // 开发者名单从 package.json 读：加人只要改那一处，不用动前端。
+    // 读不到就用兜底（打包后 cwd 是数据目录，package.json 在 QQBOT_ROOT 下）。
+    let author = ''
+    let contributors: string[] = []
+    let license = 'AGPL-3.0-or-later'
+    let homepage = ''
+    try {
+      const { readFileSync } = await import('node:fs')
+      const { join } = await import('node:path')
+      const { srcRoot } = await import('../core/paths.ts')
+      const pkgPath = join(srcRoot(), '..', 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as {
+        author?: string
+        contributors?: string[]
+        license?: string
+        homepage?: string
+      }
+      author = typeof pkg.author === 'string' ? pkg.author : ''
+      contributors = Array.isArray(pkg.contributors) ? pkg.contributors.filter((x) => typeof x === 'string') : []
+      if (pkg.license) license = pkg.license
+      homepage = pkg.homepage ?? ''
+    } catch {
+      /* 读不到就不给，前端会隐藏这块 */
+    }
+
     json(res, 200, {
       version,
       git,
@@ -307,6 +332,10 @@ export async function handleSettingsApi(
       arch: process.arch,
       uptime: Math.round(process.uptime()),
       buildTime: vi.buildTime,
+      author,
+      contributors,
+      license,
+      homepage,
     })
     return true
   }

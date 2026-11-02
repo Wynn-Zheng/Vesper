@@ -29,7 +29,7 @@
  */
 const _traceFile = require('node:path').join(
   process.env.APPDATA || require('node:os').homedir(),
-  'qqbot-main.log',
+  'vesper-main.log',
 )
 function trace(msg) {
   try {
@@ -411,7 +411,7 @@ function failPage(info) {
   const esc = (s) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const logText = info.log ? esc(String(info.log).slice(-4000)) : ''
-  const logFile = path.join(process.env.APPDATA || '', 'qqbot-main.log')
+  const logFile = path.join(process.env.APPDATA || '', 'vesper-main.log')
 
   return `<body style="background:#0d1117;color:#e6edf3;font:14px/1.7 system-ui;padding:40px;margin:0">
     <h2 style="color:#f85149;margin:0 0 6px">后端起不来</h2>
@@ -440,7 +440,7 @@ function createWindow(failInfo = null) {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0d1117',
-    title: 'QQ Bot 控制台',
+    title: 'Vesper 控制台 · 小暮',
     // 窗口/任务栏图标。exe 本身的图标是 PE 资源，改名改不了（要 rcedit），
     // 但运行时图标用这个就够看了。
     icon: path.join(__dirname, 'icon.png'),
@@ -514,7 +514,7 @@ function createTray() {
   if (existsSync(iconPath)) img = nativeImage.createFromPath(iconPath)
 
   tray = new Tray(img)
-  tray.setToolTip('QQ Bot')
+  tray.setToolTip('Vesper')
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: '打开控制台', click: () => (win ? win.show() : createWindow()) },

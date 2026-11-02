@@ -8,8 +8,8 @@
  *   把 resources/default_app.asar 换成我们的 app/ 就行，**全程不需要网络**。
  *
  * 产物：
- *   release/QQBot/
- *   ├── QQBot.exe                 ← 从 electron.exe 改名
+ *   release/Vesper/
+ *   ├── Vesper.exe                 ← 从 electron.exe 改名
  *   ├── *.dll / *.pak / locales/  ← Electron 运行时
  *   └── resources/
  *       ├── app/                  ← 我们的代码（main.js + build/ + console/ + 依赖）
@@ -34,7 +34,7 @@ import { dirname, join, resolve } from 'node:path'
 const ROOT = resolve('.')
 const ELECTRON_DIR = join(ROOT, 'electron')
 const DIST_SRC = join(ELECTRON_DIR, 'node_modules', 'electron', 'dist')
-const OUT = join(ROOT, 'release', 'QQBot')
+const OUT = join(ROOT, 'release', 'Vesper')
 const APP = join(OUT, 'resources', 'app')
 
 function step(msg: string): void {
@@ -65,7 +65,7 @@ function dirSizeMB(dir: string): number {
 }
 
 async function main(): Promise<void> {
-  console.log('打包 QQBot 绿色版')
+  console.log('打包 Vesper 绿色版')
   console.log('  项目：' + ROOT)
   console.log('  输出：' + OUT)
 
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
     join(APP, 'package.json'),
     JSON.stringify(
       {
-        name: 'qqbot',
+        name: 'vesper',
         private: true,
         main: 'main.js',
         version: JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version,
@@ -206,13 +206,13 @@ async function main(): Promise<void> {
   ok('resources/app 已就位')
 
   /* ---------- 7. 改名 exe ---------- */
-  step('把 electron.exe 改名成 QQBot.exe')
+  step('把 electron.exe 改名成 Vesper.exe')
   const exeSrc = join(OUT, 'electron.exe')
-  const exeDst = join(OUT, 'QQBot.exe')
+  const exeDst = join(OUT, 'Vesper.exe')
   if (!existsSync(exeSrc)) fail('找不到 electron.exe')
   cpSync(exeSrc, exeDst)
   rmSync(exeSrc, { force: true })
-  ok('QQBot.exe')
+  ok('Vesper.exe')
 
   /* ---------- 8. 更新包（给服务器用） ---------- */
   step('生成更新包 app.tar.gz + latest.json')
@@ -247,8 +247,8 @@ async function main(): Promise<void> {
   console.log('  目录：' + OUT)
   console.log('  大小：' + dirSizeMB(OUT).toFixed(1) + ' MB')
   console.log('')
-  console.log('  双击 release\\QQBot\\QQBot.exe 启动。')
-  console.log('  首次运行会在 %APPDATA%\\QQBot\\data-root 生成 .env（随机 token + 空 API Key）。')
+  console.log('  双击 release\\Vesper\\Vesper.exe 启动。')
+  console.log('  首次运行会在 %APPDATA%\\Vesper\\data-root 生成 .env（随机 token + 空 API Key）。')
   console.log('  打开控制台后在「设置 → 模型」里填 DeepSeek API Key。')
 }
 

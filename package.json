@@ -1,9 +1,14 @@
 {
-  "name": "qqbot",
+  "name": "vesper",
   "private": true,
   "type": "module",
   "version": "0.1.6",
-  "description": "自研 QQ 陪伴 bot",
+  "description": "Vesper（小暮）—— 有记忆、有情绪、会自己反思的 QQ 陪伴体",
+  "author": "wynn_zheng <https://github.com/wynn-zheng>",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/wynn-zheng/vesper",
+  "repository": { "type": "git", "url": "https://github.com/wynn-zheng/vesper.git" },
+  "contributors": [],
   "engines": {
     "node": ">=22.6"
   },

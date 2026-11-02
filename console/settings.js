@@ -404,6 +404,33 @@ async function loadModel() {
       row('已运行', fmtDurText(d.uptime))
       box.appendChild(c)
 
+      // ---- 开发者 ----
+      // 名单从 package.json 读（author / contributors），加人只改那一处。
+      if (d.author || (d.contributors && d.contributors.length)) {
+        const ca = el('div', 'card')
+        ca.style.marginTop = '12px'
+        ca.appendChild(el('div', 'op-t', '开发者'))
+
+        const line = (k, v) => {
+          const r = el('div')
+          r.style.cssText = 'display:flex;gap:10px;padding:5px 0;font-size:12.5px'
+          const a = el('span', '', k)
+          a.style.cssText = 'color:#8b949e;min-width:80px'
+          r.appendChild(a)
+          r.appendChild(el('span', '', v))
+          ca.appendChild(r)
+        }
+        if (d.author) line('作者', d.author)
+        if (d.contributors && d.contributors.length) {
+          line('贡献者', d.contributors.join('、'))
+        } else {
+          line('贡献者', '（还没有，欢迎来提 PR）')
+        }
+        if (d.license) line('协议', d.license)
+        if (d.homepage) line('项目', d.homepage)
+        box.appendChild(ca)
+      }
+
       // ---- 更新 ----
       const c2 = el('div', 'card')
       c2.style.marginTop = '12px'
