@@ -132,9 +132,12 @@ check('写回：原有字段不丢，字段顺序稳定', () => {
   setSummary(s, '群里聊了旧话题', 2)
 
   const first = JSON.parse(readFileSync(oldFile, 'utf8')) as Record<string, unknown>
-  assert.deepEqual(Object.keys(first).slice(0, 5), [
+  // 固定字段顺序：key / turns / heard / summary / summaryUpdatedAt / summaryCursor。
+  // heard 是后加的（群聊旁听），位置放在 turns 后面 —— 语义上它们都是"历史内容"。
+  assert.deepEqual(Object.keys(first).slice(0, 6), [
     'key',
     'turns',
+    'heard',
     'summary',
     'summaryUpdatedAt',
     'summaryCursor',
