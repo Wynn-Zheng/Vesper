@@ -301,3 +301,33 @@ test('攒满 20 条先冲一批，第 21 条不能丢', async () => {
   assert.equal(batches[0], 20, '第一批应该是攒满的 20 条')
   assert.equal(batches.reduce((a, b) => a + b, 0), 21, '一条都不能丢')
 })
+
+test('模型选择不说话（空回复）：没叫它的话进旁听', async () => {
+  clearSessions()
+  const t = new FakeTransport()
+  // 群里有人随口说了一句，模型思考完决定不接 —— 这句它确实看过，
+  // 不记旁听的话下次问"刚才聊啥"就答不上来
+  boot(t, { getRules: () => fastRules({ 行为: { ...fastRules().行为, 发言频率: 1 } }), reply: () => '   ' })
+  t.push(groupMsg('e1', '今天好热', { groupId: 'ge1', passive: true }))
+  await tick()
+  assert.deepEqual(t.sent, [], '空回复不该发出去')
+  const heard = getHeard('group:ge1')
+  assert.equal(heard.length, 1, '听过了就要记下来')
+  assert.match(heard[0]!.content, /今天好热/)
+})
+
+test('模型选择不说话（空回复）：@ 它的那条不能再记一遍旁听', async () => {
+  clearSessions()
+  const t = new FakeTransport()
+  boot(t, { getRules: () => fastRules(), reply: () => '' })
+  t.push(groupMsg('e2', '在吗', { groupId: 'ge2' }))
+  await tick()
+  assert.deepEqual(t.sent, [], '空回复不该发出去')
+  // @ 的那条在调模型之前已经进对话历史（turns）了。
+  // 再记一遍 heard 会让同一句同时出现在两处（模型以为说了两遍），
+  // 而且 heard 会被渲染成"没叫你，你只是旁观" —— 方向反了。
+  assert.equal(getHeard('group:ge2').length, 0, '@ 的不该再进旁听')
+  // 这里只断言"没有再记一遍旁听"。
+  // 那条消息本身在对话历史里，是 loop/chat.ts 调模型之前记的 ——
+  // 这个 harness 用了假 reply、没跑 chat.ts，所以不断言 turns。
+})

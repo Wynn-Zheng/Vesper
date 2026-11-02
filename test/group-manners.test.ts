@@ -102,3 +102,16 @@ test('引用被撤回/删除（retcode≠0）：可以重发一次', async () =>
   const { shouldRetryWithoutReply } = await import('../src/channel/onebot.ts')
   assert.equal(shouldRetryWithoutReply(new Error('action 失败：消息不存在')), true)
 })
+
+test('名字：中文里"名字+你/帮/觉"也是叫她（没有空格和标点）', () => {
+  // 这是最常见的一句开场白，以前全被当成"没叫它"，只进旁听不回 ——
+  // 用户看到的是"叫了也不理"，比不接话更伤人。
+  assert.equal(mentionsName('小满你在吗', ['小满']), true)
+  assert.equal(mentionsName('小满帮我看下这个报错', ['小满']), true)
+  assert.equal(mentionsName('小满你觉得呢', ['小满']), true)
+  assert.equal(mentionsName('小满能听见吗', ['小满']), true)
+  assert.equal(mentionsName('小满快出来', ['小满']), true)
+  // 但"名字 + 能拼成别的词的字"仍然不算
+  assert.equal(mentionsName('小满儿', ['小满']), false)
+  assert.equal(mentionsName('满足感', ['小满']), false)
+})

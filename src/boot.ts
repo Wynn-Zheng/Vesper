@@ -143,6 +143,8 @@ function shouldDrop(text: string, rules: Rules): boolean {
 const RECALL_HINT = /撤回|收回去|撤掉|刚才那句不对|别说那句|收回/g
 /** 让"去看个视频"能真的触发一次，不然它只能说"我没有这个口子" */
 const WATCH_HINT = /(去看|看看|刷)(个|一个|点)?视频|去看点东西|去外面看看/
+/** 否定句不算：「别去看视频了」「不用刷视频」是让它停，不是让它去 */
+const WATCH_NEGATED = /(别|不要|不用|甭|勿|停止|别再)[^，。！？,!?]{0,6}(去看|看看|刷)?[^，。！？,!?]{0,4}视频/
 const RECALL_WINDOW = 120_000
 
 /**
@@ -177,6 +179,14 @@ interface Buffer {
    */
   images: string[]
   last: Incoming
+  /**
+   * 这一批该"算谁说的"（回谁、跟谁的关系、引用哪条）。
+   *
+   * 不能直接用 last：小明 @ 它问了一句、小红紧跟着接一句"我也有过"，
+   * 用 last 就会变成「引用小红那条来回答小明」，关系值和画像还记到小红头上。
+   * 规则：取**第一条叫到它的**消息；都没叫它就取第一条。
+   */
+  primary: Incoming
   passive: boolean
   /** 这批里有没有被 @（有就优先处理） */
   addressed: boolean
@@ -398,7 +408,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
     }
 
     // 有人让它"去看个视频"：真的去看一个，然后回话
-    if (WATCH_HINT.test(text)) {
+    if (WATCH_HINT.test(text) && !WATCH_NEGATED.test(text)) {
       const ok = await tryWatchNow(m)
       if (ok) {
         if (groupRateKey) hit(groupRateKey)
@@ -493,17 +503,22 @@ export function boot(transport: Transport, opts: BootOptions): void {
 
       if (!reply || !reply.trim()) {
         info('无回复内容，保持沉默')
+        // 模型选择什么都不说，也算"听过了"。
+        //
+        // ⚠ 但只在**没叫它**的时候记。
+        // 被 @ 的那条在调模型之前就已经进了对话历史（turns），再记一遍旁听会：
+        //   1. 同一句话同时出现在 turns 和 heard（模型觉得这人说了两遍）
+        //   2. 被渲染成"没叫你，你只是旁观" —— 把 @ 标成旁观，方向反了
+        // 这是上一版没想清楚的地方（自己改出来的 bug，回归审查时被抓到）。
+        if (passive) noteHeard(m, text)
         return
       }
 
-      // 群额度在进来时就 peek 过了（不够直接 return，不会走到这里）。
-      // 这里只做计数，不再判断 —— 以前这里还留了一段"allow 失败就撤历史"
-      // 的兜底，但它**不可能失败**：同一会话被 sending 链串行化，
-      // `g:` 这个键也只有这里一个消费者。留着只会误导后来人，
-      // 而且真跑到的话会把同一句话同时写进 turns 和 heard。
-      if (m.from.kind === 'group') hit('g:' + m.from.id)
-      // 真的要回了，才记一次用户额度
-      hit(rateKey)
+      // 额度**在真的发出去之后才计**（见下面的 sentNothing 分支）。
+      //
+      // 以前是在 say 之前计数：断线期间连发两条失败，群额度就被吃满了，
+      // 重连之后连 @ 都不回 —— 用户看到的正是"它明明在线却不理我"。
+      // 现在失败会把这一条撤回去（见 sentNothing）。
 
       // 要不要引用对方那句。
       //
@@ -540,6 +555,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
         popLastAssistant(scopeOf(m.from))
         warnAt('这条一个字都没发出去，已从历史里撤掉', { 会话: scopeOf(m.from), 条数: reply.length })
       } else {
+        // 发出去了才算数：群每分钟额度 + 这个人的每分钟额度
+        if (m.from.kind === 'group') hit('g:' + m.from.id)
+        hit(rateKey)
         if (qd.quote && m.id) lastQuoteAt.set(scopeNow, Date.now())
         backoff.delete(scopeOf(m.from))
         const scope = scopeOf(m.from)
@@ -555,11 +573,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
         // 只在群里有意义：连续对话窗口本来就是群聊的概念，
         // 私聊每条都必回，不需要这个锚（硬记还会在 recentTalkers 里留脏键）。
         //
-        // 整批的人都续，不只是最后那个：同批里两个人先后说话、
-        // 它回了一句，两个人此刻都算"刚跟它聊过"。
+        // 只给**它回的那个人**续窗口，不是整批人。
+        //
+        // 以前整批都续：一人 @ 它、同批另一个人只是随口说了句，那个人也会被
+        // 记成"刚聊过"，之后两分钟内说什么它都必回（实测「自己判断」档
+        // 从 0 条变成连回 2 条无关注闲聊）。回的是谁，就只跟谁"接着聊"。
         if (m.from.kind === 'group') {
-          const talked = batch.senders?.length ? batch.senders : [m.senderId ?? m.from.id]
-          for (const uid of talked) opts.touchTalker?.(m.from.id, uid)
+          opts.touchTalker?.(m.from.id, m.senderId ?? m.from.id)
         }
         appendRaw({ ts: Date.now(), scope, role: 'assistant', text: reply.trim() })
       }
@@ -692,7 +712,13 @@ export function boot(transport: Transport, opts: BootOptions): void {
       .catch(() => undefined)
       .then(() =>
         handle(
-          { ...buf.last, images: buf.images, ...(lines ? { batchLines: lines } : {}) },
+          // 身份用 primary（第一条叫到它的），时间用 last（这批最后到达的时刻）
+          {
+            ...buf.primary,
+            at: buf.last.at,
+            images: buf.images,
+            ...(lines ? { batchLines: lines } : {}),
+          },
           text,
           buf.passive,
           opts.getRules(),
@@ -836,6 +862,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
         senders: [senderKey],
         senderLabels: [speakerLabel(m)],
         last: m,
+        primary: m,
         passive: m.passive ?? false,
         addressed,
         firstAt: now,
@@ -849,12 +876,11 @@ export function boot(transport: Transport, opts: BootOptions): void {
       return
     }
 
-    const schedule = (buf: Buffer): void => {
+    const schedule = (buf: Buffer, sameSender: boolean): void => {
       clearTimeout(buf.timer)
       const d = resolveDebounce(rules.行为.防抖)
       if (!d) return
 
-      const sameSender = (m.senderId ?? m.from.id) === buf.lastSender
       // 安静/活跃看的是**上一条消息**距今多久，不是本批次内。
       // 批次内最后一条永远是刚到的，用它算这个值永远是 0。
       const quiet = now - prevTalkAt > 30_000
@@ -868,7 +894,10 @@ export function boot(transport: Transport, opts: BootOptions): void {
         waitSec = sameSender ? d.同人续发 : d.换人
       }
       // 被 @ 是上限不是替换：本来该等 0.5 秒的，被 @ 了也不用等更久
-      if (addressed) waitSec = Math.min(waitSec, d.被at最多)
+      // 用**整批**的 addressed，不用当前这条的：
+      // 小明 @ 它之后小红又说了句闲话，那条闲话的 addressed 是 false，
+      // 拿它算会把 @ 的 1 秒上限重新拉长（实测 @ 后 2 秒才回）。
+      if (buf.addressed) waitSec = Math.min(waitSec, d.被at最多)
 
       // 一批从第一条起最多等这么久，不能因为一直有新消息无限延后
       const elapsed = now - buf.firstAt
@@ -901,9 +930,15 @@ export function boot(transport: Transport, opts: BootOptions): void {
       cur.last = m
       cur.lastAt = now
       cur.passive = cur.passive && (m.passive ?? false)
+      // ⚠ 顺序：sameSender 必须**在**更新 lastSender 之前算。
+      // 以前是先写 cur.lastSender 再 schedule，schedule 里再拿它跟当前消息比，
+      // 永远等于自己 → 「换人」那一档从来没生效过，一直是「同人续发」。
+      const sameSender = (m.senderId ?? m.from.id) === cur.lastSender
+      // 第一条叫到它的消息成为"这一批算谁说的"
+      if (addressed && !cur.addressed) cur.primary = m
       cur.addressed = cur.addressed || addressed
       cur.lastSender = m.senderId ?? m.from.id
-      schedule(cur)
+      schedule(cur, sameSender)
       return
     }
 
@@ -913,6 +948,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       senders: [m.senderId ?? m.from.id],
       senderLabels: [speakerLabel(m)],
       last: m,
+      primary: m,
       passive: m.passive ?? false,
       addressed,
       firstAt: now,
@@ -921,7 +957,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       lastSender: m.senderId ?? m.from.id,
       timer: setTimeout(() => {}, 0),
     }
-    schedule(buf)
+    schedule(buf, true)
     buffers.set(key, buf)
   })
 }
