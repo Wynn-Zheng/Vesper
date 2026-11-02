@@ -916,7 +916,11 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
   const userId = String(ev.user_id ?? '')
 
   if (!isPrivate) {
-    if (!opts.allowGroup) return false
+    // 群聊总开关：优先用动态策略（控制台可改），没注入才退回静态配置。
+    // 以前只看 opts.allowGroup，而它来自 .env —— 桌面版 .env 里根本没有这一项，
+    // 于是「装好、连上、群里 @ 它」一条都不回，界面上也没地方能打开。
+    const allowGroup = opts.getPolicy ? opts.getPolicy().allowGroup : opts.allowGroup !== false
+    if (!allowGroup) return false
     const gid = String(ev.group_id ?? '')
     // 优先用动态策略（控制台可改）；没注入就退回静态配置
     if (opts.getPolicy) {
@@ -1005,7 +1009,8 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
     return '未知原因'
   }
 
-  if (!opts.allowGroup) return '群聊总开关没开（.env 里 ALLOW_GROUP 不是 true）'
+  const allowGroup = opts.getPolicy ? opts.getPolicy().allowGroup : opts.allowGroup !== false
+  if (!allowGroup) return '群聊总开关没开（控制台「设置 → 权限」里打开，或 .env 的 ALLOW_GROUP=true）'
 
   const gid = String(ev.group_id ?? '')
   const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')

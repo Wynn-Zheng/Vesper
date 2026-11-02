@@ -53,8 +53,10 @@ test('私聊：没设 ownerQQ 时谁都能触发（仅调试用）', () => {
   assert.equal(shouldHandle(priv('999', '在吗'), base), true)
 })
 
-test('群聊：默认完全忽略', () => {
-  assert.equal(shouldHandle(group('123', '999', '你好'), base), false)
+test('群聊：allowGroup=false 时完全忽略', () => {
+  // 注意：现在「没设置 allowGroup」= 默认开（见 access.ts 的注释），
+  // 所以这条要显式写 false 才是在测"关掉群聊"。
+  assert.equal(shouldHandle(group('123', '999', '你好'), { ...base, allowGroup: false }), false)
 })
 
 test('群聊：开启后，@ 了才处理', () => {

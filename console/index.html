@@ -1032,6 +1032,15 @@
         <span class="hint">谁能让它说话</span>
         <div style="margin-left:auto;display:flex;gap:6px"></div>
       </div>
+      <div class="panel" style="margin-bottom:var(--gap-card)">
+        <div class="body">
+          <label class="switch-row">
+            <input type="checkbox" id="acc-allow-group">
+            <span>允许它在<b>群里</b>说话</span>
+            <span class="hint">关掉后群消息一条都不处理（私聊不受影响）</span>
+          </label>
+        </div>
+      </div>
       <div class="cols2">
         <div class="panel">
           <h3>群 <span class="r" id="acc-g-count"></span></h3>
@@ -4733,6 +4742,7 @@ async function loadAccessPolicy() {
     accState.groupDeny = p.groupDeny.slice()
     accState.memberAllow = p.memberAllow.slice()
     accState.memberDeny = p.memberDeny.slice()
+    $('acc-allow-group').checked = p.allowGroup !== false
     $('acc-require-at').checked = p.requireAt
     $('acc-path').textContent = d.path
     renderAcc()
@@ -4744,7 +4754,11 @@ async function saveAccessPolicy() {
     await api('/api/access', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...accState, requireAt: $('acc-require-at').checked }),
+      body: JSON.stringify({
+        ...accState,
+        allowGroup: $('acc-allow-group').checked,
+        requireAt: $('acc-require-at').checked,
+      }),
     })
     toast('已保存，立即生效')
     loadAccessPolicy()

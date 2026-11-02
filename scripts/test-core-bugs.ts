@@ -309,6 +309,7 @@ console.log('\n=== 7. access checkAccess ===')
 
 function policy(over: Partial<AccessPolicy> = {}): AccessPolicy {
   return {
+    allowGroup: true,
     groupAllow: [],
     groupDeny: [],
     memberAllow: [],

@@ -170,6 +170,26 @@ function migrateLegacyDataRoot() {
 }
 
 /**
+ * .env 每一项的说明。写进生成的文件里，用户打开就知道这行是干什么的。
+ * 键必须和 ENV_DEFAULTS 对齐（缺的项不写说明，不影响功能）。
+ */
+const ENV_NOTE = {
+  CONSOLE_TOKEN: '控制台口令。打开控制台时用，别外传。',
+  DEEPSEEK_API_KEY: '在控制台「设置 → 模型」里填，也可以直接改这里。',
+  DEEPSEEK_MODEL: '默认 deepseek-chat。',
+  ONEBOT_TOKEN: '要和你 NapCat 里填的 token 一致；两边都空也能连。',
+  ONEBOT_HOST: 'NapCat 的反向 WS 地址，一般不用改。',
+  ONEBOT_PORT: 'NapCat 的反向 WS 端口。',
+  ONEBOT_PATH: 'NapCat 的反向 WS 路径。',
+  OWNER_QQ: '你的 QQ 号。填了它只认你；留空则谁私聊都回。',
+  ALLOW_GROUP: '群聊总开关。true = 能在群里说话，false = 群里完全不理。',
+  GROUP_ALLOW: '只理这些群（逗号分隔）；留空 = 所有群。',
+  GROUP_REQUIRE_AT: '群里必须 @ 它或叫它名字才回。',
+  UPDATE_URL: '在线更新地址，留空则不检查。',
+  UPDATE_TOKEN: '在线更新口令，留空则不检查。',
+}
+
+/**
  * 打包后 DATA_ROOT = %APPDATA%/vesper/data-root，第一次是空的。
  *
  * 不初始化的话两个后果：
@@ -188,35 +208,58 @@ function ensureDataRoot() {
   // 0. 先把旧数据目录（qqbot/QQBot/Vesper）的东西搬过来，否则改名后老用户会以为数据丢了
   migrateLegacyDataRoot()
 
-// 1. .env：没有就生成一份（随机 token；API key 留空，让用户在设置页填）
+  // 1. .env：没有就生成一份（随机 token；API key 留空，让用户在设置页填）
+  //
+  // 这里必须把「跑起来需要的配置」都写出来，不能只写 5 行。
+  // 之前只有 CONSOLE_TOKEN / DEEPSEEK_* / UPDATE_*，于是：
+  //   - ALLOW_GROUP 缺失 → 群聊总开关默认关 → 群里 @ 它一条都不回
+  //     （日志还会说"群聊总开关没开"，但界面上没有任何地方能打开）
+  //   - OWNER_QQ 缺失 → 私聊不认人，任何陌生人私聊它都会回
+  //   - ONEBOT_TOKEN 缺失 → 用户在 NapCat 里设了 token 就连不上
+  // 这些全都写出来，用户改的时候至少看得见。
   const envPath = path.join(DATA_ROOT, '.env')
+  const ENV_DEFAULTS = [
+    ['CONSOLE_TOKEN', randomBytes(16).toString('hex')],
+    ['DEEPSEEK_API_KEY', ''],
+    ['DEEPSEEK_MODEL', 'deepseek-chat'],
+    ['ONEBOT_TOKEN', ''],
+    ['ONEBOT_HOST', '127.0.0.1'],
+    ['ONEBOT_PORT', '8765'],
+    ['ONEBOT_PATH', '/onebot/v11/ws'],
+    ['OWNER_QQ', ''],
+    ['ALLOW_GROUP', 'true'],
+    ['GROUP_ALLOW', ''],
+    ['GROUP_REQUIRE_AT', 'true'],
+    ['UPDATE_URL', ''],
+    ['UPDATE_TOKEN', ''],
+  ]
   if (!existsSync(envPath)) {
-    const token = randomBytes(16).toString('hex')
-    writeFileSync(
-      envPath,
-      [
-        '# 首次启动自动生成。',
-        '# DEEPSEEK_API_KEY 可以在控制台「设置 → 模型」里填，也可以直接改这里。',
-        `CONSOLE_TOKEN=${token}`,
-        'DEEPSEEK_API_KEY=',
-        'DEEPSEEK_MODEL=deepseek-chat',
-        'UPDATE_URL=',
-        'UPDATE_TOKEN=',
-        '',
-      ].join('\n'),
-      'utf8',
-    )
+    const lines = ['# 首次启动自动生成，改完重启生效。']
+    for (const [k, v] of ENV_DEFAULTS) {
+      lines.push(ENV_NOTE[k] ? `# ${ENV_NOTE[k]}` : '', `${k}=${v}`)
+    }
+    writeFileSync(envPath, lines.filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n') + '\n', 'utf8')
     console.log('[main] 首次启动：已生成 .env')
   } else {
-    // 老 .env 只补缺失的更新配置，不动用户已有的值
+    // 老 .env：只补**缺失**的键，不动用户已有的值。
+    // 之前只补 UPDATE_* 两项，所以老用户升级上来 ALLOW_GROUP 仍然是缺的。
     try {
       const text = readFileSync(envPath, 'utf8')
       const add = []
-      if (!/^UPDATE_URL=/m.test(text)) add.push('UPDATE_URL=')
-      if (!/^UPDATE_TOKEN=/m.test(text)) add.push('UPDATE_TOKEN=')
+      for (const [k, v] of ENV_DEFAULTS) {
+        if (k === 'CONSOLE_TOKEN') continue // 已有 .env 一定有，没有也不该悄悄换掉
+        const re = new RegExp('^\\s*' + k + '\\s*=', 'm')
+        if (!re.test(text)) add.push([k, v])
+      }
       if (add.length) {
-        appendFileSync(envPath, '\n# 在线更新（自动补上的，可改）\n' + add.join('\n') + '\n', 'utf8')
-        console.log('[main] 已给 .env 补上更新配置')
+        appendFileSync(
+          envPath,
+          '\n# 下面这些是升级时自动补上的（原来缺了会导致对应功能不可用），可以改\n' +
+            add.map(([k, v]) => `${k}=${v}`).join('\n') +
+            '\n',
+          'utf8',
+        )
+        console.log('[main] 已给 .env 补上缺失的 ' + add.length + ' 项')
       }
     } catch {
       /* 补不上也不影响启动，用户可手动加 */

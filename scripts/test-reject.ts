@@ -38,6 +38,7 @@ function opts(over: Partial<OnebotOptions> = {}): OnebotOptions {
   return {
     allowGroup: true,
     getPolicy: () => ({
+      allowGroup: true,
       groupAllow: [],
       groupDeny: [],
       memberAllow: [],
@@ -59,6 +60,7 @@ console.log('\n=== 2. 成员黑名单 ===')
 {
   const o = opts({
     getPolicy: () => ({
+      allowGroup: true,
       groupAllow: [],
       groupDeny: [],
       memberAllow: [],
@@ -76,6 +78,7 @@ console.log('\n=== 3. 群黑名单 ===')
 {
   const o = opts({
     getPolicy: () => ({
+      allowGroup: true,
       groupAllow: [],
       groupDeny: ['111111111'],
       memberAllow: [],
@@ -89,9 +92,20 @@ console.log('\n=== 3. 群黑名单 ===')
 
 console.log('\n=== 4. 群聊总开关没开 ===')
 {
-  const o = opts({ allowGroup: false } as Partial<OnebotOptions>)
-  check('ALLOW_GROUP 没开 → 拒绝', !shouldHandle(ev(), o))
-  check('原因提到总开关', rejectReason(ev(), o).includes('ALLOW_GROUP'), rejectReason(ev(), o))
+  // 总开关现在收在权限策略里（控制台可改）。注意 opts() 默认会注入一份
+  // allowGroup=true 的策略，所以这里要显式覆盖策略，不能只改静态字段。
+  const o = opts({
+    getPolicy: () => ({
+      allowGroup: false,
+      groupAllow: [],
+      groupDeny: [],
+      memberAllow: [],
+      memberDeny: [],
+      requireAt: true,
+    }),
+  } as Partial<OnebotOptions>)
+  check('allowGroup=false → 拒绝', !shouldHandle(ev(), o))
+  check('原因提到权限页或 ALLOW_GROUP', /权限|ALLOW_GROUP/.test(rejectReason(ev(), o)), rejectReason(ev(), o))
 }
 
 console.log('\n=== 5. 没 @ 也没叫名字 ===')

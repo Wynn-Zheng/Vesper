@@ -10,6 +10,7 @@ import {
   extractText,
   isAddressed,
   isObserveOnly,
+  rejectReason,
   shouldHandle,
   type OBEvent,
   type OnebotOptions,
@@ -393,7 +394,8 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
     '群里 @ 的是别人 → 不回复（消息照进历史）',
     isObserveOnly(groupAt('123', '999', '111'), { ...base, allowGroup: true }),
   )
-  check('群里 @ 了它但没开 allowGroup → 不处理', !shouldHandle(groupAt('123', '999'), base))
+  // 没开群聊总开关：现在要显式写 false（未设置 = 默认开，见 access.ts 的说明）
+  check('群里 @ 了它但 allowGroup=false → 不处理', !shouldHandle(groupAt('123', '999'), { ...base, allowGroup: false }))
   check('群里被 @ 时 isAddressed 为真', isAddressed(groupAt('123', '999')))
 
   // 群里的纯图片：@ 了 → 正常处理；没 @ → 能进历史，但仍然只记录不回复。
@@ -456,7 +458,8 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
   )
 
   // 动态权限策略分支
-  const policy = (patch: Partial<{ requireAt: boolean; groupAllow: string[] }> = {}) => () => ({
+  const policy = (patch: Partial<{ allowGroup: boolean; requireAt: boolean; groupAllow: string[] }> = {}) => () => ({
+    allowGroup: true,
     groupAllow: [],
     groupDeny: [],
     memberAllow: [],
@@ -473,6 +476,17 @@ console.log('\n=== 6. shouldHandle / isAddressed ===')
   check(
     '策略：requireAt=false 时没 @ 也处理',
     shouldHandle(group('123', '999'), { ...base, allowGroup: true, getPolicy: policy({ requireAt: false }) }),
+  )
+  // 群聊总开关现在收在策略里（原来只在 .env，桌面版根本没写这一项）
+  check(
+    '策略：allowGroup=false 时群里 @ 也不处理',
+    !shouldHandle(groupAt('123', '999'), { ...base, allowGroup: true, getPolicy: policy({ allowGroup: false }) }),
+  )
+  check(
+    '策略：allowGroup=false 的拒绝原因会提到权限页',
+    rejectReason(groupAt('123', '999'), { ...base, allowGroup: true, getPolicy: policy({ allowGroup: false }) }).includes(
+      '权限',
+    ),
   )
 
   // 字符串 CQ 码格式也要认 @

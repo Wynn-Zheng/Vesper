@@ -3,6 +3,16 @@ import YAML from 'yaml'
 import { writeAtomic } from '../store/fs.ts'
 import { warnAt } from './log.ts'
 export interface AccessPolicy {
+  /**
+   * 群聊总开关。
+   *
+   * 以前这个开关只在 .env 的 ALLOW_GROUP 里，控制台改不到 ——
+   * 而桌面版生成的 .env 又没有这一项（缺省 false），
+   * 结果就是「装好、连上 NapCat、群里 @ 它，一条都不回」，
+   * 日志里写「群聊总开关没开（.env 里 ALLOW_GROUP 不是 true）」，
+   * 但界面上根本没有能打开它的地方。现在收到这里，控制台可改。
+   */
+  allowGroup: boolean
   /** 群白名单：为空表示不限制 */
   groupAllow: string[]
   /** 群黑名单：永远不理 */
@@ -18,6 +28,7 @@ export interface AccessPolicy {
 const FILE = 'persona/access.yaml'
 
 const EMPTY: AccessPolicy = {
+  allowGroup: false,
   groupAllow: [],
   groupDeny: [],
   memberAllow: [],
@@ -35,6 +46,10 @@ function split(v: string | undefined): string[] {
 /** 从 .env 推一份初始策略：第一次运行时用 */
 function fromEnv(): AccessPolicy {
   return {
+    // .env 写了就听它的；没写则默认开 —— 这个程序装出来就是为了在群里用的，
+    // 默认关掉等于装完什么都不会发生，而界面上又没有别的地方能打开。
+    // requireAt 默认 true 已经兜住了"乱插话"，所以默认开不会吵。
+    allowGroup: process.env['ALLOW_GROUP'] === undefined ? true : process.env['ALLOW_GROUP'].toLowerCase() === 'true',
     groupAllow: split(process.env['GROUP_ALLOW']),
     groupDeny: [],
     memberAllow: split(process.env['MEMBER_ALLOW']),
@@ -65,6 +80,13 @@ export function loadAccess(): AccessPolicy {
     const list = (v: unknown): string[] =>
       Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []
     return {
+      // 老文件没有「开启」这一项：退回 .env 的值，.env 也没有就默认开
+      allowGroup:
+        typeof group['开启'] === 'boolean'
+          ? group['开启']
+          : process.env['ALLOW_GROUP'] === undefined
+            ? true
+            : process.env['ALLOW_GROUP'].toLowerCase() === 'true',
       groupAllow: list(group['白名单']),
       groupDeny: list(group['黑名单']),
       memberAllow: list(member['白名单']),
@@ -83,7 +105,7 @@ export function loadAccess(): AccessPolicy {
 
 export function saveAccess(p: AccessPolicy): void {
   const doc = {
-    群: { 白名单: p.groupAllow, 黑名单: p.groupDeny },
+    群: { 开启: p.allowGroup, 白名单: p.groupAllow, 黑名单: p.groupDeny },
     成员: { 白名单: p.memberAllow, 黑名单: p.memberDeny, 必须at: p.requireAt },
   }
   writeAtomic(FILE, `${YAML.stringify(doc)}\n`)

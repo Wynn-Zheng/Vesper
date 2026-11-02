@@ -782,6 +782,8 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         const clean = (v: unknown): string[] =>
           Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : []
         const next: AccessPolicy = {
+          // 没传就沿用当前值，别因为老前端不发这个字段就把总开关关了
+          allowGroup: typeof data.allowGroup === 'boolean' ? data.allowGroup : loadAccess().allowGroup,
           groupAllow: clean(data.groupAllow),
           groupDeny: clean(data.groupDeny),
           memberAllow: clean(data.memberAllow),
@@ -790,6 +792,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
         }
         saveAccess(next)
         info('权限策略已更新', {
+          群聊: next.allowGroup ? '开' : '关',
           群白: next.groupAllow.length,
           群黑: next.groupDeny.length,
           成员白: next.memberAllow.length,
