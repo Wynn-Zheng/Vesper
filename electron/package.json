@@ -1,6 +1,6 @@
 {
   "name": "vesper-desktop",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Vesper 控制台的桌面壳",
   "main": "main.js",
   "private": true,
