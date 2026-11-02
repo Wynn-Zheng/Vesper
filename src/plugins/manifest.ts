@@ -229,6 +229,12 @@ export function parseManifest(
   }
   // 上面已经逐项校验过，这里直接收窄（校验不过不会走到这）
   if (isPlainObject(configSchema)) manifest.configSchema = configSchema as PluginConfigSchema
+  // minHostVersion 之前**只校验类型、没写进 manifest**，于是 installer 里那句
+  // "宿主版本不够就拒绝"永远不成立 —— 插件作者写了门槛，用户装上去照样跑，
+  // 之后因为 API 不存在而报错。这类"约束写了但没生效"比没写更坑。
+  if (typeof raw['minHostVersion'] === 'string' && raw['minHostVersion'].trim()) {
+    manifest.minHostVersion = raw['minHostVersion'].trim()
+  }
 
   return { ok: true, manifest }
 }

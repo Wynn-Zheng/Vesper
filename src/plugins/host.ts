@@ -445,8 +445,15 @@ export function createHost(options: {
       return { ok: true }
     } catch (err) {
       const message = `载入插件失败：${errorMessage(err)}`
-      // 激活过程中可能已经订阅了事件，失败时一并清掉
+      // 激活过程中可能已经订阅了事件**和注册过工具**，失败时一并清掉。
+      //
+      // 不清工具的话（原来只清了订阅）：插件在 activate 里注册了工具、然后抛异常，
+      // 修好代码重载后那些旧工具会"复活"并继续跑旧实现 —— 用户以为修好了，
+      // 实际调到的还是坏的那版。这类"半激活"状态最难解释。
       clearSubscriptions(id)
+      for (const [name, item] of pluginTools) {
+        if (item.pluginId === id) pluginTools.delete(name)
+      }
       recordError(id, message)
       return { ok: false, error: message }
     }
