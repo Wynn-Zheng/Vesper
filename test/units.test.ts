@@ -42,6 +42,9 @@ const dir = mkdtempSync(join(tmpdir(), 'qqbot-units-'))
 setMemoryRoot(join(dir, 'memory'))
 setPeopleRoot(join(dir, 'people'))
 setRelationRoot(join(dir, 'people'))
+// 会话也会落盘了，同样指到临时目录，别往仓库的 data/ 里写
+const sessionDir = join(dir, 'sessions')
+setSessionRoot(sessionDir)
 
 process.on('exit', () => {
   try {
@@ -160,8 +163,8 @@ test('会话：长时间不活跃会被清理', () => {
 test('会话：历史会落盘，进程重启后还能读回来', () => {
   // 以前 turns 只在内存里，pushTurn 也不读盘 —— 一重启它就"忘了刚聊过什么"。
   // 用户看到的症状：重启后问它"刚才说到哪了"，它一脸空白。
-  const dir = mkdtempSync(join(tmpdir(), 'session-persist-'))
-  setSessionRoot(dir)
+  const sub = mkdtempSync(join(tmpdir(), 'session-persist-'))
+  setSessionRoot(sub)
   clearSessions()
 
   pushTurn('group:42', { role: 'user', content: '在干啥呢', at: Date.now() - 1000 })
@@ -174,8 +177,8 @@ test('会话：历史会落盘，进程重启后还能读回来', () => {
   assert.equal(reloaded.turns[0]!.content, '在干啥呢')
   assert.equal(reloaded.turns[1]!.role, 'assistant')
 
-  rmSync(dir, { recursive: true, force: true })
-  setSessionRoot('data/sessions')
+  rmSync(sub, { recursive: true, force: true })
+  setSessionRoot(sessionDir)
 })
 
 /* ---------------- 事实的三个时间维度 ---------------- */

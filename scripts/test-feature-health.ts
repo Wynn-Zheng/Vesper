@@ -6,7 +6,7 @@
  *
  * 一条命令跑完，用来回答"所有功能现在都正常吗"。
  */
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -124,6 +124,11 @@ console.log('\n=== 5. 上下文压缩 ===')
 console.log('\n=== 6. 会话 ===')
 {
   const s = await import('../src/loop/session.ts')
+  // 用临时目录：pushTurn 现在会把会话落盘、并在内存为空时从磁盘读回来
+  // （重启不该失忆）。不隔离的话会读到上次跑测试留下的 test:health，
+  // 条数对不上，看起来像功能坏了。
+  const dir = mkdtempSync(join(tmpdir(), 'qqbot-health-session-'))
+  s.setSessionRoot(dir)
   s.clearSessions()
   s.pushTurn('test:health', { role: 'user', content: '你好', at: Date.now() })
   s.pushTurn('test:health', { role: 'assistant', content: '你好呀', at: Date.now() })
@@ -136,6 +141,10 @@ console.log('\n=== 6. 会话 ===')
   check('转成消息成功', msgs.length === 2)
   s.clearSessions()
   check('清空后为空', s.getTurns('test:health').length === 0)
+
+  // 顺便验一下落盘：文件真的写出来了
+  check('会话已落盘', readdirSync(dir).some((f) => f.includes('test%3Ahealth')))
+  rmSync(dir, { recursive: true, force: true })
 }
 
 /* ============ 7. 表情包 ============ */
