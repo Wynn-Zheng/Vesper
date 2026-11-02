@@ -636,6 +636,28 @@ async function runAction(
  */
 const MUTATING_PLUGIN_ROUTES = new Set(['/install', '/uninstall', '/toggle', '/reload'])
 
+/**
+ * 把插件的 panel.html 发给浏览器。
+ *
+ * 抽出来是因为它有两处调用：一处在免鉴权的静态白名单里（面板不能带 token），
+ * 另一处在 /api/plugins/panel 路由里（带 token 的老路径，保留兼容）。
+ */
+function sendPanelHtml(res: ServerResponse, pid: string): void {
+  const file = join('plugins', pid, 'panel.html')
+  try {
+    const html = readFileSync(file, 'utf8')
+    res.writeHead(200, {
+      'content-type': 'text/html; charset=utf-8',
+      // 面板是外部代码：不许它引控制台的样式/脚本，也不许被别的站嵌
+      'content-security-policy': "default-src 'self' 'unsafe-inline' data: blob:; frame-ancestors 'self'",
+      'x-content-type-options': 'nosniff',
+    })
+    res.end(html)
+  } catch {
+    json(res, 404, { ok: false, error: `插件 ${pid} 没有 panel.html（panel 类型插件需要这个文件）` })
+  }
+}
+
 export async function startConsole(opts: ConsoleOptions): Promise<void> {
   consoleOpts = opts
   // 没设 token 又监听在非本机地址 = 同一网段任何人都能改配置、发消息、导数据。
@@ -664,9 +686,18 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 二维码图片也在这里放行：`<img src>` 同样带不了 header。
     // 它只在**未登录**时存在；默认只监听 127.0.0.1，配了 CONSOLE_HOST=0.0.0.0
     // （手机访问）时这张图也会被同网段看到，这是那个开关本身的取舍。
+    // 面板 HTML 也在这里放行。
+    //
+    // 为什么不带 token：iframe 的 sandbox 去掉了 allow-same-origin（见
+    // console/plugins.js），面板是不透明源。而以前 src 上拼着**完整控制台 token**，
+    // 面板里的任何 JS（包括它引的第三方图表库）都能拿这个 token 调任意 /api ——
+    // 卸插件、改模型、导数据，和你手动操作控制台权限一样。
+    // 现在面板只拿到自己的静态 HTML，要数据必须走 postMessage 桥（宿主代发）。
+    // 这个页面不含任何数据，放行它不会泄露什么。
     if (
       (req.method === 'GET' && /^\/(?:vendor\/)?[\w.-]+\.(js|css)$/.test(path)) ||
       (req.method === 'GET' && path === '/api/napcat/qrcode.png') ||
+      (req.method === 'GET' && /^\/api\/plugins\/panel\/[A-Za-z0-9_-]{1,64}$/.test(path)) ||
       (req.method === 'GET' && (path === '/' || path === '/index.html'))
     ) {
       // 二维码交给 misc-api（它知道 NapCat 装在哪）
@@ -674,6 +705,15 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         if (await handleMiscApi(req, res, path, url, json)) return
         text(res, 404, '没有二维码')
         return
+      }
+
+      // 面板 HTML：从 plugins/<id>/panel.html 发出去（不能按 console/ 找）
+      {
+        const pm = /^\/api\/plugins\/panel\/([A-Za-z0-9_-]{1,64})$/.exec(path)
+        if (pm) {
+          sendPanelHtml(res, pm[1]!)
+          return
+        }
       }
 
       const rel = path === '/' || path === '/index.html' ? 'index.html' : path.slice(1)
@@ -1172,35 +1212,18 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
 
             /* 显式校验插件 id 的格式。
              *
-             * 光靠「路径必须以 panel.html 结尾」也能挡住大部分遍历
-             * （`..%2f..%2fpackage.json` 会变成 `package.json/panel.html`，
-             * 而它不是目录 → ENOENT），但那是**隐式**的：
-             * 只要目标目录里恰好有个 panel.html 就读得到。
-             *
              * 插件 id 本来就只能是 [a-z0-9-_]（见 manifest 校验），
              * 这里再卡一道，不依赖任何路径巧合。
+             *
+             * 说明：带 token 的这条路径是为了兼容"老前端"（iframe 的 src 上
+             * 拼 token 的那种）。新前端已经改成不带 token，从上面的静态白名单直接
+             * 发面板；两条路径共用 sendPanelHtml()。
              */
             if (!/^[A-Za-z0-9_-]{1,64}$/.test(pid)) {
               json(res, 400, { ok: false, error: '插件 id 不合法' })
               return
             }
-
-            const root = join('plugins', pid, 'panel.html')
-            try {
-              const html = readFileSync(root, 'utf8')
-              res.writeHead(200, {
-                'content-type': 'text/html; charset=utf-8',
-                // 面板是外部代码：不许它引控制台的样式/脚本，也不许被别的站嵌
-                'content-security-policy': "default-src 'self' 'unsafe-inline' data: blob:; frame-ancestors 'self'",
-                'x-content-type-options': 'nosniff',
-              })
-              res.end(html)
-            } catch {
-              json(res, 404, {
-                ok: false,
-                error: `插件 ${pid} 没有 panel.html（panel 类型插件需要这个文件）`,
-              })
-            }
+            sendPanelHtml(res, pid)
             return
           }
 

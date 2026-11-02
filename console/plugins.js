@@ -311,17 +311,63 @@
 
     const frame = document.createElement('iframe')
     frame.className = 'panel-frame'
-    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin')
-    // iframe 的 src 是浏览器自己发的 GET，带不了自定义 header —— token 只能走 query。
-    // 面板页面本身是插件自带静态文件，不含数据；数据要靠 /call，那边仍然校验 header。
-    const t = new URLSearchParams(location.search).get('token') || ''
-    frame.src = `/api/plugins/panel/${encodeURIComponent(id)}?token=${encodeURIComponent(t)}`
+    // 沙箱：**故意不给 allow-same-origin**。
+    //
+    // 给了它，面板就是同源页面 —— 再加上以前 src 上拼着完整控制台 token，
+    // 面板里的任何 JS（包括它引的第三方图表库）都能调任意 /api：
+    // 卸插件、改模型、导数据，权限和你在控制台里手动操作完全一样。
+    // 现在它是不透明源：读不到控制台的 window/DOM/cookie，也不能自己发带 token 的请求。
+    //
+    // 面板要数据走下面的 postMessage 桥（宿主代发，token 不离开这一层）。
+    frame.setAttribute('sandbox', 'allow-scripts allow-forms')
+    frame.src = `/api/plugins/panel/${encodeURIComponent(id)}`
     box.appendChild(frame)
+
+    // ---- 面板 ↔ 宿主 的桥 ----
+    //
+    // 协议（面板侧）：
+    //   发：parent.postMessage({ type: 'vesper:call', reqId, action, payload }, '*')
+    //   收：{ type: 'vesper:result', reqId, ok, data?, error? }
+    // 只允许调**自己的** /api/plugins/call，别的接口一律拒绝 ——
+    // 这样面板即使被第三方 JS 控制，也只能动这个插件自己的东西。
+    const onMsg = async (ev) => {
+      // 只认这个 iframe 发来的（别的 iframe / 窗口不行）
+      if (ev.source !== frame.contentWindow) return
+      const d = ev.data
+      if (!d || d.type !== 'vesper:call' || typeof d.reqId !== 'string') return
+      const reply = (payload) => {
+        try {
+          frame.contentWindow.postMessage(payload, '*')
+        } catch {
+          /* 面板已经关了 */
+        }
+      }
+      try {
+        const t = new URLSearchParams(location.search).get('token') || ''
+        const r = await fetch('/api/plugins/call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-console-token': t },
+          body: JSON.stringify({ id, action: String(d.action ?? ''), payload: d.payload }),
+        })
+        const j = await r.json()
+        reply({ type: 'vesper:result', reqId: d.reqId, ok: !!j.ok, data: j.data, error: j.error })
+      } catch (e) {
+        reply({ type: 'vesper:result', reqId: d.reqId, ok: false, error: String(e && e.message ? e.message : e) })
+      }
+    }
+    window.addEventListener('message', onMsg)
+    // 面板关掉时把监听摘掉，避免开过几个面板后监听堆积
+    const offMsg = () => window.removeEventListener('message', onMsg)
+    const closePanel = () => {
+      offMsg()
+      mask.remove()
+    }
+    close.onclick = closePanel
 
     mask.appendChild(box)
     // 点遮罩关闭；点面板本体不关
     mask.onclick = (e) => {
-      if (e.target === mask) mask.remove()
+      if (e.target === mask) closePanel()
     }
     document.body.appendChild(mask)
   }
