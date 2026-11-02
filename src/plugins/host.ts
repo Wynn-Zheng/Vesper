@@ -64,7 +64,24 @@ export type PluginContext = {
    * （所以 `;` `|` `&&` 不会生效，参数按数组传）。超时 10 秒。
    */
   exec?: (cmd: string, args?: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
+  /**
+   * 定时器：**请用这几个，别直接用全局 setInterval**。
+   *
+   * 为什么：插件是热重载的，但 ESM 模块卸载不了。插件用全局 setInterval 起的
+   * 任务，在 unload/reload 之后还在跑 —— 它闭包着旧模块、旧 ctx，越重载越多，
+   * 表现出来就是"用久了越来越卡"，而且日志里什么都看不到。
+   * 用这里的接口，宿主在卸载时会**替你清掉**。
+   *
+   * 自己起的全局定时器（或其它资源）请写在 deactivate() 里清理。
+   */
+  setInterval?: (fn: () => void, ms: number) => PluginTimer
+  setTimeout?: (fn: () => void, ms: number) => PluginTimer
+  clearInterval?: (handle: PluginTimer) => void
+  clearTimeout?: (handle: PluginTimer) => void
 }
+
+/** 插件定时器的句柄（宿主内部记着它是 interval 还是 timeout） */
+export type PluginTimer = { readonly __pluginTimer: true } & Record<string, unknown>
 
 /** 允许 async：插件作者很自然会写 async 处理器，宿主必须接住它的拒绝 */
 type Handler = (payload: unknown) => void | Promise<void>
@@ -165,6 +182,16 @@ export function createHost(options: {
   const hostKey = `host-${++hostSerial}`
   /** 插件注册的工具：key = 工具名，value = 注册它的插件 id + 工具本体 */
   const pluginTools = new Map<string, { pluginId: string; tool: PluginTool }>()
+  /**
+   * 每个插件通过 ctx 起的定时器。卸载/重载时必须清掉：
+   * 插件是热重载的，但 ESM 模块卸载不了 —— 插件用全局 setInterval 起的任务
+   * 在 unload 之后还在跑，闭包着旧模块和旧 ctx。重载几十次就多出几十份实例，
+   * 表现是"用久了越来越卡"，而日志里完全看不到。
+   */
+  const timerHandles = new Map<
+    string,
+    Map<PluginTimer, { kind: 'interval' | 'timeout'; handle: ReturnType<typeof setInterval> }>
+  >()
 
   const eventKey = (id: string, event: string): string => `${hostKey}\u0000${id}\u0000${event}`
 
@@ -229,6 +256,26 @@ export function createHost(options: {
 
   /** 只暴露这些字段，插件拿不到 process.env、require 等宿主能力 */
   function createContext(id: string, dataDir: string, permissions: string[] = []): PluginContext {
+    // 这个插件通过 ctx 起的定时器。卸载时统一清掉（见 clearPluginTimers）。
+    const track = (kind: 'interval' | 'timeout', handle: ReturnType<typeof setInterval>): PluginTimer => {
+      let set = timerHandles.get(id)
+      if (!set) {
+        set = new Map()
+        timerHandles.set(id, set)
+      }
+      const token = { __pluginTimer: true } as PluginTimer
+      set.set(token, { kind, handle })
+      return token
+    }
+    const untrack = (token: PluginTimer): void => {
+      const set = timerHandles.get(id)
+      const item = set?.get(token)
+      if (!item) return
+      if (item.kind === 'interval') clearInterval(item.handle)
+      else clearTimeout(item.handle)
+      set!.delete(token)
+    }
+
     return {
       id,
       dataDir,
@@ -238,6 +285,11 @@ export function createHost(options: {
       log: (message: string) => info(message),
       on: (event: string, handler: Handler) => subscribe(id, event, handler),
       emit: (event: string, payload?: unknown) => dispatch(id, event, payload),
+      // 定时器：宿主会在卸载/重载时清掉，插件不用自己记
+      setInterval: (fn: () => void, ms: number) => track('interval', setInterval(fn, ms)),
+      setTimeout: (fn: () => void, ms: number) => track('timeout', setTimeout(fn, ms)),
+      clearInterval: (token: PluginTimer) => untrack(token),
+      clearTimeout: (token: PluginTimer) => untrack(token),
       registerTool: (tool: PluginTool) => {
         const name = String(tool?.name || '').trim()
         if (!name) { recordError(id, 'registerTool 少了 name，忽略') ; return }
@@ -444,6 +496,18 @@ export function createHost(options: {
     }
   }
 
+  /** 把这个插件通过 ctx 起的定时器全部清掉（卸载/重载时用） */
+  function clearPluginTimers(id: string): void {
+    const set = timerHandles.get(id)
+    if (!set) return
+    for (const { kind, handle } of set.values()) {
+      if (kind === 'interval') clearInterval(handle)
+      else clearTimeout(handle)
+    }
+    set.clear()
+    timerHandles.delete(id)
+  }
+
   async function unload(id: string): Promise<{ ok: boolean; error?: string }> {
     const record = loaded.get(id)
     if (!record) return { ok: false, error: 'not loaded' }
@@ -461,6 +525,7 @@ export function createHost(options: {
     // 即使 deactivate 抛错，也要把插件从内存里移除并清空订阅
     loaded.delete(id)
     clearSubscriptions(id)
+    clearPluginTimers(id)
     // 清掉这个插件注册过的工具。
     // 不删的话：重载后 registerTool 会撞上旧条目、被当"工具重名"忽略，
     // 而 tools() 因为 pluginId 还"活着"继续返回旧模块的 run ——
