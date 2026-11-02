@@ -4,7 +4,7 @@ import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
-import { loadRules, stageOf } from '../core/config.ts'
+import { GROUP_CHAT_MODES, asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
 import { info, warnAt, logBus, type LogRecord } from '../core/log.ts'
 import type { Transport } from '../core/transport.ts'
 import type { LlmOptions } from '../llm/types.ts'
@@ -772,7 +772,13 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       }
 
       if (req.method === 'GET' && path === '/api/access') {
-        json(res, 200, { policy: loadAccess(), path: accessFile() })
+        let groupMode = '熟人续话'
+        try {
+          groupMode = loadRules().rules.行为.群聊模式
+        } catch {
+          /* 读不到就用默认，别让权限页打不开 */
+        }
+        json(res, 200, { policy: loadAccess(), path: accessFile(), groupMode })
         return
       }
 
@@ -791,6 +797,25 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           requireAt: data.requireAt !== false,
         }
         saveAccess(next)
+
+        // 「必须 @」和「群聊模式」是同一件事的两个入口（曾经并存，
+        // 用户会在权限页关了必须 @ 却发现它还是不理）。
+        // 现在模式是权威：这里只把复选框的变化同步成模式，
+        // 没传 groupMode 就什么也不动，避免老前端把「只听」冲成「熟人续话」。
+        const wantMode = asGroupChatMode((data as { groupMode?: unknown }).groupMode)
+        if (wantMode) {
+          try {
+            const fs = await import('node:fs')
+            const { setConfigPath } = await import('./config-write.ts')
+            const raw = fs.readFileSync('persona/rules.yaml', 'utf8')
+            const r = setConfigPath(raw, '行为.群聊模式', wantMode)
+            if (r.ok) fs.writeFileSync('persona/rules.yaml', r.text, 'utf8')
+            else warnAt('群聊模式没写进 rules.yaml：' + (r.error ?? '找不到键'))
+          } catch (e) {
+            warnAt('群聊模式没写进 rules.yaml', { err: String(e).slice(0, 120) })
+          }
+        }
+
         info('权限策略已更新', {
           群聊: next.allowGroup ? '开' : '关',
           群白: next.groupAllow.length,
@@ -798,8 +823,9 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           成员白: next.memberAllow.length,
           成员黑: next.memberDeny.length,
           必须at: next.requireAt,
+          ...(wantMode ? { 群聊模式: wantMode } : {}),
         })
-        json(res, 200, { policy: next })
+        json(res, 200, { policy: next, ...(wantMode ? { groupMode: wantMode } : {}) })
         return
       }
 
@@ -1455,6 +1481,25 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           delay('条间延迟')
           delay('回复前延迟')
 
+          // 群聊参与档位（行为.群聊模式，不是 说话.*）
+          {
+            const gv = String(body['群聊模式'] ?? '').trim()
+            if (gv) {
+              const mode = asGroupChatMode(gv)
+              if (!mode) {
+                json(res, 400, { error: `群聊模式不认识：${gv}（可选 ${GROUP_CHAT_MODES.join(' / ')}）` })
+                return
+              }
+              const r = setConfigPath(raw, '行为.群聊模式', mode)
+              if (!r.ok) {
+                json(res, 400, { error: '写不回 rules.yaml：' + (r.error ?? '找不到键') })
+                return
+              }
+              raw = r.text
+              applied['群聊模式'] = mode
+            }
+          }
+
           if (!Object.keys(applied).length) {
             json(res, 400, { error: '没有有效的值' })
             return
@@ -1625,6 +1670,14 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
               return loadRules().rules.说话 ?? null
             } catch {
               return null
+            }
+          })(),
+          // 群聊参与档位：三档，控制台「对话规则」里改，写 rules.yaml 的 行为.群聊模式
+          群聊模式: (() => {
+            try {
+              return loadRules().rules.行为.群聊模式
+            } catch {
+              return '熟人续话'
             }
           })(),
           selfText: self.about || '',

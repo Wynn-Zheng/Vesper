@@ -7,6 +7,7 @@ import { info, warnAt, errorAt } from '../core/log.ts'
 import type { GroupMember, Transport } from '../core/transport.ts'
 import type { AccessPolicy } from '../core/access.ts'
 import { checkAccess } from '../core/access.ts'
+import type { GroupChatMode } from '../core/config.ts'
 import type { Rules } from '../core/config.ts'
 import type { Incoming, Target } from '../core/types.ts'
 import { MAX_EMOJI_BYTES, type EmojiStore } from '../emoji/store.ts'
@@ -35,11 +36,16 @@ export interface OnebotOptions {
   /** 最近和它说过话的人（`群号:QQ号` → 时间戳），由 transport 自己维护 */
   recentTalkers?: Map<string, number>
   /**
+   * 群聊模式（三档）。由 index.ts 接到 rules.yaml 的 `行为.群聊模式`，
+   * 改了配置下一条消息就生效。不注入时按老开关 requireAt 推断，
+   * 保证嵌入/测试场景还能跑。
+   */
+  getGroupMode?: () => GroupChatMode
+  /**
    * 它自己发过的消息 id。
    *
    * 由 transport 在构造时自己填，外部不用管。作用：OneBot 的 reply 段只给
-   * 被引用消息的 id，不给发送人 —— 有这份记录才知道"引的是它说的话"
-   * 还是"引的别人的话"。
+   * 被引用消息的 id，不给发送人 —— 有这份记录才知道"引的是它说的话"。
    */
   ownIds?: Set<string>
   /** 连续对话窗口：多久之内不算"突然插话"，默认 2 分钟 */
@@ -1003,6 +1009,19 @@ export function shouldHandle(ev: OBEvent, opts: OnebotOptions): boolean {
 }
 
 /**
+ * 当前生效的群聊模式。
+ *
+ * 优先用注入的 getGroupMode（rules.yaml 热重载）；没注入就按老开关
+ * requireAt 推断 —— 老配置 requireAt=false 等价于「自己判断」，
+ * true 等价于「熟人续话」。这样测试和嵌入场景不用改。
+ */
+export function groupModeOf(opts: OnebotOptions): GroupChatMode {
+  const m = opts.getGroupMode?.()
+  if (m) return m
+  return opts.requireAt === false ? '自己判断' : '熟人续话'
+}
+
+/**
  * 这条群消息是不是「只记录、不回复」。
  *
  * 和 `shouldHandle` 分工：
@@ -1022,6 +1041,11 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   // 也会被当成接着聊，它回一句"试什么"，对方一脸问号。
   if (isAtOthers(ev, opts.ownIds)) return true
 
+  const mode = groupModeOf(opts)
+
+  // 「只听」：连"刚聊过"都不算。用户明确要求群里只在被叫时出现。
+  if (mode === '只听') return true
+
   const gid = String(ev.group_id ?? '')
   const uid = String(ev.user_id ?? '')
   // 刚跟它说过话的人：这是接着聊，不是突然插话
@@ -1035,6 +1059,12 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   // 它已经被 shouldHandle 放进来了（能进历史），但没 @ 就是没叫它，
   // 不能因为"发了图"就变成必回，否则群里一有人发图它就得接话。
   // 要不要看图由业务层在真正生成那一轮决定，通道层不替它做主。
+  //
+  // 「自己判断」：这里放行，交给 boot 的 scoreReply 打分决定。
+  // 以前这条路只有 requireAt=false 才走得到，而默认是 true ——
+  // 于是「发言频率」「退避」「偶尔不回」在群里从来没生效过。
+  if (mode === '自己判断') return false
+
   const policy = opts.getPolicy?.()
   return policy ? policy.requireAt : opts.requireAt !== false
 }
@@ -1075,17 +1105,20 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   const names = (opts.botNames ?? []).filter((n) => n && n !== '未定')
   const called = names.some((n) => text.includes(n))
   const mustAt = opts.getPolicy ? opts.getPolicy().requireAt : opts.requireAt !== false
+  const mode = groupModeOf(opts)
 
   if (opts.getPolicy) {
     const p = opts.getPolicy()
     const acc = checkAccess(p, gid, userId)
     // 白名单/黑名单的 reason 直接来自 checkAccess，和自己判断保持一致
     if (!acc.ok) return `${acc.reason ?? '权限拒绝'}（群 ${gid} / 人 ${userId}）`
+    // 和 isObserveOnly 的顺序保持一致，否则日志会撒谎
+    if (isAtOthers(ev, opts.ownIds)) return '这条 @ 的是别人（不是它），只记录不回复'
+    if (mode === '只听') return '群聊模式是「只听」：只在被 @ 或叫名字时才回'
+    if (mode === '自己判断') return '群聊模式是「自己判断」：这条没被选中（打分没过）'
     if (mustAt && !isAddressed(ev, opts.botNames, opts.ownIds) && !called && !isRecentTalker(opts, gid, userId)) {
       return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
     }
-    // 和 isObserveOnly 保持一致：明确 @ 了别人 → 只记录不回复
-    if (isAtOthers(ev, opts.ownIds)) return '这条 @ 的是别人（不是它），只记录不回复'
     return '未知原因'
   }
 

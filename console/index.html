@@ -1078,8 +1078,13 @@
           <label class="switch-row">
             <input type="checkbox" id="acc-require-at">
             <span>群里必须 <b>@</b> 它才回复</span>
-            <span class="hint">关掉后，群里所有消息都会被处理</span>
+            <span class="hint" id="acc-mode-hint"></span>
           </label>
+          <div class="hint" style="margin-top:8px;line-height:1.7">
+            这个开关和「自我 → 对话规则 → 群里怎么参与」是同一件事，
+            那边选「只听 / 熟人续话」这里就是开，选「自己判断」这里就是关。
+            保存时会同步过去。
+          </div>
           <div class="row" style="margin-top:14px">
             <button class="btn pri" onclick="saveAccessPolicy()">保存</button>
             <span class="hint" id="acc-path"></span>
@@ -3367,6 +3372,58 @@ function renderSelfTalkPage(body, d) {
     body.appendChild(c)
   }
 
+  /* ---- 群里怎么参与（三档，写 rules.yaml 的 行为.群聊模式） ---- */
+  {
+    const cur = d.群聊模式 || '熟人续话'
+    const c = selfCard(
+      '群里怎么参与',
+      cur === '只听' ? '只在被叫时出现' : cur === '自己判断' ? '会自己找话接' : '熟人可以接着聊',
+    )
+    const form = el('div', 'self-form')
+    const sel = el('select', 'self-select')
+    sel.id = 'talk-group-mode'
+    sel.style.width = '100%'
+    for (const [v, label] of [
+      ['只听', '只听 —— 只有 @ 或叫我名字时才回'],
+      ['熟人续话', '熟人续话 —— @/叫名字，以及刚聊过的人可以接着聊（默认）'],
+      ['自己判断', '自己判断 —— 不 @ 也按内容决定要不要接（最活跃）'],
+    ]) {
+      const o = document.createElement('option')
+      o.value = v
+      o.textContent = label
+      sel.appendChild(o)
+    }
+    sel.value = cur
+    const row = el('div', 'self-field')
+    row.appendChild(el('label', '', '模式'))
+    row.appendChild(sel)
+    form.appendChild(row)
+    form.appendChild(
+      el(
+        'div',
+        'self-item muted',
+        '这一项就是「群里要不要 @ 才回」的总开关。设置里的「必须 @」会自动跟着它变。' +
+          '「自己判断」还会用到「发言频率」和退避：越活跃越容易接话，冷场时会自己安静下来。',
+      ),
+    )
+    c.appendChild(form)
+
+    const acts = el('div', 'self-acts')
+    const save = el('button', 'btn pri', '保存')
+    save.onclick = async () => {
+      try {
+        await sendJson('/api/talk-style', { 群聊模式: sel.value })
+        toast('已保存，下一条群消息就生效')
+        await loadSelfV2()
+      } catch (e) {
+        alert('失败：' + e.message)
+      }
+    }
+    acts.appendChild(save)
+    c.appendChild(acts)
+    body.appendChild(c)
+  }
+
   {
     const c = selfCard('不能越的线', '只有你能改，它只能提申请')
     if (!coreList.length) c.appendChild(selfEmpty('还是空的。加几条它一定不能弄错的事。'))
@@ -4688,7 +4745,7 @@ async function rollback(id) {
 }
 
 // ---------- 权限 ----------
-const accState = { groupAllow: [], groupDeny: [], memberAllow: [], memberDeny: [] }
+const accState = { groupAllow: [], groupDeny: [], memberAllow: [], memberDeny: [], groupMode: '熟人续话' }
 const ACC_KEYS = [
   { key: 'groupAllow', danger: false },
   { key: 'groupDeny', danger: true },
@@ -4742,8 +4799,12 @@ async function loadAccessPolicy() {
     accState.groupDeny = p.groupDeny.slice()
     accState.memberAllow = p.memberAllow.slice()
     accState.memberDeny = p.memberDeny.slice()
+    accState.groupMode = d.groupMode || '熟人续话'
+    accState.requireAtSnapshot = p.requireAt
     $('acc-allow-group').checked = p.allowGroup !== false
-    $('acc-require-at').checked = p.requireAt
+    // 复选框是「必须 @」的投影：只有「自己判断」这一档是关
+    $('acc-require-at').checked = accState.groupMode !== '自己判断'
+    $('acc-mode-hint').textContent = '当前模式：' + accState.groupMode
     $('acc-path').textContent = d.path
     renderAcc()
   } catch (err) { toast('权限加载失败：' + err.message) }
@@ -4751,16 +4812,24 @@ async function loadAccessPolicy() {
 
 async function saveAccessPolicy() {
   try {
+    const checked = $('acc-require-at').checked
+    // 把复选框的意图翻译成模式，一起提交，避免两个开关各说各话。
+    // 勾上：如果是「只听」就保持只听（不该因为保存权限页就变活跃），否则回到「熟人续话」。
+    // 取消：等同「自己判断」。
+    let groupMode = accState.groupMode || '熟人续话'
+    if (!checked) groupMode = '自己判断'
+    else if (groupMode === '自己判断') groupMode = '熟人续话'
     await api('/api/access', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...accState,
         allowGroup: $('acc-allow-group').checked,
-        requireAt: $('acc-require-at').checked,
+        requireAt: checked,
+        groupMode,
       }),
     })
-    toast('已保存，立即生效')
+    toast('已保存，立即生效（群聊模式：' + groupMode + '）')
     loadAccessPolicy()
   } catch (err) { toast('保存失败：' + err.message) }
 }

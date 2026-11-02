@@ -248,6 +248,8 @@ const onebotOpts: OnebotOptions = {
   botNames,
   // 控制台改了权限文件，下一条消息就生效
   getPolicy: () => loadAccess(),
+  // 群聊模式：读 rules.yaml，改完下一条消息就生效
+  getGroupMode: () => getRules().行为.群聊模式,
   // 连续对话窗口：刚才在跟它说话的人，不 @ 也能接着聊
   recentTalkers: new Map<string, number>(),
   followUpWindowMs: 2 * 60_000,

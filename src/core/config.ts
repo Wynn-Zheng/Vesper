@@ -30,6 +30,29 @@ export interface StageRule {
   最小由头?: number
 }
 
+/**
+ * 群聊里它怎么参与。
+ *
+ * - `只听`     ：只有被 @ 或叫到名字才回。刚聊过也不接。
+ * - `熟人续话` ：@/叫名字，以及刚跟它说过话的人 2 分钟内可以接着聊（默认）。
+ * - `自己判断` ：不 @ 也按内容打分决定要不要接，最活跃。
+ *
+ * 为什么只有这三档：第四档本来想做「只@接梗」，但梗库目前只有黑话子串匹配，
+ * 撑不起一个档位 —— 先不做，等梗库有独立数据再加。
+ */
+export type GroupChatMode = '只听' | '熟人续话' | '自己判断'
+
+export const GROUP_CHAT_MODES: GroupChatMode[] = ['只听', '熟人续话', '自己判断']
+
+export const DEFAULT_GROUP_CHAT_MODE: GroupChatMode = '熟人续话'
+
+/** 把任意值收敛成合法档位；非法值给 null，由调用方决定怎么喊 */
+export function asGroupChatMode(v: unknown): GroupChatMode | null {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  return (GROUP_CHAT_MODES as string[]).includes(t) ? (t as GroupChatMode) : null
+}
+
 export interface Rules {
   人格: {
     名字: string
@@ -191,6 +214,14 @@ export interface Rules {
       /** 一批从第一条起最多等这么久，防止一直等下去 */
       批次上限: number
     }
+    /**
+     * 群聊里它怎么参与。三档，语义见 GROUP_CHAT_MODES。
+     *
+     * 这是"要不要 @ 才回"的唯一权威：老配置里的
+     * persona/access.yaml「成员.必须at」只在它缺失时作为回落值。
+     * 两个开关并存过一段时间，用户会遇到"权限页关了必须 @ 它还是不理"。
+     */
+    群聊模式: GroupChatMode
     /** 群聊活跃度 0~1：越小越安静。没被 @ 时按这个概率决定接不接 */
     发言频率: number
     /** 按时段覆盖发言频率，留空就是全天一个值 */
@@ -449,6 +480,7 @@ export const DEFAULTS: Rules = {
   行为: {
     静默时段: ['23:30', '08:30'],
     防抖: { 档位: '自然', 安静: 2, 活跃: 5, 同人续发: 2, 换人: 0.5, 被at最多: 1, 批次上限: 8 },
+    群聊模式: DEFAULT_GROUP_CHAT_MODE,
     发言频率: 0.4,
     频率规则: [],
     私聊暂停: false,
@@ -684,10 +716,22 @@ export function loadRules(path = 'persona/rules.yaml'): LoadResult {
   }
 
   const unknownKeys: string[] = []
-  const rules = merge(DEFAULTS, parsed ?? {}, '', unknownKeys)
+  const merged = merge(DEFAULTS, parsed ?? {}, '', unknownKeys)
   for (const k of unknownKeys) warnings.push(`忽略未知配置项 ${k}（检查是否拼错）`)
 
-  return { rules: applyEnvOverrides(rules), warnings, path }
+  // 群聊模式是枚举：merge 只校验"是不是字符串"，写错一个词也会照收。
+  // 这里做语义校验，写错就回落默认档并明确告警，别让它在群里表现成"怪怪的"。
+  const mode = asGroupChatMode(merged.行为.群聊模式)
+  if (!mode) {
+    warnings.push(
+      `群聊模式「${String(merged.行为.群聊模式)}」不认识（可选：${GROUP_CHAT_MODES.join(' / ')}），已回落「${DEFAULT_GROUP_CHAT_MODE}」`,
+    )
+    merged.行为.群聊模式 = DEFAULT_GROUP_CHAT_MODE
+  } else {
+    merged.行为.群聊模式 = mode
+  }
+
+  return { rules: applyEnvOverrides(merged), warnings, path }
 }
 
 /** 用当前关系值查出所处阶段。 */
