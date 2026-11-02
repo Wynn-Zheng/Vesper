@@ -4,10 +4,11 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { scanPlugins } from './registry.ts'
 import { getPluginConfig } from './settings.ts'
+import { resolvePluginPath } from './sandbox.ts'
 import { createSafeFetch, DEFAULT_NET_POLICY, type NetPolicy } from './net.ts'
 
 export type PluginLogger = (level: 'info' | 'warn' | 'error', message: string) => void
@@ -82,23 +83,7 @@ const SHELL_ALLOW = new Set([
   'node', 'python', 'python3', 'git', 'wc', 'head', 'tail', 'sort', 'uniq',
 ])
 
-/**
- * 把插件给的相对路径解析成项目内的绝对路径。
- *
- * 光在字符串里挡 `..` 不够：`data/../../etc/passwd` 拼接后字符串里有 `..`，
- * 但 `data/x/../../../etc` 这种也可能绕过简单判断。所以 **resolve 之后**
- * 再比对根目录，这样 `..` 怎么嵌套都逃不出去。
- */
-function safePath(relPath: string): string {
-  const root = resolve(process.cwd())
 
-  const abs = resolve(root, String(relPath ?? ''))
-  // 必须等于根，或者以 "根 + 分隔符" 开头（防止 /root2 被 /root 误判为子目录）
-  if (abs !== root && !abs.startsWith(root + sep)) {
-    throw new Error('路径越界：' + relPath)
-  }
-  return abs
-}
 
 type LoadedPlugin = {
   version: string
@@ -295,20 +280,20 @@ export function createHost(options: {
         : {}),
       ...(permissions.includes('files')
         ? {
-            // 读写项目目录内的文件。
+            // 读写的根是**这个插件自己的数据目录**（不是整个项目目录）。
             //
-            // 安全边界：解析后的**真实路径**必须以项目根开头。
-            // 只在字符串层挡 `..` 不够 —— `data/../../../etc/passwd` 拼出来
-            // 字符串里没有 `..` 前缀但 resolve 之后跑出去了，所以用 resolve 再比。
-            // 符号链接也按真实路径算（realpath），免得链到外面去。
+            // 以前根是 process.cwd()，等于给插件整个数据目录的读写权：
+            // `.env`（API Key）、`persona/rules.yaml`、别的插件代码全都读得到。
+            // 而 `files` 权限本来想给的是"插件读写自己的数据" ——
+            // 现在根收窄到 dataDir，越界会抛"路径越界"。
             readFile: async (relPath: string) => {
               const { readFileSync } = await import('node:fs')
-              return readFileSync(safePath(relPath), 'utf8')
+              return readFileSync(resolvePluginPath(dataDir, relPath), 'utf8')
             },
             writeFile: async (relPath: string, content: string) => {
               const { mkdirSync, writeFileSync } = await import('node:fs')
               const { dirname } = await import('node:path')
-              const p = safePath(relPath)
+              const p = resolvePluginPath(dataDir, relPath)
               mkdirSync(dirname(p), { recursive: true })
               writeFileSync(p, String(content ?? ''), 'utf8')
             },
