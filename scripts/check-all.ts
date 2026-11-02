@@ -7,6 +7,7 @@
 import { execSync } from 'node:child_process'
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { judge } from './gate.ts'
 
 interface Step {
   name: string
@@ -210,21 +211,19 @@ for (const [index, step] of STEPS.entries()) {
 
   const t0 = Date.now()
   let { out, code } = runStep(step.cmd, index)
-  let ok = code === 0
-  let why: string | undefined = ok ? undefined : `退出码 ${code}`
+  // 判定统一走 gate.ts：退出码 + 输出格式 + "至少跑了 1 项、且没有失败"。
+  // 最后那条专门治另一种假绿：脚本里一个用例都没跑，却打印「通过 0 / 失败 0」——
+  // 光看退出码和正则，它会稳稳地"通过"。
+  let verdict = judge(out, code, step.expect)
 
   // 正常命令在受限环境里起不来（EPERM）时换备选命令再试一次
-  if (!ok && step.fallback && step.fallbackWhen?.test(out)) {
+  if (!verdict.ok && step.fallback && step.fallbackWhen?.test(out)) {
     ;({ out, code } = runStep(step.fallback, index))
-    ok = code === 0
-    why = ok ? undefined : `退出码 ${code}`
+    verdict = judge(out, code, step.expect)
   }
 
-  // 关键：校验输出格式，防止"跑了但什么都没发生"
-  if (ok && !step.expect.test(out)) {
-    ok = false
-    why = `输出里没有预期内容（${step.expect}）——可能静默失败`
-  }
+  const ok = verdict.ok
+  const why = verdict.why
 
   const ms = Date.now() - t0
   results.push({ name: step.name, ok, ms, why })
