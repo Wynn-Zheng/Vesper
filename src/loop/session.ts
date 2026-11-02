@@ -232,14 +232,20 @@ export function clearSessions(): void {
  * 只保留最近 max 条。为什么不无限留：
  * 旁听是背景信息，越老越没用；而且群聊消息量远大于对话，不设上限会把
  * prompt 撑爆。
+ *
+ * 除条数外还要有时间窗：安静群里上午那三句话，晚上不该还被当成"刚才在聊"。
  */
-export function pushHeard(key: string, turn: Turn, max = 12): void {
+export function pushHeard(key: string, turn: Turn, max = 12, maxAgeMs = 2 * 3_600_000): void {
   let session = sessions.get(key)
   if (!session) session = loadSession(key)
   const heard = session.heard ?? (session.heard = [])
   heard.push(turn)
   const keep = Math.max(1, Math.floor(max))
   while (heard.length > keep) heard.shift()
+  // 顺手清掉过期的。用**当前时间**做锚，不是用最后一条的时间 ——
+  // 那个锚等于"永远认为最新那条是现在"，隔天的记录永远清不掉。
+  const now = Date.now()
+  while (heard.length && now - (heard[0]?.at ?? now) > maxAgeMs) heard.shift()
   try {
     saveSession(session)
   } catch {
@@ -247,9 +253,12 @@ export function pushHeard(key: string, turn: Turn, max = 12): void {
   }
 }
 
-/** 取最近旁听到的几句话（老的在前） */
-export function getHeard(key: string): Turn[] {
-  return sessions.get(key)?.heard ?? []
+/** 取最近旁听到的几句话（老的在前，已按时间窗过滤） */
+export function getHeard(key: string, maxAgeMs = 2 * 3_600_000): Turn[] {
+  const heard = sessions.get(key)?.heard
+  if (!heard?.length) return []
+  const now = Date.now()
+  return heard.filter((t) => now - t.at <= maxAgeMs)
 }
 
 /** 清理长时间没说话的会话，防止 Map 无限增长 */

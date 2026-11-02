@@ -122,6 +122,31 @@ export function formatUserText(scope: string, speaker: string | undefined, text:
 /** 单条输入的上限：防止有人粘贴一整篇文章把上下文撑爆 */
 const MAX_INPUT_CHARS = 2000
 
+/**
+ * 把一批「谁说了什么」渲染成 prompt 里的多行文本，带预算。
+ *
+ * 逐条截断（和单条消息一样 2000 字），整体再封顶 ——
+ * 群里刷屏时，一轮 prompt 被撑到几万字既烧钱又直接超上下文。
+ * 从最近的往前装，装不下的老消息整条丢掉（不留半条，免得模型看到的
+ * 是被砍断的句子）。
+ */
+export function renderBatch(
+  lines: Array<{ name: string; text: string }>,
+  maxChars = MAX_INPUT_CHARS * 4,
+): string {
+  const out: string[] = []
+  let budget = maxChars
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i]!
+    const body = l.text.length > MAX_INPUT_CHARS ? l.text.slice(0, MAX_INPUT_CHARS) + '…（这条太长了，没看完）' : l.text
+    const line = `${l.name}：${body}`
+    if (line.length > budget) break
+    budget -= line.length
+    out.unshift(line)
+  }
+  return out.join('\n')
+}
+
 /** 和 emoji/store.ts 的默认根目录保持一致 */
 const EMOJI_ROOT = join('persona', 'emoji')
 
@@ -379,8 +404,12 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人。
   // 一批里有多条消息时 boot 已经拆好逐条发言，这里按行渲染；
   // 单条消息仍走 formatUserText（加一次名字前缀）。
+  //
+  // ⚠ 逐条渲染要自己套预算：上面那段按"单条"截断（MAX_INPUT_CHARS）只作用于
+  // m.text 整体，合批时每条原文并没有被单独截。群里连发长文/刷屏能把一轮
+  // prompt 撑到几万字（成本 + 直接超上下文）。这里逐条截断 + 总预算。
   let userContent = m.batchLines?.length
-    ? m.batchLines.map((l) => `${l.name}：${l.text}`).join('\n')
+    ? renderBatch(m.batchLines)
     : formatUserText(scope, m.senderName ?? m.senderNick ?? m.from.id, text)
 
   // 有图且有视觉模型：先"看"成文字，再混进这一轮的内容。

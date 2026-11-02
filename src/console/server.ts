@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -809,7 +809,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             const { setConfigPath } = await import('./config-write.ts')
             const raw = fs.readFileSync('persona/rules.yaml', 'utf8')
             const r = setConfigPath(raw, '行为.群聊模式', wantMode)
-            if (r.ok) fs.writeFileSync('persona/rules.yaml', r.text, 'utf8')
+            if (r.ok) writeAtomic('persona/rules.yaml', r.text)
             else warnAt('群聊模式没写进 rules.yaml：' + (r.error ?? '找不到键'))
           } catch (e) {
             warnAt('群聊模式没写进 rules.yaml', { err: String(e).slice(0, 120) })
@@ -1905,7 +1905,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           json(res, 400, { error: r.error ?? '改不了' })
           return
         }
-        writeFileSync('persona/rules.yaml', r.text, 'utf8')
+        writeAtomic('persona/rules.yaml', r.text)
         json(res, 200, { ok: true })
         return
       }
@@ -1925,7 +1925,7 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           json(res, 400, { error: r.error ?? '改不了' })
           return
         }
-        writeFileSync('persona/rules.yaml', r.text, 'utf8')
+        writeAtomic('persona/rules.yaml', r.text)
         json(res, 200, { ok: true })
         return
       }

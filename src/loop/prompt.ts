@@ -118,11 +118,16 @@ export function renderHeard(turns: Array<{ content: string; at: number }>, maxCh
   if (!turns.length) return ''
   const lines: string[] = []
   let budget = maxChars
-  // 从最近的往前取，超预算就停：老的背景先丢
+  // 从最近的往前取，超预算就停：老的背景先丢。
+  //
+  // ⚠ 不能像以前那样"最新一条超预算就整段放弃"：
+  // 群里有人发一段 900 字的长文时，整个【群里刚才在聊】会消失，
+  // 而那恰恰是最需要背景的时候。现在超长的单条截断后照样收进来。
   for (let i = turns.length - 1; i >= 0; i--) {
-    const line = turns[i]!.content.trim()
-    if (!line) continue
-    if (line.length > budget) break
+    const raw = turns[i]!.content.trim()
+    if (!raw) continue
+    if (budget <= 0) break
+    const line = raw.length > budget ? raw.slice(0, Math.max(0, budget - 1)) + '…' : raw
     budget -= line.length
     lines.unshift(line)
   }
@@ -319,10 +324,21 @@ export function buildSystem(parts: PromptParts): string {
   lines.push('- 同一件事不要反复提。他已经知道你记得他熬夜，不用每次都说。')
   // 群聊里两个人聊到一半突然 @ 你：这是最容易"答不上来"的场景，
   // 因为你得先看懂他们在聊什么才能接"对吧"。
-  lines.push(
-    '- 如果上面【最近说过的话】里出现了不同的名字，那是**几个人在对话**，不一定都是对你说的。' +
-      '被 @ 的时候，先看他们前面在聊什么，再接话——"对吧"指的是他们刚说的那件事。',
-  )
+  //
+  // 指涉要指向真的存在的那段：以前写的是【最近说过的话】，而那段
+  // （recalled.recent）在 chat.ts 里被清空了 —— QQ 回复里它永远是空的，
+  // 等于让模型去看一个不存在的东西。真正承载群聊背景的是【群里刚才在聊】。
+  if (parts.groupChat) {
+    lines.push(
+      '- 如果上面【群里刚才在聊】或历史里出现了不同的名字，那是**几个人在对话**，不一定都是对你说的。' +
+        '被 @ 的时候，先看他们前面在聊什么，再接话——"对吧"指的是他们刚说的那件事。',
+    )
+  } else {
+    lines.push(
+      '- 如果上面【最近说过的话】里出现了不同的名字，那是**几个人在对话**，不一定都是对你说的。' +
+        '被 @ 的时候，先看他们前面在聊什么，再接话——"对吧"指的是他们刚说的那件事。',
+    )
+  }
   if (rules.说话.不用Markdown) lines.push('- 不要用 Markdown：不要加粗、不要标题、不要代码块、不要编号列表。')
 
   // 备用风格：按概率临时换一次说话风格，只影响这一轮。

@@ -1025,6 +1025,16 @@ export function mentionsName(text: string, names: string[]): boolean {
   if (!valid.length) return false
   for (const name of valid) {
     const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (name.length <= 1) {
+      // 单字名字只认"单独出现"：前后都得是边界或呼语。
+      // 不然叫「满」的，"圆满""满足""满了"全算叫她（实测 '圆满' 曾命中）。
+      const single =
+        '(^|[\\s，。！？、,.!?~～:：;；"\'「」『』（）()\\[\\]【】])' +
+        esc +
+        '($|[\\s，。！？、,.!?~～:：;；"\'「」『』（）()\\[\\]【】]|在|呢|啊|呀|吗|吧|嘛|哦|噢)'
+      if (new RegExp(single, 'i').test(text)) return true
+      continue
+    }
     // 中文没有空格，"问一下小鱼"也该算叫她 —— 所以左边**不设约束**。
     // 全部严格性放在右边：名字后面如果紧跟别的字，多半是另一个词
     // （小鱼干 / 小鱼儿 / 满意 / 满满的），不该触发。

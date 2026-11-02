@@ -3412,7 +3412,7 @@ function renderSelfTalkPage(body, d) {
     const save = el('button', 'btn pri', '保存')
     save.onclick = async () => {
       try {
-        await sendJson('/api/talk-style', { 群聊模式: sel.value })
+        await sendJson('/api/talk-style', { 群聊模式: sel.value }, 'PUT')
         toast('已保存，下一条群消息就生效')
         await loadSelfV2()
       } catch (e) {

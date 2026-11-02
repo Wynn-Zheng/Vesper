@@ -145,6 +145,13 @@ const RECALL_HINT = /撤回|收回去|撤掉|刚才那句不对|别说那句|收
 const WATCH_HINT = /(去看|看看|刷)(个|一个|点)?视频|去看点东西|去外面看看/
 const RECALL_WINDOW = 120_000
 
+/**
+ * 一批最多攒多少条消息。防抖窗口最长只有 批次上限（默认 8 秒），
+ * 但群里刷屏时 8 秒能进几十条。攒太多的话，拼出来的 prompt 既烧钱
+ * 又容易直接超上下文。
+ */
+const MAX_BUFFER_LINES = 20
+
 /** 连续失败到这个次数，就说一句兜底的话 */
 const FAIL_SILENT_LIMIT = 2
 const FALLBACK_LINES = ['我这会儿有点卡，等下再说', '等一下，我这边不太顺', '我缓一下，马上回来']
@@ -419,6 +426,9 @@ export function boot(transport: Transport, opts: BootOptions): void {
       const leaveRead = rules.行为.已读不回概率 ?? 0
       if (leaveRead > 0 && Math.random() < leaveRead) {
         info(`看了没回：${text.slice(0, 12)}`)
+        // 这也是"决定不说话"的一种：同样要记进旁听，
+        // 否则开了这个开关之后，它就会对这些话彻底失忆。
+        noteHeard(m, text)
         return
       }
 
@@ -810,20 +820,32 @@ export function boot(transport: Transport, opts: BootOptions): void {
       buf.timer = setTimeout(() => void flush(key), waitMs)
     }
 
+    // 刷屏保护：一批最多攒 MAX_BUFFER_LINES 条。
+    // 防抖窗口最长只有 批次上限（默认 8 秒），但群里刷屏时 8 秒能进几十条，
+    // 拼出来的 prompt 既烧钱又容易超上下文。
+    // 注意顺序：先 flush 把旧批送走（flush 会同步把 key 从 buffers 删掉），
+    // 再让这条消息落到下面"新建一条"的分支 —— 不能 push 进已经送走的那批，
+    // 那样这条消息就丢了。
     const existing = buffers.get(key)
-    if (existing) {
+    if (existing && existing.texts.length >= MAX_BUFFER_LINES) {
+      clearTimeout(existing.timer)
+      void flush(key)
+    }
+
+    const cur = buffers.get(key)
+    if (cur) {
       // 合并这批里所有消息的图：flush 只用 buf.last.images 的话，
       // 分几条发的图只有最后一张进视觉
-      existing.images = [...new Set([...existing.images, ...(m.images ?? [])])]
-      existing.texts.push(m.text)
-      existing.senderLabels.push(speakerLabel(m))
-      existing.senders.push(m.senderId ?? m.from.id)
-      existing.last = m
-      existing.lastAt = now
-      existing.passive = existing.passive && (m.passive ?? false)
-      existing.addressed = existing.addressed || addressed
-      existing.lastSender = m.senderId ?? m.from.id
-      schedule(existing)
+      cur.images = [...new Set([...cur.images, ...(m.images ?? [])])]
+      cur.texts.push(m.text)
+      cur.senderLabels.push(speakerLabel(m))
+      cur.senders.push(m.senderId ?? m.from.id)
+      cur.last = m
+      cur.lastAt = now
+      cur.passive = cur.passive && (m.passive ?? false)
+      cur.addressed = cur.addressed || addressed
+      cur.lastSender = m.senderId ?? m.from.id
+      schedule(cur)
       return
     }
 

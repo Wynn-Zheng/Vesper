@@ -78,10 +78,14 @@ test('群聊：私聊不加名字前缀', () => {
 
 /* ---------------- 旁听：群里没叫它的话也要能看见 ---------------- */
 
+// 旁听有 2 小时时间窗（隔天的旧话不该被当成"刚才在聊"），
+// 所以测试里的 at 必须用真实时间，不能用 1/2 这种假值。
+const now = Date.now()
+
 test('旁听：记进去、按顺序取出来', () => {
   clearSessions()
-  pushHeard('group:9', { role: 'user', content: '小红：今天好热', at: 1 })
-  pushHeard('group:9', { role: 'user', content: '小明：是啊', at: 2 })
+  pushHeard('group:9', { role: 'user', content: '小红：今天好热', at: now - 2000 })
+  pushHeard('group:9', { role: 'user', content: '小明：是啊', at: now - 1000 })
   const heard = getHeard('group:9')
   assert.equal(heard.length, 2)
   assert.equal(heard[0]!.content, '小红：今天好热')
@@ -90,7 +94,9 @@ test('旁听：记进去、按顺序取出来', () => {
 
 test('旁听：只留最近 12 条，老的挤掉', () => {
   clearSessions()
-  for (let i = 0; i < 20; i++) pushHeard('group:10', { role: 'user', content: `m${i}`, at: i })
+  for (let i = 0; i < 20; i++) {
+    pushHeard('group:10', { role: 'user', content: `m${i}`, at: now - (20 - i) * 1000 })
+  }
   const heard = getHeard('group:10')
   assert.equal(heard.length, 12)
   assert.equal(heard[0]!.content, 'm8')
@@ -99,7 +105,7 @@ test('旁听：只留最近 12 条，老的挤掉', () => {
 
 test('旁听：落盘后重启还能读回来', () => {
   clearSessions()
-  pushHeard('group:11', { role: 'user', content: '小红：在吗', at: 1 })
+  pushHeard('group:11', { role: 'user', content: '小红：在吗', at: now })
   clearSessions()
   const s = getSession('group:11')
   assert.equal(s.heard?.length, 1)
@@ -108,8 +114,8 @@ test('旁听：落盘后重启还能读回来', () => {
 
 test('旁听：和对话历史分开存，不会冒充成它参与过的对话', () => {
   clearSessions()
-  pushTurn('group:12', { role: 'user', content: '小明：@它 在吗', at: 1 })
-  pushHeard('group:12', { role: 'user', content: '小红：随便聊聊', at: 2 })
+  pushTurn('group:12', { role: 'user', content: '小明：@它 在吗', at: now - 1000 })
+  pushHeard('group:12', { role: 'user', content: '小红：随便聊聊', at: now })
   const s = getSession('group:12')
   assert.equal(s.turns.length, 1)
   assert.equal(s.heard?.length, 1)
