@@ -704,3 +704,31 @@ test('出站：模型返回空内容时一个字段都不发', async () => {
     await h.close()
   }
 })
+
+test('群限速也管住「撤回」：额度用完后不再回「撤了」', async () => {
+  clearSessions()
+  const prev = process.env['OWNER_QQ']
+  process.env['OWNER_QQ'] = '9001'
+  try {
+    const h = await harness('熟人续话', () => ({
+      ...rules(),
+      行为: { ...rules().行为, 群每分钟上限: 1 },
+    }))
+    try {
+      // 用独立群号 557：限流表是模块级的，前面用例已经吃过 555 的额度
+      h.push({ ...groupAt('在吗', 9001), group_id: 557 })
+      await tick(400)
+      assert.equal(h.sent().length, 1, '第一条应该回')
+
+      // 主人说撤回：额度已满，不该再发「撤了」，也不该真的撤回
+      h.push({ ...groupPlain('撤回', 9001), group_id: 557 })
+      await tick(400)
+      assert.equal(h.sent().length, 1, '额度用完后不该再发话（包括「撤了」）')
+    } finally {
+      await h.close()
+    }
+  } finally {
+    if (prev === undefined) delete process.env['OWNER_QQ']
+    else process.env['OWNER_QQ'] = prev
+  }
+})

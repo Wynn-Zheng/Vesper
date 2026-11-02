@@ -370,14 +370,31 @@ export function boot(transport: Transport, opts: BootOptions): void {
       backoff.delete(scopeKey)
     }
 
+    // 群每分钟上限：**任何要发消息的分支之前**先看一眼。
+    // 放在撤回/看视频前面，是因为这两条也会往群里发话（"撤了"、看视频的两句），
+    // 以前它们绕过了限速 —— 群里一直喊"去看视频"，它就一直发、还一直调模型。
+    // 这里用 peek（只看不计数）；真正计数在各自发完之后。
+    const groupRateKey = m.from.kind === 'group' ? 'g:' + m.from.id : ''
+    if (groupRateKey && !peek(groupRateKey, rules.行为.群每分钟上限)) {
+      info(`群 ${m.from.id} 已达每分钟上限，这条跳过`)
+      noteHeard(m, text)
+      return
+    }
+
     // "撤回"是一句指令，不走模型
     RECALL_HINT.lastIndex = 0
-    if (RECALL_HINT.test(text) && (await tryRecall(m, rules))) return
+    if (RECALL_HINT.test(text) && (await tryRecall(m, rules))) {
+      if (groupRateKey) hit(groupRateKey)
+      return
+    }
 
     // 有人让它"去看个视频"：真的去看一个，然后回话
     if (WATCH_HINT.test(text)) {
       const ok = await tryWatchNow(m)
-      if (ok) return
+      if (ok) {
+        if (groupRateKey) hit(groupRateKey)
+        return
+      }
     }
 
     // 没被 @ 也不是连续对话：按内容打分决定接不接
@@ -410,14 +427,8 @@ export function boot(transport: Transport, opts: BootOptions): void {
       return
     }
 
-    // 群每分钟上限：**生成前**先看一眼，已经满了就别花钱了。
-    // 以前只在生成之后拦，等于每条被拦的都是"钱花了、话没发、历史还记着"。
-    // 这里用 peek（只看不计数），真正的计数在发送前那次 allow。
-    if (m.from.kind === 'group' && !peek('g:' + m.from.id, rules.行为.群每分钟上限)) {
-      info(`群 ${m.from.id} 已达每分钟上限，这条不生成`)
-      noteHeard(m, text)
-      return
-    }
+    // 群每分钟上限已在上面统一 peek 过（撤回/看视频也要受它约束），
+    // 这里不再重复判断：真正计数在发送前那次 allow。
 
     try {
       info(`← ${who}：${text.replace(/\n/g, ' / ')}`)
