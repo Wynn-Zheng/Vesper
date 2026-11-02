@@ -963,6 +963,11 @@ export function isObserveOnly(ev: OBEvent, opts: OnebotOptions): boolean {
   if (ev.message_type === 'private') return false
   if (isAddressed(ev, opts.botNames)) return false
 
+  // 明确 @ 了别人：这是在跟那个人说话，不该插嘴。
+  // 放在 "刚聊过" 之前 —— 否则上一句刚问过它，下一句「@小明 你试试」
+  // 也会被当成接着聊，它回一句"试什么"，对方一脸问号。
+  if (isAtOthers(ev)) return true
+
   const gid = String(ev.group_id ?? '')
   const uid = String(ev.user_id ?? '')
   // 刚跟它说过话的人：这是接着聊，不是突然插话
@@ -1025,6 +1030,8 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
     if (mustAt && !isAddressed(ev, opts.botNames) && !called && !isRecentTalker(opts, gid, userId)) {
       return '要求 @ 或叫名字，这条既没 @ 也没叫（且不是刚聊过的人）'
     }
+    // 和 isObserveOnly 保持一致：明确 @ 了别人 → 只记录不回复
+    if (isAtOthers(ev)) return '这条 @ 的是别人（不是它），只记录不回复'
     return '未知原因'
   }
 
@@ -1073,6 +1080,29 @@ export function isAddressed(ev: OBEvent, botNames: string[] = []): boolean {
   if (names.length) {
     const text = extractText(ev.message)
     if (names.some((n) => text.includes(n))) return true
+  }
+  return false
+}
+
+/**
+ * 这条消息有没有明确 @ 了**别人**（不是它）。
+ *
+ * 为什么需要这个：`isRecentTalker` 那个「刚跟它说过话的人，2 分钟内不 @ 也算接着聊」
+ * 本来是为了让对话自然，但它不看这条消息 @ 的是谁。于是群里紧接着来一句
+ * 「@小明 你试试」，它也会当成跟自己说的，回一句「试什么」——对方根本没问它。
+ *
+ * @全体成员 也算"不是单独叫它"：群公告式消息不该触发它接话。
+ */
+export function isAtOthers(ev: OBEvent): boolean {
+  if (ev.message_type === 'private') return false
+  const selfId = String(ev.self_id ?? '').trim()
+  for (const s of messageSegments(ev.message)) {
+    if (s.type !== 'at') continue
+    const qq = (s.data['qq'] ?? '').trim()
+    // 空 qq 是坏数据，不能据此判断"@ 了别人"
+    if (!qq) continue
+    if (selfId && qq === selfId) continue
+    return true
   }
   return false
 }

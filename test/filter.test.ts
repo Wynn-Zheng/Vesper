@@ -79,6 +79,58 @@ test('群聊：@ 了就会回复', () => {
   assert.equal(isObserveOnly(groupAt('123', '999', '你好'), opts), false)
 })
 
+test('群聊：@ 的是别人 —— 即使刚聊过也不插嘴', () => {
+  const opts = {
+    ...base,
+    allowGroup: true,
+    recentTalkers: new Map([['123:999', Date.now()]]),
+    followUpWindowMs: 120_000,
+  }
+  // 上一句刚问过它，这一句「@小明 你试试」是跟小明说的
+  const ev: OBEvent = {
+    post_type: 'message',
+    message_type: 'group',
+    group_id: '123',
+    user_id: '999',
+    self_id: '10000',
+    message: [
+      { type: 'at', data: { qq: '777' } },
+      { type: 'text', data: { text: ' 你试试' } },
+    ],
+  }
+  // 消息照进历史
+  assert.equal(shouldHandle(ev, opts), true)
+  // 但不该回 —— 以前会回一句「试什么」
+  assert.equal(isObserveOnly(ev, opts), true, '@ 了别人就不要接话')
+})
+
+test('群聊：@别人 同时又 @它 → 还是要回', () => {
+  const opts = { ...base, allowGroup: true }
+  const ev: OBEvent = {
+    post_type: 'message',
+    message_type: 'group',
+    group_id: '123',
+    user_id: '999',
+    self_id: '10000',
+    message: [
+      { type: 'at', data: { qq: '777' } },
+      { type: 'at', data: { qq: '10000' } },
+      { type: 'text', data: { text: ' 你们俩看看' } },
+    ],
+  }
+  assert.equal(isObserveOnly(ev, opts), false)
+})
+
+test('群聊：没 @ 任何人、也没 @它，刚聊过 → 接着聊', () => {
+  const opts = {
+    ...base,
+    allowGroup: true,
+    recentTalkers: new Map([['123:999', Date.now()]]),
+    followUpWindowMs: 120_000,
+  }
+  assert.equal(isObserveOnly(group('123', '999', '那你呢'), opts), false)
+})
+
 test('群聊：requireAt=false 时没 @ 也会回复', () => {
   const opts = { ...base, allowGroup: true, requireAt: false }
   assert.equal(shouldHandle(group('123', '999', '你好'), opts), true)

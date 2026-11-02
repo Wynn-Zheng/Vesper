@@ -182,9 +182,10 @@ export function getTurns(key: string): Turn[] {
 export function pushTurn(key: string, turn: Turn, maxTurns = 60): void {
   let session = sessions.get(key)
   if (!session) {
-    // 这里不主动读盘：历史原文原本就是内存态，摘要的持久化由 loadSession 负责
-    session = emptySession(key)
-    sessions.set(key, session)
+    // 内存里没有就先读盘：进程重启后 history 不该是空的。
+    // 以前这里直接 emptySession，于是重启后连"上一句说了什么"都不知道，
+    // 用户看到的就是"刚聊过的事它全忘了"。
+    session = loadSession(key)
   }
   session.turns.push(turn)
   // 只保留最近 N 轮，防止上下文无限增长。
@@ -196,6 +197,14 @@ export function pushTurn(key: string, turn: Turn, maxTurns = 60): void {
   // 每次压缩周期都会先丢掉一轮、永远进不了摘要。
   const keep = Number.isFinite(maxTurns) ? Math.max(4, Math.floor(maxTurns) * 2) : 120
   while (session.turns.length > keep) session.turns.shift()
+
+  // 落盘：以前只存在内存里，进程一重启历史就没了。
+  // 文件很小（几十条短消息），同步写一次比"重启后失忆"值得。
+  try {
+    saveSession(session)
+  } catch {
+    /* 写不进去不影响这一轮，内存里还在 */
+  }
 }
 
 export function clearSessions(): void {

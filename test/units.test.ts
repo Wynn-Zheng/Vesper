@@ -7,7 +7,16 @@ import { DEFAULTS } from '../src/core/config.ts'
 import { initLog } from '../src/core/log.ts'
 import { allow, resetRateLimit } from '../src/core/ratelimit.ts'
 import { similarity } from '../src/core/text.ts'
-import { pruneSessions, pushTurn, getTurns, historyMessages, sessionCount, clearSessions } from '../src/loop/session.ts'
+import {
+  pruneSessions,
+  pushTurn,
+  getTurns,
+  getSession,
+  historyMessages,
+  sessionCount,
+  clearSessions,
+  setSessionRoot,
+} from '../src/loop/session.ts'
 import { personOfMessage } from '../src/memory/scope.ts'
 import { shouldHandle, isObserveOnly, type OBEvent, type OnebotOptions } from '../src/channel/onebot.ts'
 import { appendFacts, effectiveConfidence, loadFacts, setVisibility, touchFact } from '../src/memory/facts.ts'
@@ -146,6 +155,27 @@ test('会话：长时间不活跃会被清理', () => {
   const removed = pruneSessions(200, 2 * 3600_000)
   assert.equal(removed, 1, '只该清掉那个旧的')
   assert.equal(sessionCount(), 1)
+})
+
+test('会话：历史会落盘，进程重启后还能读回来', () => {
+  // 以前 turns 只在内存里，pushTurn 也不读盘 —— 一重启它就"忘了刚聊过什么"。
+  // 用户看到的症状：重启后问它"刚才说到哪了"，它一脸空白。
+  const dir = mkdtempSync(join(tmpdir(), 'session-persist-'))
+  setSessionRoot(dir)
+  clearSessions()
+
+  pushTurn('group:42', { role: 'user', content: '在干啥呢', at: Date.now() - 1000 })
+  pushTurn('group:42', { role: 'assistant', content: '醒着呢', at: Date.now() })
+
+  // 模拟"进程重启"：内存清空，只能靠磁盘
+  clearSessions()
+  const reloaded = getSession('group:42')
+  assert.equal(reloaded.turns.length, 2, '重启后应能从磁盘读回两条历史')
+  assert.equal(reloaded.turns[0]!.content, '在干啥呢')
+  assert.equal(reloaded.turns[1]!.role, 'assistant')
+
+  rmSync(dir, { recursive: true, force: true })
+  setSessionRoot('data/sessions')
 })
 
 /* ---------------- 事实的三个时间维度 ---------------- */
