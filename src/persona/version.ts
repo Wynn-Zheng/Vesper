@@ -50,6 +50,20 @@ export function latestMtime(dir = ROOT): number {
   return max
 }
 
+/**
+ * 快照要跳过哪些路径。
+ *
+ * 除了自带的 `.versions`，还**跳掉表情包库**：
+ *   - 它跟"人格/记忆"不是一回事，回滚人格时不该把表情包也回滚回去；
+ *   - 它会随使用一直长大（群里发的每张图都进库），而快照保留 60 份 ——
+ *     一张 100KB 的图 × 几千张 × 60 份，磁盘会直接炸。
+ * 现在 personas 才 0.25MB 看不出问题，等用久了才会爆。
+ */
+export function isSnapshotExcluded(path: string): boolean {
+  const p = path.replace(/\\/g, '/')
+  return p.includes('.versions') || /(^|\/)emoji(\/|$)/.test(p)
+}
+
 /** 给 persona/ 拍一张快照。返回 id，失败返回 null。 */
 export function snapshot(reason: string): string | null {
   try {
@@ -60,7 +74,7 @@ export function snapshot(reason: string): string | null {
 
     cpSync(ROOT, dest, {
       recursive: true,
-      filter: (src) => !src.includes('.versions'),
+      filter: (src) => !isSnapshotExcluded(src),
     })
     writeFileSync(join(dest, '.meta.json'), JSON.stringify({ id, reason, at: Date.now() } satisfies SnapshotMeta), 'utf8')
     prune()
