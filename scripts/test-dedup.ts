@@ -62,11 +62,11 @@ console.log('=== 1. 高相似度不问模型 ===')
 
   const pid = 'qq-1'
   people.ensurePerson('qq', '1', '小明')
-  facts.appendFacts(pid, [{ text: '他养了一只叫豆豆的猫', date: '2026-10-01', confidence: 0.9, visibility: 'private' }])
+  facts.appendFacts(pid, [{ text: '他养了一只叫咪咪的猫', date: '2026-10-01', confidence: 0.9, visibility: 'private' }])
 
   const srv = await fakeModel(['no'])
   const turns = [
-    { ts: Date.now(), scope: 'private:qq-1' as const, role: 'user' as const, text: '他养了一只叫豆豆的猫' },
+    { ts: Date.now(), scope: 'private:qq-1' as const, role: 'user' as const, text: '他养了一只叫咪咪的猫' },
   ]
 
   // 这一步会调 distill，但 facts 已经存在且相似度极高 → 不该问模型
@@ -97,7 +97,7 @@ console.log('\n=== 2. 灰色地带（sim 0.45-0.9）===')
   const { similarity } = await import('../src/core/text.ts')
 
   const pairs: Array<[string, string, string]> = [
-    ['他养了一只叫豆豆的猫', '他有一只猫叫豆豆', '同义改写（应该判重）'],
+    ['他养了一只叫咪咪的猫', '他有一只猫叫咪咪', '同义改写（应该判重）'],
     ['他喜欢猫', '他喜欢狗', '不同事实（应该分开）'],
     ['他在北京上班', '他在上海上班', '矛盾'],
     ['他12月去日本', '他12月份去日本', '差一个「份」'],
@@ -111,7 +111,7 @@ console.log('\n=== 2. 灰色地带（sim 0.45-0.9）===')
 
   // 实测发现：同义改写只有 0.231，而「喜欢猫 vs 喜欢狗」有 0.500 ——
   // 两者重叠，说明纯字符相似度根本分不开语义。这正是要问模型的原因。
-  const simSame = similarity('他养了一只叫豆豆的猫', '他有一只猫叫豆豆')
+  const simSame = similarity('他养了一只叫咪咪的猫', '他有一只猫叫咪咪')
   const simOther = similarity('他喜欢猫', '他喜欢狗')
   console.log(`   对比：同义改写 ${simSame.toFixed(3)} vs 不同事实 ${simOther.toFixed(3)}`)
   check(

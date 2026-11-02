@@ -184,7 +184,7 @@ export async function handleMiscApi(
   // 目标：<数据目录>/napcat（cwd 就是数据目录）。
   // 装完自动把 rules.yaml 的 NapCat.Shell目录 指过去。
   const napcatBundle = (): string =>
-    process.env['QQBOT_ROOT'] ? resolve(process.env['QQBOT_ROOT'], '..', 'napcat') : 'E:/NapCat'
+    process.env['QQBOT_ROOT'] ? resolve(process.env['QQBOT_ROOT'], '..', 'napcat') : 'D:/NapCat'
 
   if (method === 'POST' && path === '/api/napcat/install') {
     const r = startInstall({
@@ -445,7 +445,7 @@ async function napcatLoginStatus(): Promise<{
   hasQrcode?: boolean
 }> {
   // 走 napcat/manager 的定位：它从配置的 Shell目录 推导，不写死版本号。
-  // 以前这里硬编码 E:/NapCat/NapCat.52230.Shell，NapCat 一升级就读不到 webui.json。
+  // 以前这里硬编码 D:/NapCat/NapCat.52230.Shell，NapCat 一升级就读不到 webui.json。
   const located = NC.locate()
   if ('error' in located) return { available: false, reason: located.error }
   const cfgPath = located.webuiConfig

@@ -65,7 +65,7 @@ console.log('\n=== 3. 群名片 + 昵称都给 ===')
   // ⚠️ 这两条依赖线上数据的具体状态（群名片是否和昵称不同、是否聊过），
   // 数据一变就误报。所以数据不满足时只提示、不算失败 ——
   // 真正的逻辑验证在第 4 节的假数据里做。
-  const real = group.renderGroupContext('631887317')
+  const real = group.renderGroupContext('111111111')
   if (real.includes('你记的名字是')) {
     check('渲染里出现了"你记的名字是"', true, '')
   } else {
@@ -91,7 +91,7 @@ console.log('\n=== 4. 假数据：群名片和昵称不同 ===')
   people.setPeopleRoot(`${ROOT}/people`)
   store.setMemoryRoot?.(`${ROOT}/memory`)
 
-  // 群里：名片「群代肝」，昵称「欲辨已妄言」
+  // 群里：名片「测试昵称A」，昵称「测试昵称C」
   const { writeFileSync } = await import('node:fs')
   writeFileSync(
     `${ROOT}/groups/111/members.json`,
@@ -99,7 +99,7 @@ console.log('\n=== 4. 假数据：群名片和昵称不同 ===')
       groupId: '111',
       at: Date.now(),
       members: [
-        { id: '1001', name: '群代肝', nick: '欲辨已妄言' },
+        { id: '1001', name: '测试昵称A', nick: '测试昵称C' },
         { id: '1002', name: '路人甲', nick: '路人甲的昵称' },
         { id: '1003', name: '路人乙', nick: '路人乙的昵称' },
       ],
@@ -109,20 +109,20 @@ console.log('\n=== 4. 假数据：群名片和昵称不同 ===')
   gc.clearMemberCache()
 
   // 档案：全局名是昵称
-  people.ensurePerson('qq', '1001', '欲辨已妄言')
+  people.ensurePerson('qq', '1001', '测试昵称C')
 
   // 这个人在群里说过话
   store.appendRaw({ ts: Date.now(), scope: 'group:111', role: 'user', text: '在', senderId: '1001' })
 
   const mates = group.peopleInGroup('111')
   check('认出了 1 个', mates.length === 1, String(mates.length))
-  check('拿的是 QQ 昵称', mates[0]?.name === '欲辨已妄言', mates[0]?.name)
+  check('拿的是 QQ 昵称', mates[0]?.name === '测试昵称C', mates[0]?.name)
   check('带上了 QQ 号', mates[0]?.id === '1001', mates[0]?.id)
 
   const ctx = group.renderGroupContext('111')
   check('总人数对', ctx.includes('一共 3 人'), ctx.split('\n')[0])
   check('认识 1 个、另外 2 个不认识', ctx.includes('实际聊过的只有 1 个，另外 2 个'), ctx.split('\n').find((l) => l.includes('实际聊过')) ?? '')
-  check('打过交道那段用群名片', ctx.includes('群代肝'), ctx.slice(ctx.indexOf('其中我和这些人')))
+  check('打过交道那段用群名片', ctx.includes('测试昵称A'), ctx.slice(ctx.indexOf('其中我和这些人')))
 
   rmSync(ROOT, { recursive: true, force: true })
 }

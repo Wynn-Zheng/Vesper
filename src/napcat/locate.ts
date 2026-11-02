@@ -1,7 +1,7 @@
 /**
  * NapCat 定位模块。
  *
- * 之前所有路径都写死在 misc-api.ts 里（11 处 E:/NapCat/...），换个机器就全废。
+ * 之前所有路径都写死在 misc-api.ts 里（11 处 D:/NapCat/...），换个机器就全废。
  * 这里集中处理：**从 shellDir 推导所有路径**，不写死版本号、不写死盘符。
  *
  * 参考 dsh-napcat-keeper 的经验：
@@ -84,7 +84,7 @@ export function commonDirs(): string[] {
 /**
  * 在 baseDir 下找 Shell 目录。
  *
- * baseDir 本身可能就是 Shell 目录（`E:/NapCat` 下直接有 `NapCat.52230.Shell`，
+ * baseDir 本身可能就是 Shell 目录（`D:/NapCat` 下直接有 `NapCat.52230.Shell`，
  * 也可能 baseDir 就是 `NapCat.52230.Shell`）。两种都试。
  */
 export function findShellUnder(baseDir: string): string[] {

@@ -2,6 +2,17 @@
  * 深查：新功能之间的交互、并发写、长期运行。
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+/** 从 .env 读控制台 token（不依赖环境变量，直接跑也能通） */
+function envToken(): string {
+  if (process.env.CONSOLE_TOKEN) return process.env.CONSOLE_TOKEN
+  try {
+    const t = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+    const m = /^CONSOLE_TOKEN=(.*)$/m.exec(t)
+    return (m?.[1] ?? '').trim()
+  } catch {
+    return ''
+  }
+}
 
 let pass = 0
 let fail = 0
@@ -130,7 +141,7 @@ const will = await import('../src/self/will.ts')
 /* ---------- 8. 控制台 issues 面板数据 ---------- */
 {
   const st = await fetch('http://127.0.0.1:7788/api/state', {
-    headers: { 'x-console-token': process.env.CONSOLE_TOKEN ?? 'REDACTED' },
+    headers: { 'x-console-token': envToken() },
   })
   if (st.ok) {
     const d = (await st.json()) as { issues?: unknown[]; watched?: unknown[] }

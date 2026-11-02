@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { assertTestPluginId, testPluginId } from './_plugin-test-guard.ts'
 
 const BASE = 'http://127.0.0.1:7788'
-const TOKEN = process.env['CONSOLE_TOKEN'] || 'REDACTED'
+const TOKEN = process.env['CONSOLE_TOKEN'] || ''
 
 let pass = 0
 let fail = 0

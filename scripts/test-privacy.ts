@@ -64,7 +64,7 @@ for (const p of people) {
 
 console.log('\n=== 2. 群聊召回：只能是 shared 或本群 ===')
 {
-  const gid = 'group:631887317'
+  const gid = 'group:111111111'
   const r = recall({
     personId: 'qq-1234567890',
     scope: gid,
@@ -88,7 +88,7 @@ console.log('\n=== 3. 群聊里不该注入 private 事实 ===')
 
   const r = recall({
     personId: pid,
-    scope: 'group:631887317',
+    scope: 'group:111111111',
     query: priv.map((f) => f.text).join(' '),
     limit: 50,
     weights,

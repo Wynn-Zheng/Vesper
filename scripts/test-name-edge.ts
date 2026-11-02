@@ -100,21 +100,21 @@ console.log('\n=== 4. 控制字符 ===')
 /* ============ 5. 改名不影响群名片 ============ */
 console.log('\n=== 5. 改名 vs 群名片 ===')
 {
-  // 群里叫「群代肝」，全局名是「欲辨已妄言」
+  // 群里叫「测试昵称A」，全局名是「测试昵称C」
   mkdirSync(`${ROOT}/groups/999`, { recursive: true })
   writeFileSync(
     `${ROOT}/groups/999/members.json`,
     JSON.stringify({
       groupId: '999',
       at: Date.now(),
-      members: [{ id: '2001', name: '群代肝', nick: '欲辨已妄言' }],
+      members: [{ id: '2001', name: '测试昵称A', nick: '测试昵称C' }],
     }),
     'utf8',
   )
   gc.clearMemberCache()
 
-  const p = store.ensurePerson('qq', '2001', '欲辨已妄言')
-  check('建档时用昵称', p.name === '欲辨已妄言', p.name)
+  const p = store.ensurePerson('qq', '2001', '测试昵称C')
+  check('建档时用昵称', p.name === '测试昵称C', p.name)
 
   // 改全局名
   store.savePerson({ ...p, name: '新名字' })
@@ -123,8 +123,8 @@ console.log('\n=== 5. 改名 vs 群名片 ===')
 
   // 群名片不该跟着变
   const m = gc.groupMembers('999').find((x) => x.id === '2001')
-  check('群名片没变', m?.name === '群代肝', m?.name)
-  check('群里的昵称也没变', m?.nick === '欲辨已妄言', m?.nick)
+  check('群名片没变', m?.name === '测试昵称A', m?.name)
+  check('群里的昵称也没变', m?.nick === '测试昵称C', m?.nick)
 }
 
 /* ============ 6. 重名的人 ============ */

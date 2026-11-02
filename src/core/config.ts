@@ -249,7 +249,7 @@ export interface Rules {
     /**
      * NapCat 的安装目录（那个 <版本>.Shell 目录）。
      *
-     * 留空 = 自动探测常见位置（C:/NapCat、D:/NapCat、E:/NapCat、用户目录下的 NapCat）。
+     * 留空 = 自动探测常见位置（C:/NapCat、D:/NapCat、D:/NapCat、用户目录下的 NapCat）。
      * 自动探测找不到时，在控制台「日志 → NapCat」里手动填。
      */
     Shell目录: string

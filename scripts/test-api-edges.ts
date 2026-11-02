@@ -1,8 +1,21 @@
+﻿import { readFileSync } from 'node:fs'
 /**
  * 边界测试：故意用坏参数打接口，看会不会崩、会不会写出脏数据。
  */
 const BASE = 'http://127.0.0.1:7788'
-const TOKEN = process.env.CONSOLE_TOKEN ?? 'REDACTED'
+const TOKEN = envToken()
+/** 从 .env 读控制台 token（不依赖环境变量，直接 node 跑也能通） */
+function envToken(): string {
+  if (process.env.CONSOLE_TOKEN) return process.env.CONSOLE_TOKEN
+  try {
+    const t = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+    const m = /^CONSOLE_TOKEN=(.*)$/m.exec(t)
+    return (m?.[1] ?? '').trim()
+  } catch {
+    return ''
+  }
+}
+
 
 const H = { 'x-console-token': TOKEN, 'Content-Type': 'application/json' }
 let pass = 0

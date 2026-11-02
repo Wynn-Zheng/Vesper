@@ -1,12 +1,12 @@
 /**
  * 群聊多发言人上下文。
  *
- * 起因（用户截图）：群里两个人聊天，突然 @ 它：
- *   群代肝：现在就开始练
- *   (ฅ]ω[*ฅ)：不要
- *   (ฅ]ω[*ฅ)：走路老疼了
- *   群代肝：早不练晚不练，腹肌何时能出现
- *   群代肝：@小助手 你说对吧
+ * 起因：群里两个人聊天，突然 @ 它（对话为虚构）：
+ *   测试昵称A：明天几点出发
+ *   测试昵称B：不要
+ *   测试昵称B：我脚崴了
+ *   测试昵称A：早不去晚不去，什么时候能出发
+ *   测试昵称A：@测试助手 你说对吧
  *
  * 之前渲染成 4 条「他：」，模型分不清谁是谁，「对吧」指什么只能瞎猜。
  * 现在：带发言人名字 + 取 8 条（不是 4 条）。
@@ -50,17 +50,17 @@ console.log('=== 1. RawTurn 有 speakerName ===')
 
 /* ============ 2. 多发言人场景 ============ */
 console.log('\n=== 2. 两个人的群聊 ===')
-people.ensurePerson('qq', '1234567890', '群代肝')
-people.ensurePerson('qq', '503712366', '(ฅ]ω[*ฅ)')
+people.ensurePerson('qq', '1234567890', '测试昵称A')
+people.ensurePerson('qq', '10002', '测试昵称B')
 
-const GID = '710344485'
+const GID = '111111111'
 const now = Date.now()
 const turns = [
-  { senderId: '1234567890', text: '现在就开始练' },
-  { senderId: '503712366', text: '不要' },
-  { senderId: '503712366', text: '走路老疼了' },
-  { senderId: '1234567890', text: '早不练晚不练，腹肌何时能出现' },
-  { senderId: '1234567890', text: '@小助手 你说对吧' },
+  { senderId: '1234567890', text: '明天几点出发' },
+  { senderId: '10002', text: '不要' },
+  { senderId: '10002', text: '我脚崴了' },
+  { senderId: '1234567890', text: '早不去晚不去，什么时候能出发' },
+  { senderId: '1234567890', text: '@测试助手 你说对吧' },
 ]
 for (let i = 0; i < turns.length; i++) {
   const t = turns[i]!
@@ -76,22 +76,22 @@ for (let i = 0; i < turns.length; i++) {
 const r = recall.recall({
   personId: 'qq-1234567890',
   scope: `group:${GID}`,
-  query: '@小助手 你说对吧',
+  query: '@测试助手 你说对吧',
   limit: 8,
   weights: { 新近: 0.5, 相关: 3, 重要: 2 },
 })
 
 check(`recent 取了 ${r.recent.length} 条`, r.recent.length === 5, String(r.recent.length))
 check('每条都补了 speakerName', r.recent.every((t) => !!t.speakerName), JSON.stringify(r.recent.map((t) => t.speakerName)))
-check('第一个说话的是「群代肝」', r.recent[0]?.speakerName === '群代肝', r.recent[0]?.speakerName)
-check('第二个是「(ฅ]ω[*ฅ)」', r.recent[1]?.speakerName === '(ฅ]ω[*ฅ)', r.recent[1]?.speakerName)
+check('第一个说话的是「测试昵称A」', r.recent[0]?.speakerName === '测试昵称A', r.recent[0]?.speakerName)
+check('第二个是「测试昵称B」', r.recent[1]?.speakerName === '测试昵称B', r.recent[1]?.speakerName)
 
 const text = recall.renderRecalled(r)
 const idx = text.indexOf('【最近说过的话】')
 const block = text.slice(idx, idx + 400)
 
-check('渲染里带「群代肝：」', block.includes('群代肝：'), '')
-check('渲染里带「(ฅ]ω[*ฅ)：」', block.includes('(ฅ]ω[*ฅ)：'), '')
+check('渲染里带「测试昵称A：」', block.includes('测试昵称A：'), '')
+check('渲染里带「测试昵称B：」', block.includes('测试昵称B：'), '')
 check('不再是清一色的「他：」', (block.match(/他：/g) ?? []).length < 3, String((block.match(/他：/g) ?? []).length))
 
 console.log('\n--- 实际渲染 ---')

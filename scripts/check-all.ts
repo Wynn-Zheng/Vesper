@@ -171,7 +171,7 @@ const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
 async function serviceUp(): Promise<boolean> {
   try {
     const res = await fetch(CONSOLE_URL, {
-      headers: { 'x-console-token': process.env.CONSOLE_TOKEN ?? 'REDACTED' },
+      headers: { 'x-console-token': process.env.CONSOLE_TOKEN ?? '' },
       signal: AbortSignal.timeout(2000),
     })
     return res.status === 200 || res.status === 401

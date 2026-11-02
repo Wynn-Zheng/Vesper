@@ -59,7 +59,7 @@ console.log('=== 1. distill 筛选 ===')
   // 意外度：和已有记忆相似的不加分
   const existing = ['他最近在学 Rust，说所有权挺绕']
   const dup = filter.worthDistilling({ ts: 1, text: '他最近在学 Rust' }, existing)
-  const fresh = filter.worthDistilling({ ts: 2, text: '他养了一只猫叫豆豆' }, existing)
+  const fresh = filter.worthDistilling({ ts: 2, text: '他养了一只猫叫咪咪' }, existing)
   check('和已有记忆像的不如新的分高', fresh > dup, `${fresh} vs ${dup}`)
 
   // 筛选：废话全砍，内容全留
@@ -94,7 +94,7 @@ console.log('\n=== 2. 可及性 ===')
 
 ## 平常
 
-- 他养过一只猫叫豆豆（${yearAgo}，置信 0.9，公开）
+- 他养过一只猫叫咪咪（${yearAgo}，置信 0.9，公开）
 - 他最近在学 Rust（2026-10-26，置信 0.9，公开）
 `,
     'utf8',
@@ -107,7 +107,7 @@ console.log('\n=== 2. 可及性 ===')
   check('不相关话题：老事实不出现', !r1.facts.some((f) => f.text.includes('猫')), JSON.stringify(r1.facts.map((f) => f.text.slice(0, 8))))
 
   // 相关话题：应该捞出来并标 faint
-  const r2 = recall.recall({ personId: 'qq-999', scope: 'private:999', query: '你那只猫豆豆还好吗', limit: 8, weights: w })
+  const r2 = recall.recall({ personId: 'qq-999', scope: 'private:999', query: '你那只猫咪咪还好吗', limit: 8, weights: w })
   const cat = r2.facts.find((f) => f.text.includes('猫'))
   check('相关话题：老事实被捞出来', !!cat, '')
   check('捞出来的标了 faint', cat?.faint === true, String(cat?.faint))

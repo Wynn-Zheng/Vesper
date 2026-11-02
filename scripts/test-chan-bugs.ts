@@ -303,7 +303,7 @@ console.log('\n=== 5. extractImages ===')
 console.log('\n=== 6. shouldHandle / isAddressed ===')
 {
   const base: OnebotOptions = { host: '127.0.0.1', port: 8765, path: '/onebot/v11/ws', token: 't' }
-  const SELF = '552388771'
+  const SELF = '10000'
 
   const priv = (userId: string, text = '在吗'): OBEvent => ({
     post_type: 'message',

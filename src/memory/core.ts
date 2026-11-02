@@ -71,7 +71,7 @@ function parseKind(raw: string | undefined): CoreKind {
  *
  * 格式（人能直接改，所以容错）：
  *   ## 身份
- *   - 他叫「欲辨已妄言」
+ *   - 他叫「测试昵称C」
  *   ## 边界
  *   - 他讨厌被追问感受
  *

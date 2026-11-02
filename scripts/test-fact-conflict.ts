@@ -113,8 +113,8 @@ console.log('=== 1. same：刷新确认 ===')
 {
   const pid = 'qq-30001'
   const scope = 'private:qq-30001' as Scope
-  const oldText = '他养了一只叫豆豆的猫'
-  const newText = '他养了一只猫叫豆豆'
+  const oldText = '他养了一只叫咪咪的猫'
+  const newText = '他养了一只猫叫咪咪'
   const sim = similarity(oldText, newText)
   check('用例本身落在灰色地带（0.45-0.9）', sim >= 0.45 && sim <= 0.9, `sim=${sim.toFixed(3)}`)
 

@@ -23,11 +23,11 @@ function ev(over: Partial<OBEvent> = {}): OBEvent {
   return {
     post_type: 'message',
     message_type: 'group',
-    self_id: 2763891939,
+    self_id: 10000,
     user_id: 1234567890,
-    group_id: 631887317,
+    group_id: 111111111,
     message_id: 1,
-    message: [{ type: 'at', data: { qq: '2763891939' } }, { type: 'text', data: { text: ' 你在不' } }],
+    message: [{ type: 'at', data: { qq: '10000' } }, { type: 'text', data: { text: ' 你在不' } }],
     raw_message: '',
     time: Math.floor(Date.now() / 1000),
     ...over,
@@ -69,7 +69,7 @@ console.log('\n=== 2. 成员黑名单 ===')
   check('黑名单里的人 → shouldHandle 拒绝', !shouldHandle(ev(), o))
   const r = rejectReason(ev(), o)
   check('拒绝原因说的是「成员黑名单」', r.includes('成员黑名单'), r)
-  check('原因里带上了人和群', r.includes('1234567890') && r.includes('631887317'), r)
+  check('原因里带上了人和群', r.includes('1234567890') && r.includes('111111111'), r)
 }
 
 console.log('\n=== 3. 群黑名单 ===')
@@ -77,7 +77,7 @@ console.log('\n=== 3. 群黑名单 ===')
   const o = opts({
     getPolicy: () => ({
       groupAllow: [],
-      groupDeny: ['631887317'],
+      groupDeny: ['111111111'],
       memberAllow: [],
       memberDeny: [],
       requireAt: true,

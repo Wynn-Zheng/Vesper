@@ -38,7 +38,7 @@ export interface Incoming {
    *
    * 为什么要和 senderName 分开：
    *   senderName = card ?? nickname，群里是群名片、私聊是昵称。
-   *   拿 senderName 当全局名的话，同一个人在群里叫「群代肝」、
+   *   拿 senderName 当全局名的话，同一个人在群里叫「测试昵称A」、
    *   私聊叫「主人」，档案会被两边轮流覆盖。
    *   senderNick 永远是 QQ 昵称，用来做全局名。
    */

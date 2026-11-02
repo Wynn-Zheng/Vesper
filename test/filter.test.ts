@@ -8,7 +8,7 @@ const priv = (userId: string, text: string): OBEvent => ({
   post_type: 'message',
   message_type: 'private',
   user_id: userId,
-  self_id: '552388771',
+  self_id: '10000',
   message: [{ type: 'text', data: { text } }],
 })
 
@@ -17,7 +17,7 @@ const group = (groupId: string, userId: string, text: string): OBEvent => ({
   message_type: 'group',
   group_id: groupId,
   user_id: userId,
-  self_id: '552388771',
+  self_id: '10000',
   message: [{ type: 'text', data: { text } }],
 })
 
@@ -26,9 +26,9 @@ const groupAt = (groupId: string, userId: string, text: string): OBEvent => ({
   message_type: 'group',
   group_id: groupId,
   user_id: userId,
-  self_id: '552388771',
+  self_id: '10000',
   message: [
-    { type: 'at', data: { qq: '552388771' } },
+    { type: 'at', data: { qq: '10000' } },
     { type: 'text', data: { text } },
   ],
 })
@@ -37,7 +37,7 @@ const imageOnly = (): OBEvent => ({
   post_type: 'message',
   message_type: 'private',
   user_id: '1234567890',
-  self_id: '552388771',
+  self_id: '10000',
   message: [{ type: 'image', data: {} }],
 })
 
@@ -104,7 +104,7 @@ test('图片加文字会触发（文字有意义）', () => {
     post_type: 'message',
     message_type: 'private',
     user_id: '1234567890',
-    self_id: '552388771',
+    self_id: '10000',
     message: [
       { type: 'image', data: {} },
       { type: 'text', data: { text: '看这个' } },

@@ -1,11 +1,23 @@
-/**
+﻿/**
  * 并发与数据完整性检查。
  * 这些是最难靠读代码发现的问题：单线程跑一万次都正常，两个撞一起才暴露。
  */
 import { existsSync, readFileSync } from 'node:fs'
+/** 从 .env 读控制台 token（不依赖环境变量，直接跑也能通） */
+function envToken(): string {
+  if (process.env.CONSOLE_TOKEN) return process.env.CONSOLE_TOKEN
+  try {
+    const t = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+    const m = /^CONSOLE_TOKEN=(.*)$/m.exec(t)
+    return (m?.[1] ?? '').trim()
+  } catch {
+    return ''
+  }
+}
 
 const BASE = 'http://127.0.0.1:7788'
-const TOKEN = process.env.CONSOLE_TOKEN ?? 'REDACTED'
+const TOKEN = envToken()
+
 const H = { 'x-console-token': TOKEN, 'Content-Type': 'application/json' }
 
 async function call(method: string, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {

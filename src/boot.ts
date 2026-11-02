@@ -579,7 +579,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       // 全局名只能用 **QQ 昵称**，不能用群名片。
       //
       // 踩过两次的坑：senderName = card ?? nickname，
-      // 群里给群名片（「群代肝」）、私聊给昵称（「主人」），
+      // 群里给群名片（「测试昵称A」）、私聊给昵称（「主人」），
       // 拿它当全局名，档案就被两边轮流覆盖。
       //
       // 名字来源按可靠程度排：

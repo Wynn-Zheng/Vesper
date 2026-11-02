@@ -162,8 +162,8 @@ function ensureDataRoot() {
         `CONSOLE_TOKEN=${token}`,
         'DEEPSEEK_API_KEY=',
         'DEEPSEEK_MODEL=deepseek-chat',
-        'UPDATE_URL=https://web.wynnzheng.icu/QQbot',
-        'UPDATE_TOKEN=REDACTED',
+        'UPDATE_URL=',
+        'UPDATE_TOKEN=',
         '',
       ].join('\n'),
       'utf8',
@@ -174,8 +174,8 @@ function ensureDataRoot() {
     try {
       const text = readFileSync(envPath, 'utf8')
       const add = []
-      if (!/^UPDATE_URL=/m.test(text)) add.push('UPDATE_URL=https://web.wynnzheng.icu/QQbot')
-      if (!/^UPDATE_TOKEN=/m.test(text)) add.push('UPDATE_TOKEN=REDACTED')
+      if (!/^UPDATE_URL=/m.test(text)) add.push('UPDATE_URL=')
+      if (!/^UPDATE_TOKEN=/m.test(text)) add.push('UPDATE_TOKEN=')
       if (add.length) {
         appendFileSync(envPath, '\n# 在线更新（自动补上的，可改）\n' + add.join('\n') + '\n', 'utf8')
         console.log('[main] 已给 .env 补上更新配置')
