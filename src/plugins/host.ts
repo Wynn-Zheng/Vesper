@@ -426,8 +426,13 @@ export function createHost(options: {
           : undefined
 
       const ctx = createContext(id, dataDir, plugin.manifest.permissions ?? [])
-      // 激活函数允许是 async，这里统一 await
-      await (activate as (ctx: PluginContext) => unknown)(ctx)
+      // 激活函数允许是 async，这里统一 await —— 但必须有时限：
+      // 一个永不 resolve 的 activate 会让插件页所有请求挂死（见 withTimeout 注释）
+      await withTimeout(
+        Promise.resolve(activate(ctx) as unknown) as Promise<unknown>,
+        ACTIVATE_TIMEOUT_MS,
+        `插件 ${id} 的 activate`,
+      )
 
       // panel 类型的插件靠 module 里导出的 call 接待前端请求
       const rawCall = (mod as { call?: unknown }).call
@@ -513,7 +518,11 @@ export function createHost(options: {
         parameters: item.tool.parameters || { type: 'object', properties: {} },
         run: async (args: Record<string, unknown>) => {
           try {
-            return await item.tool.run(args)
+            return await withTimeout(
+              Promise.resolve(item.tool.run(args)),
+              TOOL_TIMEOUT_MS,
+              `插件工具 ${name}`,
+            )
           } catch (err) {
             return `插件工具执行失败：${String(err).slice(0, 160)}`
           }
@@ -534,8 +543,56 @@ export function createHost(options: {
     if (!plugin.call) {
       throw new Error(`插件 ${id} 没有导出 call（panel 类型需要在入口里 export function call({action,payload})）`)
     }
-    return await plugin.call(input)
+    // 面板请求也要有时限：否则一个卡住的 call 会让前端按钮永远转圈
+    return await withTimeout(Promise.resolve(plugin.call(input)), CALL_TIMEOUT_MS, `插件 ${id} 的 call`)
   }
 
   return { load, unload, reload, list, errors, tools, invoke }
 }
+
+/**
+ * 给插件的异步调用加个时限。
+ *
+ * 为什么必须有：`activate` / `call` / `tool.run` 原来都是裸 `await`。
+ * 插件里写 `await new Promise(() => {})`（等一个永不返回的请求）时：
+ *   - `start()` 永远不结束 → `pluginReady` 永远 pending
+ *   - 于是**所有** `/api/plugins/*` 请求挂起不返回（打开插件页都转圈）
+ *   - 后面的插件也永远不加载
+ * 而用户看到的只是"插件页打不开"，日志里什么都没有。
+ *
+ * 超时不是"惩罚插件"，是让宿主能说话：超时后按失败处理，
+ * 记进 host.errors，界面上能看到"这个插件激活超时"。
+ * 注意：这里只能管**异步**。插件里的同步死循环（while(true)）挡不住，
+ * 那需要进程级隔离（见 .team/design-plugin-isolation.md）。
+ */
+function withTimeout<T>(p: Promise<T> | T, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let done = false
+    const timer = setTimeout(() => {
+      if (done) return
+      done = true
+      reject(new Error(`${what} 超时（${Math.round(ms / 1000)} 秒没返回）`))
+    }, ms)
+    // 定时器不该拖住进程退出
+    if (typeof (timer as { unref?: () => void }).unref === 'function') (timer as { unref: () => void }).unref()
+    Promise.resolve(p).then(
+      (v) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        reject(e)
+      },
+    )
+  })
+}
+
+/** 各种插件调用的时限：激活给足（插件可能要做初始化），其它收紧 */
+const ACTIVATE_TIMEOUT_MS = 10_000
+const CALL_TIMEOUT_MS = 30_000
+const TOOL_TIMEOUT_MS = 60_000

@@ -2,6 +2,7 @@ import { OnebotTransport, markTalker, type OnebotOptions } from './channel/onebo
 import { createEmojiStore } from './emoji/store.ts'
 import { boot } from './boot.ts'
 import { ToolRegistry, tools as globalTools } from './tools/registry.ts'
+import { syncPluginTools } from './tools/plugin-sync.ts'
 import { codeTools } from './tools/code.ts'
 import { sendImageTool } from './tools/image.ts'
 import { requestChangeTool } from './tools/request.ts'
@@ -280,6 +281,13 @@ let llm: LlmOptions | undefined
 // 这就是"档案名怎么修都会变回去"的真凶。
 /** 工具注册表：插件加载完要往里挂工具，所以提到模块级（下面 if (apiKey) 里赋值） */
 let toolRegistry: ToolRegistry | null = null
+/**
+ * 当前"由插件注册进来"的工具名。
+ *
+ * 用来在插件重载/卸载后把旧 wrapper 摘掉：插件工具名可以覆盖自己，
+ * 但绝不能覆盖内置工具（那会让插件有能力顶掉 read_code 之类的东西）。
+ */
+const pluginToolNames = new Set<string>()
 
 const ownerQQ = process.env['OWNER_QQ'] || undefined
 if (ownerQQ) {
@@ -562,15 +570,13 @@ await startConsole({
       },
       // 插件注册的工具（manifest 里 type: tool 的那些）挂进工具注册表，
       // 这样模型才能真正调用它们 —— 否则插件只是"装上了但用不上"。
+      //
+      // 这个回调会在**插件重载/卸载后**再被调用一次（带着最新的工具表）。
+      // 所以不能"见到重名就跳过"：那样重载后注册表里还是旧 wrapper，
+      // 控制台测试跑新代码、模型调用走旧代码（实测 BUG3-21）。
+      // 规则：只覆盖"上次由插件注册过的名字"，绝不覆盖内置工具。
       onPluginTools: (tools) => {
-        for (const t of tools) {
-          if (toolRegistry?.get(t.name)) {
-            warnAt(`插件工具和已有工具重名，跳过：${t.name}`)
-            continue
-          }
-          toolRegistry?.register(t)
-          info(`插件工具已注册：${t.name}`)
-        }
+        syncPluginTools(toolRegistry, tools, pluginToolNames, warnAt, info)
       },
       llm,
     })

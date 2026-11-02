@@ -25,6 +25,17 @@ export class ToolRegistry {
     return this.tools.get(name)
   }
 
+  /**
+   * 摘掉一个工具。
+   *
+   * 用在插件重载/卸载：插件工具的实现会变，旧 wrapper 还闭包着旧模块。
+   * 不摘的话，控制台里"测试"跑的是新代码、模型调的还是旧代码（实测 BUG3-21），
+   * 用户看到"重载成功"但聊天里行为没变，只有重启后端才好。
+   */
+  remove(name: string): boolean {
+    return this.tools.delete(name)
+  }
+
   list(): Tool[] {
     return [...this.tools.values()]
   }

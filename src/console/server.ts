@@ -628,6 +628,14 @@ async function runAction(
   }
 }
 
+/**
+ * 会改变"哪些插件在跑"的接口。这些成功之后要把工具表重新交给注册表。
+ *
+ * 为什么不放在 plugin-api.ts 里：那边只产出"路由表 + handler"，
+ * 不知道谁是 ToolRegistry；刷新是控制台装配层的事。
+ */
+const MUTATING_PLUGIN_ROUTES = new Set(['/install', '/uninstall', '/toggle', '/reload'])
+
 export async function startConsole(opts: ConsoleOptions): Promise<void> {
   consoleOpts = opts
   // 没设 token 又监听在非本机地址 = 同一网段任何人都能改配置、发消息、导数据。
@@ -1211,6 +1219,16 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
             }
           }
           const result = await route.handler(body)
+          // 改动了"哪些插件在跑"的接口，要把最新的工具表重新交给注册表。
+          // 不刷的话：重载成功了，但模型手里还是旧 wrapper（实测 BUG3-21）——
+          // 控制台里"测试"跑的是新代码，聊天里调的还是旧的，只有重启后端才恢复。
+          if (result.ok && MUTATING_PLUGIN_ROUTES.has(sub)) {
+            try {
+              consoleOpts?.onPluginTools?.(svc.host.tools())
+            } catch {
+              /* 拿工具失败不影响这次请求的结果 */
+            }
+          }
           json(res, result.ok ? 200 : 400, result)
           return
         }
