@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { GROUP_CHAT_MODES, asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
+import { TALK_FIELDS, readPath, validateTalkValues } from './talk-schema.ts'
 import { errorAt, info, warnAt, logBus, type LogRecord } from '../core/log.ts'
 import type { Transport } from '../core/transport.ts'
 import type { LlmOptions } from '../llm/types.ts'
@@ -1504,6 +1505,97 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           }
           writeAtomic(RULES_FILE, r.text)
           json(res, 200, { ok: true, on })
+        } catch (e) {
+          json(res, 500, { error: String(e) })
+        }
+        return
+      }
+
+      /* ============ 对话规则（schema 驱动） ============
+       *
+       * 为什么新开一对接口而不是继续扩 /api/talk-style：
+       *   那个接口是"白名单 + 逐项 if"，加一项要改三处（DOM / 字段映射 / 后端），
+       *   于是 105 个配置项里只有 26 个有界面。这里把"有哪些项、什么范围"
+       *   收进 talk-schema.ts，前端按它渲染、后端按它校验。
+       *
+       * 和 /api/ability/param 的区别：那个是裸写（无类型/范围校验），
+       * 写坏一个类型会让 loadRules 抛错 → 下次启动整份回落 DEFAULTS。
+       * 这里先校验、再写、写后 parse 复验，任何一步不过都不落盘。
+       */
+      if (req.method === 'GET' && path === '/api/talk-rules') {
+        const loaded = loadRules()
+        const rules = loaded.rules as unknown
+        const values: Record<string, unknown> = {}
+        for (const f of TALK_FIELDS) values[f.path] = readPath(rules, f.path)
+        json(res, 200, {
+          fields: TALK_FIELDS,
+          values,
+          // 加载告警（比如某个键类型不对）：让界面能提示"你这份配置有问题"
+          warnings: loaded.warnings ?? [],
+          path: loaded.path,
+        })
+        return
+      }
+
+      if (req.method === 'PUT' && path === '/api/talk-rules') {
+        let body: unknown
+        try {
+          body = await readJson(req)
+        } catch {
+          json(res, 400, { error: 'body 不是合法 JSON' })
+          return
+        }
+        const input = (body as { values?: unknown })?.values
+        if (!input || typeof input !== 'object' || Array.isArray(input)) {
+          json(res, 400, { error: '缺少 values（对象：{键路径: 值}）' })
+          return
+        }
+
+        const checked = validateTalkValues(TALK_FIELDS, input as Record<string, unknown>)
+        if (!checked.ok) {
+          json(res, 400, { error: checked.errors.join('；'), errors: checked.errors })
+          return
+        }
+
+        try {
+          const { setConfigPath } = await import('./config-write.ts')
+          const { writeAtomic } = await import('../store/fs.ts')
+          const YAML = (await import('yaml')).default
+          let raw = readFileSync('persona/rules.yaml', 'utf8')
+          const applied: Record<string, unknown> = {}
+          const failed: string[] = []
+
+          for (const item of checked.values) {
+            const r = setConfigPath(raw, item.path, item.value)
+            if (!r.ok) {
+              failed.push(`${item.path}：${r.error ?? '写不进去'}`)
+              continue
+            }
+            raw = r.text
+            applied[item.path] = item.value
+          }
+
+          // 写后复验：任何一项写坏了都会让整份配置读不出来，
+          // 那比"某项没改成"严重得多（下次启动全部回落默认值）。
+          try {
+            const parsed = YAML.parse(raw)
+            if (!parsed || typeof parsed !== 'object') throw new Error('不是对象')
+          } catch (e) {
+            json(res, 400, {
+              error: '这次修改会让 rules.yaml 变成非法 YAML，已放弃（文件没动）',
+              detail: String(e).slice(0, 200),
+            })
+            return
+          }
+
+          if (!Object.keys(applied).length) {
+            json(res, 400, { error: failed.join('；') || '没有写进去任何一项', failed })
+            return
+          }
+
+          writeAtomic('persona/rules.yaml', raw)
+          info(`对话规则已更新 ${Object.keys(applied).length} 项`)
+          json(res, 200, { ok: true, applied, ...(failed.length ? { failed } : {}) })
         } catch (e) {
           json(res, 500, { error: String(e) })
         }

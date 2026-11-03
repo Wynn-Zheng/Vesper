@@ -656,6 +656,20 @@
 .self-mini-x:hover{color:var(--red)}
 .self-more{font-size:11px;color:var(--blue);background:none;border:0;cursor:pointer;padding:2px 0;font-family:inherit;align-self:flex-start}
 .self-more:hover{text-decoration:underline}
+/* ===== 对话规则：schema 渲染的行 ===== */
+.talk-row{align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line)}
+.talk-row:last-child{border-bottom:0}
+.talk-left{flex:1;min-width:0}
+.talk-name{font-size:12.5px;color:var(--text);line-height:1.5}
+.talk-hint{font-size:11px;color:var(--dim2);line-height:1.55;margin-top:2px}
+.talk-right{flex:none;display:flex;align-items:center;gap:6px}
+.talk-right .self-select{min-width:132px}
+.talk-unit{font-size:11px;color:var(--dim2)}
+.talk-requires-tip{font-size:10.5px;color:var(--dim2);margin-top:3px}
+.talk-disabled .talk-name,.talk-disabled .talk-hint{opacity:.45}
+.talk-adv{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px}
+.talk-adv summary{cursor:pointer;font-size:11.5px;color:var(--dim);padding:3px 0;user-select:none}
+.talk-adv summary:hover{color:var(--text)}
 /* ===== 自我页：角色卡 / 状态页专用 ===== */
 .self-status-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:stretch}
 @media (max-width:1100px){.self-status-grid{grid-template-columns:1fr}}
@@ -3261,8 +3275,194 @@ function renderSelfThinkPage(body, d) {
 
 /* ============================================================
  * 6. 对话规则（全局）
+ *
+ * 两套东西并存：
+ *   - 「它能自己改自己的设定吗」+「不能越的线」还是老样子（各走各的接口）
+ *   - 中间那一大块（说什么、怎么说、什么时候不说）改成 **由后端 schema 渲染**
+ *
+ * 为什么改成 schema：原来是每个字段手写一段 DOM + 前端字段映射 + 后端白名单，
+ * 一个配置项要改三处，于是 105 个配置项里只有 26 个有界面。
+ * 现在前端只认字段类型（开关 / 选择 / 数字），加一项只改 talk-schema.ts。
  * ============================================================ */
-function renderSelfTalkPage(body, d) {
+
+/** 拉一次 schema + 当前值，缓存在这里；改一项就局部更新，不整页重绘 */
+let TALK_CACHE = null
+
+async function loadTalkRules(force) {
+  if (TALK_CACHE && !force) return TALK_CACHE
+  const d = await api('/api/talk-rules')
+  TALK_CACHE = d
+  return d
+}
+
+/**
+ * 改写一项。成功就更新缓存，失败提示并把控件还原。
+ * 逐项保存而不是"整页提交"：改一个开关还要等用户点保存，很容易忘。
+ */
+async function saveTalkField(path, value, onFail) {
+  try {
+    const r = await sendJson('/api/talk-rules', { values: { [path]: value } }, 'PUT')
+    if (r && r.ok === false) throw new Error(r.error || '保存失败')
+    if (TALK_CACHE && TALK_CACHE.values) TALK_CACHE.values[path] = value
+    toast('已保存')
+    refreshTalkRequires()
+  } catch (e) {
+    if (onFail) onFail()
+    alert('保存失败：' + (e && e.message ? e.message : String(e)))
+  }
+}
+
+/** 联动：requires 不满足时禁用控件并提示 */
+function refreshTalkRequires() {
+  if (!TALK_CACHE) return
+  const boxes = document.querySelectorAll('[data-requires-path]')
+  for (const box of boxes) {
+    const reqPath = box.getAttribute('data-requires-path')
+    const reqEq = box.getAttribute('data-requires-eq')
+    const cur = TALK_CACHE.values ? TALK_CACHE.values[reqPath] : undefined
+    const ok = String(cur) === String(reqEq)
+    const ctrl = box.querySelector('select, input, button')
+    if (ctrl) ctrl.disabled = !ok
+    box.classList.toggle('talk-disabled', !ok)
+    const tip = box.querySelector('.talk-requires-tip')
+    if (tip) tip.style.display = ok ? 'none' : ''
+  }
+}
+
+/** 一个设置项 → 一行控件 */
+function talkRow(field, values) {
+  const wrap = el('div', 'self-field talk-row')
+  wrap.setAttribute('data-path', field.path)
+  if (field.requires) {
+    wrap.setAttribute('data-requires-path', field.requires.path)
+    wrap.setAttribute('data-requires-eq', String(field.requires.equals))
+  }
+
+  const left = el('div', 'talk-left')
+  left.appendChild(el('div', 'talk-name', field.label))
+  if (field.hint) left.appendChild(el('div', 'talk-hint', field.hint))
+  if (field.requires) {
+    const tip = el(
+      'div',
+      'talk-requires-tip',
+      '要先把「' + field.requires.label + '」选成「自定义」才生效',
+    )
+    left.appendChild(tip)
+  }
+  wrap.appendChild(left)
+
+  const right = el('div', 'talk-right')
+  const cur = values ? values[field.path] : undefined
+
+  if (field.kind === 'switch') {
+    const on = cur === true
+    const btn = el('button', 'mini-btn', on ? '已开启' : '已关闭')
+    btn.style.color = on ? 'var(--green)' : 'var(--dim)'
+    btn.style.borderColor = on ? 'rgba(63,185,80,.4)' : ''
+    btn.onclick = () => {
+      const next = !(TALK_CACHE.values[field.path] === true)
+      saveTalkField(field.path, next, () => {})
+      TALK_CACHE.values[field.path] = next
+      btn.textContent = next ? '已开启' : '已关闭'
+      btn.style.color = next ? 'var(--green)' : 'var(--dim)'
+      btn.style.borderColor = next ? 'rgba(63,185,80,.4)' : ''
+    }
+    right.appendChild(btn)
+  } else if (field.kind === 'choice') {
+    const sel = el('select', 'self-select')
+    for (const o of field.options || []) {
+      const op = document.createElement('option')
+      op.value = String(o.value)
+      op.textContent = o.label
+      sel.appendChild(op)
+    }
+    if (field.path === '行为.静默时段') {
+      const v = Array.isArray(cur) && cur.length === 2 ? cur[0] + '|' + cur[1] : 'none'
+      const has = [...sel.options].some((o) => o.value === v)
+      sel.value = has ? v : String((field.options || [])[0].value)
+    } else {
+      sel.value = String(cur)
+      if (sel.selectedIndex < 0) sel.selectedIndex = 0
+    }
+    sel.onchange = () => {
+      const rawVal = sel.value
+      const hit = (field.options || []).find((o) => String(o.value) === rawVal)
+      const prev = TALK_CACHE.values[field.path]
+      saveTalkField(field.path, hit ? hit.value : rawVal, () => {
+        sel.value = Array.isArray(prev) && prev.length === 2 ? prev[0] + '|' + prev[1] : String(prev)
+      })
+    }
+    right.appendChild(sel)
+  } else {
+    const inp = el('input', 'self-input num')
+    inp.type = 'number'
+    if (field.step != null) inp.step = String(field.step)
+    if (field.min != null) inp.min = String(field.min)
+    if (field.max != null) inp.max = String(field.max)
+    inp.style.width = '90px'
+    inp.value = cur == null ? '' : String(cur)
+    inp.onchange = () => {
+      const n = Number(inp.value)
+      if (!Number.isFinite(n)) {
+        inp.value = String(TALK_CACHE.values[field.path] ?? '')
+        return
+      }
+      saveTalkField(field.path, n, () => {
+        inp.value = String(TALK_CACHE.values[field.path] ?? '')
+      })
+    }
+    right.appendChild(inp)
+    if (field.unit) right.appendChild(el('span', 'talk-unit', field.unit))
+  }
+
+  wrap.appendChild(right)
+  return wrap
+}
+
+/** 用 schema 把整块渲染出来（按 group 分卡片，advanced 收进折叠区） */
+async function renderTalkRulesSection(body) {
+  let d
+  try {
+    d = await loadTalkRules(true)
+  } catch (e) {
+    const c = selfCard('对话规则', '加载失败')
+    c.appendChild(el('div', 'self-item muted', '读不到 /api/talk-rules：' + (e && e.message ? e.message : e)))
+    body.appendChild(c)
+    return
+  }
+
+  const groups = new Map()
+  for (const f of d.fields || []) {
+    if (!groups.has(f.group)) groups.set(f.group, { basic: [], advanced: [] })
+    groups.get(f.group)[f.level === 'advanced' ? 'advanced' : 'basic'].push(f)
+  }
+
+  for (const [group, buckets] of groups) {
+    const c = selfCard(group, '改完立即生效')
+    for (const f of buckets.basic) c.appendChild(talkRow(f, d.values))
+    if (buckets.advanced.length) {
+      const det = document.createElement('details')
+      det.className = 'talk-adv'
+      const sum = document.createElement('summary')
+      sum.textContent = '高级（' + buckets.advanced.length + ' 项）'
+      det.appendChild(sum)
+      for (const f of buckets.advanced) det.appendChild(talkRow(f, d.values))
+      c.appendChild(det)
+    }
+    body.appendChild(c)
+  }
+
+  if (Array.isArray(d.warnings) && d.warnings.length) {
+    const c = selfCard('配置有问题', '不影响使用，但建议看一眼')
+    for (const w of d.warnings.slice(0, 5)) c.appendChild(el('div', 'self-item muted', String(w)))
+    c.appendChild(el('div', 'self-item muted', '想直接改原文：设置 → 对话规则（YAML）。'))
+    body.appendChild(c)
+  }
+
+  refreshTalkRequires()
+}
+
+async function renderSelfTalkPage(body, d) {
   const speech = d.说话方式 || {}
   const coreList = d.coreList || []
 
@@ -3308,137 +3508,11 @@ function renderSelfTalkPage(body, d) {
     body.appendChild(c)
   }
 
-  {
-    const c = selfCard('说话方式', '改完立即生效')
-    const form = el('div', 'self-form')
-
-    const mkNum = (id, val, step, min, max) => {
-      const i = el('input', 'self-input num')
-      i.id = id
-      i.type = 'number'
-      i.step = step
-      i.min = String(min)
-      i.max = String(max)
-      i.value = String(val ?? '')
-      return i
-    }
-    const piece = (nodes) => {
-      const s = el('span', 'self-piece')
-      for (const n of nodes) s.appendChild(typeof n === 'string' ? document.createTextNode(n) : n)
-      return s
-    }
-
-    // 每行一个语义组。之前 5 组（每轮/每条/间隔/前等/引用）全挤在一行，
-    // 数字框和单位贴在一起，分不清哪个数属于哪一项。
-    const sel = el('select', 'self-select')
-    sel.id = 'talk-quote'
-    sel.style.width = '110px'
-    sel.style.flex = 'none'
-    for (const [v, label] of [
-      ['never', '从不引用'],
-      ['occasionally', '偶尔引用'],
-      ['often', '经常引用'],
-    ]) {
-      const o = document.createElement('option')
-      o.value = v
-      o.textContent = label
-      sel.appendChild(o)
-    }
-    sel.value = speech.引用频率 || 'occasionally'
-
-    const gapMs = Array.isArray(speech.条间延迟) ? speech.条间延迟 : [400, 1500]
-    const beforeMs = Array.isArray(speech.回复前延迟) ? speech.回复前延迟 : [1000, 4000]
-    const mkRow = (label, nodes) => {
-      const r = el('div', 'self-field')
-      r.appendChild(el('label', '', label))
-      for (const n of nodes) r.appendChild(n)
-      return r
-    }
-
-    form.appendChild(mkRow('每轮', [piece([mkNum('talk-max', speech.每轮最多条数, '1', 1, 10), ' 条'])]))
-    form.appendChild(mkRow('每条', [piece([mkNum('talk-chars', speech.每条最多字数, '5', 1, 500), ' 字'])]))
-    form.appendChild(
-      mkRow('间隔', [
-        piece([
-          mkNum('talk-gap0', (Number(gapMs[0]) / 1000).toFixed(1), '0.1', 0, 60),
-          ' ~ ',
-          mkNum('talk-gap1', (Number(gapMs[1]) / 1000).toFixed(1), '0.1', 0, 60),
-          ' 秒',
-        ]),
-      ]),
-    )
-    form.appendChild(
-      mkRow('前等', [
-        piece([
-          mkNum('talk-before0', (Number(beforeMs[0]) / 1000).toFixed(1), '0.1', 0, 60),
-          ' ~ ',
-          mkNum('talk-before1', (Number(beforeMs[1]) / 1000).toFixed(1), '0.1', 0, 60),
-          ' 秒',
-        ]),
-      ]),
-    )
-    form.appendChild(mkRow('引用', [sel]))
-    c.appendChild(form)
-
-    const acts = el('div', 'self-acts')
-    const save = el('button', 'btn pri', '保存说话方式')
-    save.onclick = () => saveTalkStyle()
-    acts.appendChild(save)
-    c.appendChild(acts)
-    body.appendChild(c)
-  }
-
-  /* ---- 群里怎么参与（三档，写 rules.yaml 的 行为.群聊模式） ---- */
-  {
-    const cur = d.群聊模式 || '熟人续话'
-    const c = selfCard(
-      '群里怎么参与',
-      cur === '只听' ? '只在被叫时出现' : cur === '自己判断' ? '会自己找话接' : '熟人可以接着聊',
-    )
-    const form = el('div', 'self-form')
-    const sel = el('select', 'self-select')
-    sel.id = 'talk-group-mode'
-    sel.style.width = '100%'
-    for (const [v, label] of [
-      ['只听', '只听 —— 只有 @ 或叫我名字时才回'],
-      ['熟人续话', '熟人续话 —— @/叫名字，以及刚聊过的人可以接着聊（默认）'],
-      ['自己判断', '自己判断 —— 不 @ 也按内容决定要不要接（最活跃）'],
-    ]) {
-      const o = document.createElement('option')
-      o.value = v
-      o.textContent = label
-      sel.appendChild(o)
-    }
-    sel.value = cur
-    const row = el('div', 'self-field')
-    row.appendChild(el('label', '', '模式'))
-    row.appendChild(sel)
-    form.appendChild(row)
-    form.appendChild(
-      el(
-        'div',
-        'self-item muted',
-        '这一项就是「群里要不要 @ 才回」的总开关。设置里的「必须 @」会自动跟着它变。' +
-          '「自己判断」还会用到「发言频率」和退避：越活跃越容易接话，冷场时会自己安静下来。',
-      ),
-    )
-    c.appendChild(form)
-
-    const acts = el('div', 'self-acts')
-    const save = el('button', 'btn pri', '保存')
-    save.onclick = async () => {
-      try {
-        await sendJson('/api/talk-style', { 群聊模式: sel.value }, 'PUT')
-        toast('已保存，下一条群消息就生效')
-        await loadSelfV2()
-      } catch (e) {
-        alert('失败：' + e.message)
-      }
-    }
-    acts.appendChild(save)
-    c.appendChild(acts)
-    body.appendChild(c)
-  }
+  // 说话方式 / 记忆 / 不打扰：由 talk-schema.ts 驱动
+  //
+  // ⚠ 必须 await：这段是异步拉 schema 的，不 await 的话它的卡片会被 append
+  // 到后面同步渲染的「不能越的线」之后 —— 顺序就乱了（实测踩过）。
+  await renderTalkRulesSection(body)
 
   {
     const c = selfCard('不能越的线', '只有你能改，它只能提申请')
