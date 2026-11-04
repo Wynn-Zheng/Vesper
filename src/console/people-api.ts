@@ -221,44 +221,6 @@ async function handlePeopleApiInner(
     json(res, 200, { ok: true, suggested })
     return true
   }
-
-  /* ============ 确认 / 取消确认一条事实 ============ */
-  if (method === 'POST' && path === '/api/person/fact/confirm') {
-    const raw = JSON.parse((await readBody(req)) || '{}') as unknown
-    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { id?: unknown; index?: unknown; confirmed?: unknown }) : {}
-    const id = String(body.id ?? '')
-    const indexValue = body.index
-    const index =
-      typeof indexValue === 'number'
-        ? indexValue
-        : typeof indexValue === 'string' && indexValue.trim()
-          ? Number(indexValue)
-          : Number.NaN
-    const { isValidPersonId, loadPerson } = await import('../people/store.ts')
-    if (!isValidPersonId(id)) {
-      json(res, 400, { error: 'id 不对' })
-      return true
-    }
-    if (!Number.isInteger(index) || index < 0) {
-      json(res, 400, { error: 'index 不对' })
-      return true
-    }
-    if (!loadPerson(id)) {
-      json(res, 404, { error: '没有这个人的档案' })
-      return true
-    }
-
-    // 用户确认过 → me；取消 → it。其他值一律按取消处理，和 body 的布尔语义一致。
-    const by: 'it' | 'me' = body.confirmed === true ? 'me' : 'it'
-    const { setFactBy } = await import('../memory/facts.ts')
-    if (!setFactBy(id, index, by)) {
-      json(res, 404, { error: '没有这条事实' })
-      return true
-    }
-    json(res, 200, { ok: true, index, by })
-    return true
-  }
-
   /* ============ 建档 ============ */
   if (method === 'POST' && path === '/api/person/create') {
     const body = JSON.parse((await readBody(req)) || '{}') as { accountId?: string; name?: string }
@@ -272,81 +234,6 @@ async function handlePeopleApiInner(
     const already = !!loadPerson(`qq-${accountId}`)
     ensurePerson('qq', accountId, body.name?.trim() || undefined)
     json(res, 200, { ok: true, id: `qq-${accountId}`, already })
-    return true
-  }
-
-  /* ============ 改名 ============ */
-  if (method === 'PUT' && path === '/api/person/name') {
-    const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; name?: string }
-    const id = String(body.id ?? '')
-    const name = String(body.name ?? '').trim()
-    if (!name) {
-      json(res, 400, { error: '名字不能空' })
-      return true
-    }
-    if (name.length > 40) {
-      json(res, 400, { error: '名字太长' })
-      return true
-    }
-
-    const { isValidPersonId, loadPerson, savePerson } = await import('../people/store.ts')
-    if (!isValidPersonId(id)) {
-      json(res, 400, { error: 'id 不对' })
-      return true
-    }
-    const meta = loadPerson(id)
-    if (!meta) {
-      json(res, 404, { error: '没有这个人的档案' })
-      return true
-    }
-    savePerson({ ...meta, name })
-    json(res, 200, { ok: true })
-    return true
-  }
-
-  /* ============ 改关系标签 / 锁名字 ============ */
-  if (method === 'PUT' && path === '/api/person/role') {
-    const raw = JSON.parse((await readBody(req)) || '{}') as unknown
-    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as { id?: unknown; role?: unknown; nameLocked?: unknown }) : {}
-    const id = String(body.id ?? '')
-    const hasRole = Object.prototype.hasOwnProperty.call(body, 'role')
-    const hasLock = Object.prototype.hasOwnProperty.call(body, 'nameLocked')
-    if (!hasRole && !hasLock) {
-      json(res, 400, { error: '要给 role 或 nameLocked' })
-      return true
-    }
-
-    const { isValidPersonId, isPersonRole, loadPerson, savePerson } = await import('../people/store.ts')
-    if (!isValidPersonId(id)) {
-      json(res, 400, { error: 'id 不对' })
-      return true
-    }
-
-    // 先校验完再写盘：两个字段一起传时，坏的那个不能留下半截修改。
-    if (hasRole && !isPersonRole(body.role)) {
-      json(res, 400, { error: 'role 只能是 主人/朋友/同事/网友/陌生人' })
-      return true
-    }
-    if (hasLock && typeof body.nameLocked !== 'boolean') {
-      json(res, 400, { error: 'nameLocked 只能是 true / false' })
-      return true
-    }
-
-    const meta = loadPerson(id)
-    if (!meta) {
-      json(res, 404, { error: '没有这个人的档案' })
-      return true
-    }
-
-    const next = { ...meta }
-    if (hasRole) next.role = body.role as string
-    if (hasLock) next.nameLocked = body.nameLocked as boolean
-    savePerson(next)
-    json(res, 200, {
-      ok: true,
-      ...(next.role !== undefined ? { role: next.role } : {}),
-      ...(next.nameLocked !== undefined ? { nameLocked: next.nameLocked } : {}),
-    })
     return true
   }
 
@@ -381,48 +268,6 @@ async function handlePeopleApiInner(
   }
 
   /* ============ 改关系 ============ */
-  // 只有 closeness 是数字；四维只存事件，不能改
-  if (method === 'PUT' && path === '/api/person/relation') {
-    const body = JSON.parse((await readBody(req)) || '{}') as { id?: string; closeness?: number }
-    const id = String(body.id ?? '')
-    const { isValidPersonId } = await import('../people/store.ts')
-    if (!isValidPersonId(id)) {
-      json(res, 400, { error: 'id 不对' })
-      return true
-    }
-    const n = Number(body.closeness)
-    if (!Number.isFinite(n)) {
-      json(res, 400, { error: 'closeness 不是数字' })
-      return true
-    }
-
-    const { loadRelation, saveRelation } = await import('../relation/store.ts')
-    const rel = loadRelation(id)
-    const closeness = Math.min(100, Math.max(0, Math.round(n)))
-    saveRelation(id, { ...rel, closeness })
-    json(res, 200, { ok: true, closeness })
-    return true
-  }
-
-  /* ============ 删档案 ============ */
-  if (method === 'DELETE' && path === '/api/person') {
-    const id = url.searchParams.get('id') ?? ''
-    const { isValidPersonId, clearPersonCache } = await import('../people/store.ts')
-    if (!isValidPersonId(id)) {
-      json(res, 400, { error: 'id 不对' })
-      return true
-    }
-
-    const { snapshot } = await import('../persona/version.ts')
-    snapshot('before-delete-person')
-
-    const { rmSync, existsSync } = await import('node:fs')
-    const dir = `persona/people/${id}`
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
-    clearPersonCache()
-    json(res, 200, { ok: true })
-    return true
-  }
 
   return false
 }
