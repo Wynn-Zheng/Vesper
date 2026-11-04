@@ -386,7 +386,14 @@
         }
       }
       try {
-        const t = new URLSearchParams(location.search).get('token') || ''
+        // token 只在地址栏里取是不够的：用「记住登录」进来的页面 URL 上没有 token，
+        // 于是插件面板和表情库一律 401。index.html 已经把 token 放在 window.__token
+        // 并写进 localStorage('qqbot-token')，这里按同一条链回落。
+        const t =
+          (typeof window.__token === 'string' && window.__token) ||
+          new URLSearchParams(location.search).get('token') ||
+          localStorage.getItem('qqbot-token') ||
+          ''
         const r = await fetch('/api/plugins/call', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-console-token': t },
