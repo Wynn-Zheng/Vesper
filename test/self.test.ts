@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { buildSelfBlock, buildPhaseBlock } from '../src/self/format.ts'
+import { detectRenameFromRecent } from '../src/self/reflect.ts'
 import { appendLife, loadLife, loadSelf, recentLife, saveSelf, setSelfFiles } from '../src/self/store.ts'
 import { DEFAULTS } from '../src/core/config.ts'
 
@@ -83,4 +84,31 @@ test('白天状态块为空', () => {
 test('自我块不含作息（作息移到末尾，避免破坏 prompt 缓存）', () => {
   const block = buildSelfBlock(DEFAULTS, at(2))
   assert.ok(!block.includes('困'))
+})
+
+/* ---------------- 改名识别 ---------------- */
+
+test('改名识别：日常闲聊不会被当成改名', () => {
+  const say = (text: string) => detectRenameFromRecent([{ role: 'user', text }])
+  // 以前正则里「你/它」是可选的，这三句都会被当成改名（候选=外卖/红烧肉/什么）
+  assert.equal(say('今天叫了个外卖'), '')
+  assert.equal(say('这菜叫红烧肉'), '')
+  assert.equal(say('你叫什么名字'), '')
+})
+
+test('改名识别：「以后叫你 X」一次就生效', () => {
+  const say = (text: string) => detectRenameFromRecent([{ role: 'user', text }])
+  assert.equal(say('以后叫你小鱼'), '小鱼')
+  assert.equal(say('以后叫你小鱼吧'), '小鱼')
+})
+
+test('改名识别：只说过一次「叫你 X」不算，两次才算', () => {
+  assert.equal(detectRenameFromRecent([{ role: 'user', text: '叫你小鱼' }]), '')
+  assert.equal(
+    detectRenameFromRecent([
+      { role: 'user', text: '叫你小鱼' },
+      { role: 'user', text: '那就叫你小鱼' },
+    ]),
+    '小鱼',
+  )
 })

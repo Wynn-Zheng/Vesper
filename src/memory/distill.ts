@@ -425,7 +425,9 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
     .map((f) => ({ text: `想问问他「${f.text}」这事能不能跟别人提`, date, kind: 'pending' as const }))
 
   const allOpen = [...opens, ...conflicts, ...askPermissions]
-  if (isPrivate && allOpen.length) {
+  // 群聊也要写：以前只在私聊写（`isPrivate &&`），于是群里听到的事
+  // 永远进不了「待办/待问」，而 distill 的 prompt 明确承诺了会记下来。
+  if (allOpen.length) {
     appendOpen(opts.personId, allOpen)
     result.open = allOpen.length
   }

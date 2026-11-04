@@ -131,24 +131,38 @@ export interface SelfReflectOptions {
  * 为什么不交给模型判断：实测把原话喂进去、prompt 也写了"主人说了就照办"，
  * 它仍然返回空字符串 —— 这种事不该靠概率。
  */
-function detectRenameFromRecent(turns: Array<{ role: string; text: string }>): string {
-  // 只要用户说的；从新到旧找第一条命中的
+/** 容易被当成名字的常用词（「叫外卖吧」「叫同学来」） */
+const RENAME_STOP = new Set([
+  '外卖', '快递', '同学', '朋友', '老师', '师傅', '老板', '阿姨', '叔叔', '爷爷', '奶奶',
+  '一声', '一下', '起来', '出来', '名字', '什么', '名字吗', '我', '你', '它', '他', '她',
+])
+
+export function detectRenameFromRecent(turns: Array<{ role: string; text: string }>): string {
+  // 只要用户说的；从新到旧找
   const users = turns.filter((t) => t.role === 'user')
+  const counts = new Map<string, { n: number; explicit: boolean }>()
   for (let i = users.length - 1; i >= 0; i--) {
     const t = users[i]!.text.replace(/\s+/g, ' ')
+    // 必须出现「叫你 / 叫它」这种明确的称呼动作。
+    // 以前 `叫(?:你|它)?` 里的「你/它」是可选的，于是「今天叫了个外卖」「这菜叫红烧肉」
+    // 都算改名——有个用户的角色名被改成了菜名。
+    // 另外候选限制 2–4 字（名字不会是一个字，也不可能是一句话）。
     const m =
-      /(?:以后|就|那就)?叫(?:你|它)?\s*[「"']?([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]{0,7}?)(?=[吧啊呀呢了哦嘛，。！？\s]|$)/.exec(
+      /(?:以后|从今往后|就|那就)?(?:叫|喊)(?:你|它)\s*[「"']?([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z0-9]{1,3})(?=[吧啊呀呢了哦嘛，。！？\s]|$)/.exec(
         t,
       )
-    if (m) {
-      // 兜底再剥一次句末语气词："小鱼吧" → "小鱼"
-      const cand = m[1]!.replace(/[吧啊呀呢了哦嘛]$/, '').trim()
-      // 挡掉疑问词和代词："你叫什么"→什么、"那你叫我什么"→我什么
-      if (/(什么|啥|谁|哪|怎么|多少)/.test(cand)) continue
-      if (/^(我|你|他|她|它|人|一声|一下|一声声)$/.test(cand)) continue
-      if (cand.length >= 1) return cand
-    }
+    if (!m) continue
+    const cand = m[1]!.replace(/[吧啊呀呢了哦嘛]$/, '').trim()
+    if (cand.length < 2 || cand.length > 4) continue
+    if (/(什么|啥|谁|哪|怎么|多少)/.test(cand)) continue
+    if (RENAME_STOP.has(cand)) continue
+    const explicit = /以后|从今往后/.test(t)
+    const cur = counts.get(cand) ?? { n: 0, explicit: false }
+    counts.set(cand, { n: cur.n + 1, explicit: cur.explicit || explicit })
   }
+  // 说了「以后叫你 X」一次就算数；只说「叫你 X」要出现两次，
+  // 免得一次口误（"叫他小心点"）就把名字改了。
+  for (const [name, v] of counts) if (v.n >= 2 || v.explicit) return name
   return ''
 }
 export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
