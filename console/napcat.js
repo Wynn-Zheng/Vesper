@@ -19,6 +19,13 @@
     const panel = document.getElementById('nc-login-panel')
     if (!panel) return
 
+    // 桌面壳里"在浏览器打开 WebUI"没有意义（点的还是同一个地址，只是跳出应用），
+    // 直接藏掉。浏览器打开控制台时 desktopShell 不存在，按钮照旧。
+    if (window.desktopShell && window.desktopShell.isDesktop) {
+      const webBtn = document.getElementById('nc-btn-webui')
+      if (webBtn) webBtn.style.display = 'none'
+    }
+
     try {
       // 顺手把日志开关和安装目录同步一下
       loadLogSetting().catch(() => {})

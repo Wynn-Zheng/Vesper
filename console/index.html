@@ -873,7 +873,7 @@
             <button class="mini-btn" id="nc-btn-start" onclick="napcatAction('start')" style="display:none">启动</button>
             <button class="mini-btn" id="nc-btn-restart" onclick="napcatAction('restart')" style="display:none">重启</button>
             <button class="mini-btn" id="nc-btn-stop" onclick="napcatAction('stop')" style="display:none">停止</button>
-            <button class="mini-btn" onclick="openNapcatWeb()">在浏览器打开 WebUI</button>
+            <button class="mini-btn" id="nc-btn-webui" onclick="openNapcatWeb()">在浏览器打开 WebUI</button>
           </div>
 
           <!-- 安装目录：留空就自动探测，探测不到让用户手填 -->
@@ -4203,11 +4203,18 @@ async function loadAbility() {
     box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>'
   }
 
-  // 外部插件面板：失败不影响内置那部分
-  try {
-    window.renderPlugins?.()
-  } catch {
-    /* 插件面板挂了不影响内置能力列表 */
+  // 外部插件面板：失败不影响内置那部分。
+  // 以前是 window.renderPlugins?.()，plugins.js 404 时静默什么都不发生，
+  // 用户只看到能力页少了"插件"这块，也不知道是脚本没加载。
+  if (typeof window.renderPlugins === 'function') {
+    try {
+      window.renderPlugins()
+    } catch (e) {
+      console.warn('插件面板渲染失败', e)
+    }
+  } else {
+    const box2 = document.getElementById('plugins-panel')
+    if (box2) box2.innerHTML = '<div class="empty">插件面板没加载成功（console/plugins.js 可能 404）</div>'
   }
 }
 
