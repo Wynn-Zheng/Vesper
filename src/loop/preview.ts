@@ -1,5 +1,4 @@
 import type { Rules } from '../core/config.ts'
-import type { Target } from '../core/types.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { chat } from '../llm/deepseek.ts'
 import { recall, renderRecalled } from '../memory/recall.ts'
@@ -135,7 +134,3 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
   }
 }
 
-/** 保留旧签名兼容：传 Target 的场景 */
-export function previewForTarget(text: string, opts: PreviewOptions & { from: Target }): Promise<PreviewResult> {
-  return previewReply(text, { ...opts, accountId: opts.from.id })
-}
