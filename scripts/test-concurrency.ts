@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 并发与数据完整性检查。
  * 这些是最难靠读代码发现的问题：单线程跑一万次都正常，两个撞一起才暴露。
  */
@@ -15,7 +15,7 @@ function envToken(): string {
   }
 }
 
-const BASE = 'http://127.0.0.1:7788'
+const BASE = `http://127.0.0.1:${process.env.CONSOLE_PORT ?? '7788'}`
 const TOKEN = envToken()
 
 const H = { 'x-console-token': TOKEN, 'Content-Type': 'application/json' }

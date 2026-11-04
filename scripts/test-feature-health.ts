@@ -33,7 +33,11 @@ console.log('=== 1. 配置 ===')
 {
   const loaded = cfg.loadRules()
   check('rules.yaml 能加载', loaded.rules !== undefined)
-  check('无配置警告', loaded.warnings.length === 0, loaded.warnings.join('; '))
+  // 用户改过 rules.yaml 会有告警，这是正常的；以前把它当硬失败，
+  // 于是「按对话规则页改配置」就会让整项检查变红。
+  if (loaded.warnings.length) {
+    console.log(`  提示：配置有 ${loaded.warnings.length} 条告警（不影响本检查）：${loaded.warnings.slice(0, 3).join('; ')}`)
+  }
 
   // 每个顶层键都有值
   const keys = Object.keys(loaded.rules)
@@ -60,16 +64,18 @@ console.log('=== 1. 配置 ===')
 /* ============ 2. 消息过滤 ============ */
 console.log('\n=== 2. 消息过滤 ===')
 {
-  // shouldDrop 是 boot.ts 的内部函数，这里用配置语义验证
+  // 调真实实现：以前这里徒手重写了一遍过滤语义（`text.includes(屏蔽词)`），
+  // 实际 boot.shouldDrop 还处理了空串、坏正则、有序遍历，重写的版本永远测不到这些。
+  const { shouldDrop } = await import('../src/boot.ts')
   const r = { ...rules, 消息过滤: { 屏蔽词: ['广告'], 屏蔽正则: ['^\\d+$'] } }
-  check('屏蔽词配置能设置', r.消息过滤.屏蔽词.includes('广告'))
-  check('屏蔽正则配置能设置', r.消息过滤.屏蔽正则.length === 1)
-
-  // 用正则自测语义
-  const re = new RegExp(r.消息过滤.屏蔽正则[0]!)
-  check('正则能匹配纯数字', re.test('12345'))
-  check('正则不匹配正常文本', !re.test('你好'))
-  check('屏蔽词能匹配广告', '这是广告'.includes('广告'))
+  check('屏蔽词命中 → 丢弃', shouldDrop('这是广告', r) === true)
+  check('屏蔽正则命中 → 丢弃', shouldDrop('12345', r) === true)
+  check('正常文本 → 不丢', shouldDrop('你好', r) === false)
+  check('空白 → 不丢', shouldDrop('   ', r) === false)
+  check(
+    '坏正则不抛也不误丢',
+    shouldDrop('你好', { ...r, 消息过滤: { 屏蔽词: [], 屏蔽正则: ['('] } }) === false,
+  )
 }
 
 /* ============ 3. 关键词反应 ============ */
@@ -187,7 +193,12 @@ console.log('\n=== 9. 表达学习 ===')
   const plays = await import('../src/learn/plays.ts')
   const list = plays.loadPlays()
   check('能读经验库', Array.isArray(list))
-  check(`现有 ${list.length} 条经验`, list.length >= 0)
+  // 以前是 `list.length >= 0`——恒真，等于没断言。改成结构校验：
+  // 空库也应该通过，但只要有一条缺字段就算坏。
+  check(
+    `经验条目结构正确（${list.length} 条）`,
+    list.every((p) => typeof p.scene === 'string' && typeof p.reply === 'string' && typeof p.score === 'number'),
+  )
   const relevant = plays.relevantPlays('你好', 3)
   check('能按场景召回', Array.isArray(relevant))
 }
@@ -228,7 +239,11 @@ console.log('\n=== 12. 自我 ===')
   const observe = await import('../src/self/observe.ts')
   const issues = observe.findIssues()
   check('findIssues 能跑', Array.isArray(issues))
-  check(`当前 ${issues.length} 条问题`, issues.length >= 0)
+  // 以前是 `issues.length >= 0`——恒真。改成逐条结构校验。
+  check(
+    `问题条目结构正确（${issues.length} 条）`,
+    issues.every((i) => i !== null && typeof i === 'object' && typeof (i as { id?: unknown }).id === 'string'),
+  )
 
   const will = await import('../src/self/will.ts')
   const w = will.loadWill()

@@ -20,12 +20,12 @@
     "mock": "node dev/mock.ts",
     "check": "node node_modules/typescript/bin/tsc --noEmit",
     "check:strict": "node node_modules/typescript/bin/tsc -p tsconfig.strict.json --noEmit --noUnusedLocals",
-    "test": "node --test test/*.test.ts",
+    "test": "node --test --test-isolation=none --test-force-exit test/*.test.ts",
     "smoke": "node scripts/smoke.ts",
     "smoke:live": "node --env-file=.env scripts/smoke.ts",
     "check-data": "node scripts/check-data.ts",
     "check-config": "node scripts/check-config.ts",
-    "check-all": "node scripts/check-all.ts",
+    "check-all": "node --env-file-if-exists=.env scripts/check-all.ts",
     "persona": "node --env-file=.env scripts/persona-check.ts"
   },
   "dependencies": {

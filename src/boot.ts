@@ -120,7 +120,7 @@ function shouldQuote(
 
 
 /** 命中了屏蔽词/正则就不该处理这条 */
-function shouldDrop(text: string, rules: Rules): boolean {
+export function shouldDrop(text: string, rules: Rules): boolean {
   const f = rules.消息过滤
   if (!f) return false
   const t = text.trim()

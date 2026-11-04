@@ -68,7 +68,9 @@ console.log('=== 1. 消息过滤 ===')
 console.log('\n=== 2. 私聊暂停 ===')
 {
   const rules = loadRules().rules
-  check('默认不暂停', rules.行为.私聊暂停 === false)
+  // 断言「代码默认值」，不用户 rules.yaml：用户按对话规则页改过配置后，
+  // 这里曾经必然失败，看起来像功能坏了，其实只是他改了配置。
+  check('代码默认不暂停', DEFAULTS.行为.私聊暂停 === false)
   const paused = withRules((r) => (r.行为.私聊暂停 = true))
   check('可以开', paused.行为.私聊暂停 === true)
 }
@@ -77,7 +79,7 @@ console.log('\n=== 2. 私聊暂停 ===')
 console.log('\n=== 3. 引用频率 ===')
 {
   const rules = loadRules().rules
-  check('默认 occasionally', rules.说话.引用频率 === 'occasionally')
+  check('代码默认 occasionally', DEFAULTS.说话.引用频率 === 'occasionally')
 
   // 三种取值的概率行为
   const never = withRules((r) => (r.说话.引用频率 = 'never'))
@@ -104,8 +106,9 @@ console.log('\n=== 3. 引用频率 ===')
 /* ============ 4. 退避 ============ */
 console.log('\n=== 4. 不回复退避 ===')
 {
-  const rules = loadRules().rules
-  const cfg = rules.行为.退避
+  // 用代码默认值算，不读用户配置：以前这里写死 15/30/120，正是把
+  // rules.yaml 的默认值抄进了断言，用户改配置就红。
+  const cfg = DEFAULTS.行为.退避
   check('退避配置存在', Boolean(cfg))
   check(`连几次开始 ${cfg.连几次开始}`, cfg.连几次开始 >= 1)
   check(`起始秒 ${cfg.起始秒} / 上限 ${cfg.上限秒}`, cfg.起始秒 > 0 && cfg.上限秒 >= cfg.起始秒)
@@ -117,9 +120,12 @@ console.log('\n=== 4. 不回复退避 ===')
     return Math.min(cfg.上限秒, cfg.起始秒 * Math.pow(2, step))
   }
   check('第 1 次不退避', waitOf(1) === 0)
-  check('第 2 次退避 15 秒', waitOf(2) === 15)
-  check('第 3 次退避 30 秒', waitOf(3) === 30)
-  check(`第 5 次退避 ${waitOf(5)} 秒（15×2^3=120）`, waitOf(5) === 120)
+  check(`第 2 次退避 ${cfg.起始秒} 秒`, waitOf(2) === cfg.起始秒)
+  check(`第 3 次退避 ${cfg.起始秒 * 2} 秒`, waitOf(3) === cfg.起始秒 * 2)
+  check(
+    `第 5 次退避 ${Math.min(cfg.上限秒, cfg.起始秒 * 8)} 秒`,
+    waitOf(5) === Math.min(cfg.上限秒, cfg.起始秒 * 8),
+  )
   check(`第 10 次封顶 ${waitOf(10)} 秒`, waitOf(10) === cfg.上限秒)
 }
 

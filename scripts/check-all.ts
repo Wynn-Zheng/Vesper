@@ -78,11 +78,11 @@ const STEPS: Step[] = [
   { name: '类型检查（严格）', cmd: 'node node_modules/typescript/bin/tsc -p tsconfig.strict.json --noEmit --noUnusedLocals', expect: /^$/ },
   {
     name: '单元测试',
-    cmd: 'node --test --test-isolation=none test/*.test.ts',
+    // 只保留单进程模式：本机（以及受限沙箱）里默认的「每文件一个子进程」会 spawn EPERM。
+    // 以前这里还有一条 fallback，但 fallback 和主命令完全相同，等于没有备选——
+    // 主命令失败时会原样再跑一遍，既慢又掩盖真实错误。
+    cmd: 'node --test --test-isolation=none --test-force-exit test/*.test.ts',
     expect: /ℹ fail 0/,
-    // 沙箱里测试运行器 spawn 子进程会 EPERM，退回单进程模式重跑
-    fallback: 'node --test --test-isolation=none test/*.test.ts',
-    fallbackWhen: /EPERM|spawn/,
   },
   { name: '冒烟', cmd: 'node scripts/smoke.ts', expect: /\d+ \/ \d+ 通过/ },
   { name: '数据体检', cmd: 'node scripts/check-data.ts', expect: /数据检查通过/ },
@@ -171,22 +171,42 @@ const STEPS: Step[] = [
   { name: '插件边界', cmd: 'node --env-file-if-exists=.env scripts/test-plugins-edge.ts', expect: /通过 \d+ \/ 失败 0/, live: true },
 ]
 
-const CONSOLE_URL = 'http://127.0.0.1:7788/api/status'
+/**
+ * 控制台端口：默认 7788，可用 CONSOLE_PORT 覆盖。
+ *
+ * 以前写死 7788：换个端口跑就永远「服务没在跑」，6 项 live 检查全被跳过，
+ * 而跳过又是绿色——两处错叠在一起，等于集成检查从来没真跑过。
+ */
+const CONSOLE_PORT = process.env.CONSOLE_PORT ?? '7788'
+const CONSOLE_URL = `http://127.0.0.1:${CONSOLE_PORT}/api/status`
 
+/**
+ * 服务是否**真的就绪**。
+ *
+ * 401 不算就绪：说明服务在，但 token 不对——后面 6 项 live 检查会全部 401，
+ * 与其「跳过」不如直接判环境没准备好（B-48）。用 `--env-file=.env` 跑本脚本可带上 CONSOLE_TOKEN。
+ */
 async function serviceUp(): Promise<boolean> {
+  const token = process.env.CONSOLE_TOKEN ?? ''
+  if (!token) {
+    console.log('⚠ 没读到 CONSOLE_TOKEN：live 检查会 401。请用 `node --env-file=.env scripts/check-all.ts`')
+  }
   try {
     const res = await fetch(CONSOLE_URL, {
-      headers: { 'x-console-token': process.env.CONSOLE_TOKEN ?? '' },
+      headers: { 'x-console-token': token },
       signal: AbortSignal.timeout(2000),
     })
-    return res.status === 200 || res.status === 401
+    return res.status === 200
   } catch {
     return false
   }
 }
 
+const ALLOW_SKIP = process.argv.includes('--allow-skip')
 const live = await serviceUp()
-if (!live) console.log('⚠ 控制台没在跑，跳过需要服务的检查\n')
+if (!live) {
+  console.log('⚠ 控制台没就绪（200 才算），需要服务的检查会被跳过\n')
+}
 
 interface Result {
   name: string
@@ -256,6 +276,14 @@ if (skipped.length) {
   console.log(`⚠ 有 ${skipped.length} 项需要服务、没跑（这些**不算验证过**）：`)
   for (const s of skipped) console.log(`  - ${s.name}`)
   console.log('  想跑全的话：先启动服务（node --env-file=.env src/index.ts），再执行本命令')
+}
+if (failed.length === 0 && skipped.length > 0 && !ALLOW_SKIP) {
+  // 跳过 = 没验证。以前这里 exit 0，于是「没起服务」也能拿到绿色和
+  // 「实际通过 77 项」的结论——集成部分一个接口都没打过。现在默认按失败处理，
+  // 只留 --allow-skip 给「本地只想跑静态检查」的场景。
+  console.log(`⚠ ${skipped.length} 项未验证，按失败退出（这些不算验证过）`)
+  console.log('  确认服务已启动并可带 token 访问；只跑静态检查时可加 --allow-skip')
+  process.exit(1)
 }
 if (failed.length === 0) {
   if (skipped.length) console.log(`实际通过：${ran} 项（另有 ${skipped.length} 项跳过）`)
