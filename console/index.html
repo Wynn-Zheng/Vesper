@@ -1712,6 +1712,9 @@ async function loadStatus() {
 const LOG_MAX = 300
 function addLog(rec, target) {
   const box = $(target)
+  // 目标容器不存在就直接返回：以前继续 box.appendChild 会抛 "Cannot read properties of null"，
+  // 在 JSON.parse 的 catch 里被吞掉，看起来像"日志一直不刷新"，很难查。
+  if (!box) return
   const row = el('div')
   const d = new Date(rec.ts)
   const t = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`
@@ -1731,7 +1734,6 @@ function connectEvents() {
       logFilter.rows.push(rec)
       if (logFilter.rows.length > LOG_MAX) logFilter.rows.shift()
       renderLogRows()
-      addLog(rec, 'mini-log')
     } catch {}
   }
   es.onopen = () => {
@@ -5391,7 +5393,6 @@ api('/api/logs/recent?n=200')
   .then((rows) => {
     for (const r of rows) {
       logFilter.rows.push(r)
-      addLog(r, 'mini-log')
     }
     renderLogRows()
   })
