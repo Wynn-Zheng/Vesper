@@ -4,7 +4,7 @@ import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
-import { GROUP_CHAT_MODES, asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
+import { asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
 import { TALK_FIELDS, readPath, validateTalkValues } from './talk-schema.ts'
 import { errorAt, info, warnAt, logBus, type LogRecord } from '../core/log.ts'
 import type { Transport } from '../core/transport.ts'
@@ -1608,89 +1608,6 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           writeAtomic('persona/rules.yaml', raw)
           info(`对话规则已更新 ${Object.keys(applied).length} 项`)
           json(res, 200, { ok: true, applied, ...(failed.length ? { failed } : {}) })
-        } catch (e) {
-          json(res, 500, { error: String(e) })
-        }
-        return
-      }
-
-      // 说话方式：写 rules.yaml 的 行为.回复（延迟用秒收，存毫秒）
-      if (req.method === 'PUT' && path === '/api/talk-style') {
-        const body = await readJson(req) as Record<string, unknown>
-        const { readFileSync } = await import('node:fs')
-        const { setConfigPath } = await import('./config-write.ts')
-        try {
-          let raw = readFileSync('persona/rules.yaml', 'utf8')
-          const applied: Record<string, unknown> = {}
-
-          const num = (key: string, min: number, max: number): void => {
-            const rawVal = body[key]
-            // Number(null) === 0 会通过 isFinite，把条数改成 1 —— 显式挡掉空值
-            if (rawVal === null || rawVal === undefined || rawVal === '') return
-            const n = Number(rawVal)
-            if (!Number.isFinite(n)) return
-            const v = Math.min(max, Math.max(min, Math.round(n)))
-            const r = setConfigPath(raw, '说话.' + key, v)
-            if (!r.ok) return
-            raw = r.text
-            applied[key] = v
-          }
-          const pick = (key: string, allowed: string[]): void => {
-            const v = String(body[key] ?? '')
-            if (!allowed.includes(v)) return
-            const r = setConfigPath(raw, '说话.' + key, v)
-            if (!r.ok) return
-            raw = r.text
-            applied[key] = v
-          }
-          const delay = (key: string): void => {
-            const arr = body[key]
-            if (!Array.isArray(arr) || arr.length !== 2) return
-            const toMs = (x: unknown): number => {
-              const n = Number(x)
-              return Number.isFinite(n) ? Math.min(60_000, Math.max(0, Math.round(n * 1000))) : 0
-            }
-            const a = toMs(arr[0])
-            const b = toMs(arr[1])
-            const v: [number, number] = a <= b ? [a, b] : [b, a]
-            const r = setConfigPath(raw, '说话.' + key, v)
-            if (!r.ok) return
-            raw = r.text
-            applied[key] = v
-          }
-
-          num('每轮最多条数', 1, 10)
-          num('每条最多字数', 1, 500)
-          pick('引用频率', ['never', 'occasionally', 'often'])
-          delay('条间延迟')
-          delay('回复前延迟')
-
-          // 群聊参与档位（行为.群聊模式，不是 说话.*）
-          {
-            const gv = String(body['群聊模式'] ?? '').trim()
-            if (gv) {
-              const mode = asGroupChatMode(gv)
-              if (!mode) {
-                json(res, 400, { error: `群聊模式不认识：${gv}（可选 ${GROUP_CHAT_MODES.join(' / ')}）` })
-                return
-              }
-              const r = setConfigPath(raw, '行为.群聊模式', mode)
-              if (!r.ok) {
-                json(res, 400, { error: '写不回 rules.yaml：' + (r.error ?? '找不到键') })
-                return
-              }
-              raw = r.text
-              applied['群聊模式'] = mode
-            }
-          }
-
-          if (!Object.keys(applied).length) {
-            json(res, 400, { error: '没有有效的值' })
-            return
-          }
-          const { writeAtomic: wr } = await import('../store/fs.ts')
-          wr('persona/rules.yaml', raw)
-          json(res, 200, { ok: true, applied })
         } catch (e) {
           json(res, 500, { error: String(e) })
         }
