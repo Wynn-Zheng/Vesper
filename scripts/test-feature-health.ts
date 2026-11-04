@@ -239,10 +239,12 @@ console.log('\n=== 12. 自我 ===')
   const observe = await import('../src/self/observe.ts')
   const issues = observe.findIssues()
   check('findIssues 能跑', Array.isArray(issues))
-  // 以前是 `issues.length >= 0`——恒真。改成逐条结构校验。
+  // 以前是 `issues.length >= 0`——恒真。改成逐条结构校验（Issue 的字段见 observe.ts）。
   check(
     `问题条目结构正确（${issues.length} 条）`,
-    issues.every((i) => i !== null && typeof i === 'object' && typeof (i as { id?: unknown }).id === 'string'),
+    issues.every(
+      (i) => typeof i.key === 'string' && typeof i.message === 'string' && (i.level === 'warn' || i.level === 'error'),
+    ),
   )
 
   const will = await import('../src/self/will.ts')

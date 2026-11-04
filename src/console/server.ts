@@ -696,13 +696,21 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
     // 现在面板只拿到自己的静态 HTML，要数据必须走 postMessage 桥（宿主代发）。
     // 这个页面不含任何数据，放行它不会泄露什么。
     if (
-      (req.method === 'GET' && /^\/(?:vendor\/)?[\w.-]+\.(js|css)$/.test(path)) ||
+      (req.method === 'GET' && /^\/[\w.-]+\.(js|css)$/.test(path)) ||
       (req.method === 'GET' && path === '/api/napcat/qrcode.png') ||
       (req.method === 'GET' && /^\/api\/plugins\/panel\/[A-Za-z0-9_-]{1,64}$/.test(path)) ||
       (req.method === 'GET' && (path === '/' || path === '/index.html'))
     ) {
-      // 二维码交给 misc-api（它知道 NapCat 装在哪）
+      // 二维码交给 misc-api（它知道 NapCat 装在哪）。
+      // 但它**不能**跟静态资源一样免鉴权：二维码就是登录凭据，谁扫到谁就能登这个 QQ。
+      // 以前它在这段放行里，等于同网段任何人都能拿到。
       if (path === '/api/napcat/qrcode.png') {
+        const remote = req.socket.remoteAddress ?? ''
+        const loop = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1'
+        if (!loop) {
+          text(res, 403, '二维码只允许本机查看（远程请走带 token 的控制台）')
+          return
+        }
         if (await handleMiscApi(req, res, path, url, json)) return
         text(res, 404, '没有二维码')
         return
@@ -774,7 +782,9 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       const wantsHtml = String(req.headers['accept'] ?? '').includes('text/html')
       if (wantsHtml && (req.method === 'GET' || req.method === 'HEAD')) {
         const hint = given ? '链接里的 token 不对（可能少复制了后半截）' : '链接里没有 token'
-        const full = given ? '' : `http://127.0.0.1:${opts.port}/?token=${opts.token}`
+        // 这里**不能**把完整 token 拼回页面：401 页是任何拿到地址的人都能打开的，
+        // 以前在未带 token 时直接渲染 `?token=<完整 token>`，等于把钥匙挂在门上
+        // （非本机监听时，同网段谁访问谁拿到）。只提示去哪里找。
         text(
           res,
           401,
@@ -782,10 +792,10 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 <body style="background:#0d1117;color:#e6edf3;font:15px/1.9 system-ui;padding:60px;max-width:720px">
 <h2 style="margin:0 0 8px">打不开控制台</h2>
 <p style="color:#8b949e;margin:0 0 20px">${hint}</p>
-${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="background:#161b22;border:1px solid #30363d;padding:6px 10px;border-radius:6px;display:inline-block;margin-top:6px;color:#79c0ff;word-break:break-all">${full}</code></p>` : ''}
 <p style="color:#8b949e;font-size:13px;margin:0">
 完整 token 在数据目录的 <code style="color:#79c0ff">.env</code> 里（<code>CONSOLE_TOKEN</code>），<br>
-也可以看后端启动日志里那句「控制台已启动」。
+也可以看后端启动日志里那句「控制台已启动」，<br>
+或者在那台机器上直接打开 <code style="color:#79c0ff">http://127.0.0.1:${opts.port}/</code>（本机访问免 token）。
 </p>
 </body>`,
           'text/html; charset=utf-8',
@@ -873,16 +883,21 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
       if (req.method === 'PUT' && path === '/api/access') {
         const body = await readBody(req)
         const data = JSON.parse(body || '{}') as Partial<AccessPolicy>
-        const clean = (v: unknown): string[] =>
-          Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : []
+        const cur = loadAccess()
+        /** 缺字段就沿用原值；只有真的传了数组才替换 */
+        const arr = (v: unknown, fallback: string[]): string[] =>
+          Array.isArray(v) ? [...new Set(v.map((x) => String(x).trim()).filter(Boolean))] : fallback
         const next: AccessPolicy = {
           // 没传就沿用当前值，别因为老前端不发这个字段就把总开关关了
-          allowGroup: typeof data.allowGroup === 'boolean' ? data.allowGroup : loadAccess().allowGroup,
-          groupAllow: clean(data.groupAllow),
-          groupDeny: clean(data.groupDeny),
-          memberAllow: clean(data.memberAllow),
-          memberDeny: clean(data.memberDeny),
-          requireAt: data.requireAt !== false,
+          allowGroup: typeof data.allowGroup === 'boolean' ? data.allowGroup : cur.allowGroup,
+          // 以前这里无条件 clean(data.xxx)：前端只发 groupDeny 时，
+          // groupAllow / memberAllow / memberDeny 会被写成空数组 —— 一次 PUT 清空白名单。
+          groupAllow: arr(data.groupAllow, cur.groupAllow),
+          groupDeny: arr(data.groupDeny, cur.groupDeny),
+          memberAllow: arr(data.memberAllow, cur.memberAllow),
+          memberDeny: arr(data.memberDeny, cur.memberDeny),
+          // 同理：以前 `data.requireAt !== false` 会把「没传」当成 true，强制开回必须 @。
+          requireAt: typeof data.requireAt === 'boolean' ? data.requireAt : cur.requireAt,
         }
         saveAccess(next)
 
@@ -2090,11 +2105,27 @@ ${full ? `<p style="margin:0 0 20px">用这个地址：<br><code style="backgrou
           json(res, 400, { error: '缺少 key' })
           return
         }
+        // key 会进入 YAML 文本定位逻辑（父级按 `.` 分段），必须限制字符集：
+        // 以前不校验，传 `a\n顶层键: 1` 能把新顶层键插进 rules.yaml，
+        // 下次启动整份配置会被这个未知键顶掉默认值。
+        if (key.length > 80 || key.split('.').length > 4 || !/^[\u4e00-\u9fa5A-Za-z0-9_][\u4e00-\u9fa5A-Za-z0-9_.]*$/.test(key)) {
+          json(res, 400, { error: 'key 不合法（只允许中文/字母/数字/下划线，最多 4 段）' })
+          return
+        }
         const { setConfigPath } = await import('./config-write.ts')
         const raw = readFileSync('persona/rules.yaml', 'utf8')
         const r = setConfigPath(raw, key, body.value)
         if (!r.ok) {
           json(res, 400, { error: r.error ?? '改不了' })
+          return
+        }
+        // 写前先回读一遍：改完的文本必须还能被 YAML 解析。
+        // 这一步挡的是「值里带了换行/引号，把文件改坏」的情况——坏文件会让下次启动直接回退默认配置。
+        try {
+          const yaml = await import('yaml')
+          yaml.parse(r.text)
+        } catch (e) {
+          json(res, 400, { error: '改完的 YAML 解析不过，已放弃写入：' + String(e).slice(0, 120) })
           return
         }
         writeAtomic('persona/rules.yaml', r.text)

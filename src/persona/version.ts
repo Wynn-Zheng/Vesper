@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { info, warnAt } from '../core/log.ts'
 
 const ROOT = 'persona'
@@ -103,7 +103,19 @@ export function listSnapshots(): SnapshotMeta[] {
 
 /** 回滚到某个快照。回滚前会先给当前状态拍一张。 */
 export function restore(id: string): boolean {
+  // id 来自 HTTP 路径参数，以前直接 join(DIR, id)：
+  // 传 `../../.env` 就能把任意目录 cpSync 进 persona/——既是路径穿越，也是数据污染。
+  // 快照 id 只可能是 `2025-11-04_12-00-00_xxx` 这种形态。
+  if (!/^[\w.-]{1,64}$/.test(id) || id.includes('..')) {
+    warnAt('快照 id 不合法，已拒绝回滚', { id: id.slice(0, 40) })
+    return false
+  }
   const src = join(DIR, id)
+  const base = resolve(DIR)
+  if (!resolve(src).startsWith(base + sep)) {
+    warnAt('快照路径越界，已拒绝回滚', { id: id.slice(0, 40) })
+    return false
+  }
   if (!existsSync(src)) return false
   snapshot('before-restore')
   cpSync(src, ROOT, {
