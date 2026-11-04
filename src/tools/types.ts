@@ -15,6 +15,12 @@ export interface ToolContext {
   /** 私聊某人 / 某个群 */
   scope: string
   now: Date
+  /**
+   * 发起这条消息的人是不是主人。
+   * 本机类工具（截图/键鼠/剪贴板）只允许「主人 + 私聊」——
+   * 这道门现在在 ToolRegistry.run 里，所以上下文必须带上它。
+   */
+  isOwner?: boolean
 }
 
 export interface Tool {

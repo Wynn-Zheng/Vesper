@@ -1,4 +1,5 @@
 import { warnAt } from '../core/log.ts'
+import { isLocalTool } from './local.ts'
 import type { Tool, ToolContext, ToolResult } from './types.ts'
 
 /**
@@ -48,6 +49,11 @@ export class ToolRegistry {
   async run(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const tool = this.tools.get(name)
     if (!tool) return { name, ok: false, content: `没有这个工具：${name}` }
+    // 权限门放在唯一的执行入口上，而不是散落在调用方：
+    // 以前只有 loop/chat.ts 里手写了一次检查，插件工具和别的调用点都能绕过去。
+    if (isLocalTool(name) && !(ctx.isOwner === true && !ctx.scope.startsWith('group:'))) {
+      return { name, ok: false, content: '这个操作只能由主人私聊发起，在群里/别人那里不能做' }
+    }
     try {
       const content = await tool.run(args, ctx)
       return { name, ok: true, content }

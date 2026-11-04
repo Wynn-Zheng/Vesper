@@ -96,16 +96,10 @@ export function detectRepeat(key: string): boolean {
  * 现在改成显式集合：新增本机工具必须往这里加一条，测试会断言
  * "注册表里每个 desktop 工具都在这个集合里"，避免再靠命名习惯漏掉。
  */
-const LOCAL_TOOL = new Set([
-  'screenshot', 'list_windows', 'monitor_info', 'mouse_position', 'clipboard_read',
-  'click', 'type_text', 'press_key', 'scroll', 'focus_window',
-  'send_image',
-])
+import { isLocalTool } from '../tools/local.ts'
 
 /** 这个工具是不是"碰本机"的（截图/窗口/剪贴板/鼠标键盘/本地图片） */
-export function isLocalTool(name: string): boolean {
-  return LOCAL_TOOL.has(name)
-}
+export { isLocalTool }
 
 
 /**
@@ -559,20 +553,15 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
     const isOwner =
       loadPerson(personId)?.role === '主人' ||
       (ownerQQ !== '' && String(m.senderId ?? '') === ownerQQ)
-    const inPrivate = !scope.startsWith('group:')
     for (const c of res.toolCalls) {
       let content: string
-      try {
-        const tool = opts.tools?.get(c.name)
-        if (!tool) throw new Error('没有这个工具：' + c.name)
-        if (LOCAL_TOOL.has(c.name) && !(isOwner && inPrivate)) {
-          throw new Error('这个操作只能由主人私聊发起，在群里/别人那里不能做')
-        }
-        content = await tool.run(c.args ?? {}, ctx)
-      } catch (err) {
-        // 工具失败要作为结果返回给模型，让它自己换方式或解释清楚，
-        // 不是把整轮对话搞崩。
-        content = JSON.stringify({ error: String(err).slice(0, 200) })
+      // 统一走注册表：权限门（本机类工具只给主人私聊）和失败包装都在 ToolRegistry.run，
+      // 以前这里直接 tool.run()，等于每个调用点都要自己记得加门——插件工具就漏了。
+      if (!opts.tools) {
+        content = JSON.stringify({ error: '没有可用的工具：' + c.name })
+      } else {
+        const r = await opts.tools.run(c.name, c.args ?? {}, { ...ctx, isOwner })
+        content = r.ok ? r.content : JSON.stringify({ error: r.content })
       }
       // 单条结果截断：工具可能返回整段代码，全塞回去会撑爆上下文
       messages.push({ role: 'tool', content: content.slice(0, 4000), toolCallId: c.id })

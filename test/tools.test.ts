@@ -80,3 +80,20 @@ test('本机权限门：所有 desktop 工具都被拦住', async () => {
   // 只读代码不算（群里也能读）
   assert.ok(!isLocalTool('read_code'))
 })
+
+test('权限门在注册表上：本机类工具只给主人私聊', async () => {
+  const reg = new ToolRegistry()
+  reg.register({ ...echo, name: 'screenshot' })
+  const ownerPrivate = { ...ctx, isOwner: true }
+  assert.equal((await reg.run('screenshot', {}, ownerPrivate)).ok, true, '主人私聊应放行')
+  // 群里、或非主人，都必须被拒
+  const ownerGroup = { ...ctx, scope: 'group:9', isOwner: true }
+  assert.equal((await reg.run('screenshot', {}, ownerGroup)).ok, false, '群里不行')
+  assert.equal((await reg.run('screenshot', {}, ctx)).ok, false, '非主人不行')
+})
+
+test('权限门：普通工具不受影响', async () => {
+  const reg = new ToolRegistry()
+  reg.register({ ...echo, name: 'read_code' })
+  assert.equal((await reg.run('read_code', {}, ctx)).ok, true)
+})

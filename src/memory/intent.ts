@@ -61,7 +61,15 @@ function parseLine(line: string): IntentItem | null {
 
   let source: IntentSource = '我自己想到的'
   let date = today()
+  let pending = false
   for (const p of parts.slice(1)) {
+    // 「｜待批」是 render 自己写出去的标记，但以前 parseLine 不认它：
+    // 写进文件再读回来 pending 就没了，于是"待批"的条目会被当成普通待办
+    // 渲染进 prompt、还会被当成已完成的事去做。
+    if (p === '待批') {
+      pending = true
+      continue
+    }
     const sm = /^来源：(.*)$/.exec(p)
     if (sm) {
       const v = sm[1]!.trim()
@@ -70,7 +78,7 @@ function parseLine(line: string): IntentItem | null {
     }
     if (/^\d{4}-\d{2}-\d{2}$/.test(p)) date = p
   }
-  return { text, source, date }
+  return { text, source, date, ...(pending ? { pending: true } : {}) }
 }
 
 export function loadIntent(): IntentDoc {
