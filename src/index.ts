@@ -218,6 +218,9 @@ try {
     if (cur.mtimeMs === prev.mtimeMs && cur.size === prev.size) return
     try {
       rules = loadRules().rules
+      // 改名后立刻认新名：以前 botNames 只在启动时算一次，控制台改名后
+      // 群里叫新名字它不应，叫旧名字反而应。
+      refreshBotNames()
       info('rules.yaml 已重载')
     } catch (err) {
       warnAt('rules.yaml 重载失败，继续用旧规则', { err: String(err) })
@@ -227,8 +230,17 @@ try {
   warnAt('无法监听 rules.yaml，热重载不可用', { err: String(err) })
 }
 
-// 群聊里"叫它名字"也算被叫到，所以要知道它叫什么
-const botNames = [loadSelf().name, rules.人格.名字].filter((n) => n && n !== '未定')
+// 群聊里"叫它名字"也算被叫到，所以要知道它叫什么。
+// 用可变数组是因为 onebot 连接后会往里 push 自己的 QQ 昵称；
+// 而且控制台改名（self.md / rules.人格.名字）不该等到重启才认。
+const botNames: string[] = []
+function refreshBotNames(): void {
+  const next = [loadSelf().name, getRules().人格.名字].filter((n) => n && n !== '未定')
+  // 原地改：onebot 持有的是同一个数组引用
+  botNames.length = 0
+  botNames.push(...next)
+}
+refreshBotNames()
 
 // 权限策略：第一次运行会从 .env 生成 persona/access.yaml，之后控制台改这个文件
 const policy = loadAccess()

@@ -27,7 +27,7 @@ export async function handleMemberApi(
     const { listPeople, primaryAccount } = await import('../people/store.ts')
     const { loadRelation } = await import('../relation/store.ts')
     const { knownGroups, groupMembers } = await import('../people/group.ts')
-    const { loadFacts } = await import('../memory/facts.ts')
+    const { countFacts } = await import('../memory/facts.ts')
     const { recentRaw, loadEpisodes, loadInsights } = await import('../memory/store.ts')
     const { loadCore: loadCoreItems } = await import('../memory/core.ts')
     const { loadRules, stageOf } = await import('../core/config.ts')
@@ -97,8 +97,8 @@ export async function handleMemberApi(
         }
       }
 
-      // 记忆
-      const facts = loadFacts(p.id).filter((f) => !f.faint)
+      // 记忆（口径与 people-api 一致：淡忘/被取代的都不算）
+      const factCount = countFacts(p.id)
       let eps: number[] = []
       let ins: number[] = []
       try {
@@ -131,7 +131,7 @@ export async function handleMemberApi(
         账号列表: accounts,
         来源,
         关系: { 值: Math.round(rel.closeness), 阶段: stageOf(rules, rel.closeness).名 },
-        记忆: { facts: facts.length, episodes: eps.length, insights: ins.length },
+        记忆: { facts: factCount, episodes: eps.length, insights: ins.length },
         对话: { turns, lastAt: lastTalk },
         核心: { count: core.length, items: core.map((c) => ({ text: c.text, kind: c.kind })) },
         日期: { firstSeen: p.firstSeen ?? 0, lastTalk },

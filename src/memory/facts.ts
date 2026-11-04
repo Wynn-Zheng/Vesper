@@ -321,6 +321,16 @@ export function effectiveConfidence(f: PersonFact, now = Date.now(), decay = 0.0
   return base * Math.exp(-decay * days)
 }
 
+/**
+ * 还有效的事实条数：不算淡忘的（faint），也不算被新说法取代的（supersededAt）。
+ *
+ * 两个页面以前各写一份过滤条件，一个滤 faint+superseded、一个只滤 faint，
+ * 同一个人在两处显示的"事实数"对不上。
+ */
+export function countFacts(personId: string): number {
+  return loadFacts(personId).filter((f) => !f.faint && !f.supersededAt).length
+}
+
 export function factsFilePath(personId: string): string {
   return factsFile(personId)
 }

@@ -54,7 +54,7 @@ async function handlePeopleApiInner(
     const { listPeople, primaryAccount } = await import('../people/store.ts')
     const { loadRelation } = await import('../relation/store.ts')
     const { knownGroups, groupMembers } = await import('../people/group.ts')
-    const { loadFacts } = await import('../memory/facts.ts')
+    const { countFacts } = await import('../memory/facts.ts')
     const { recentRaw } = await import('../memory/store.ts')
     const { loadRules, stageOf } = await import('../core/config.ts')
 
@@ -81,7 +81,6 @@ async function handlePeopleApiInner(
 
     const rows = people.map((person) => {
       const rel = loadRelation(person.id)
-      const facts = loadFacts(person.id)
       const accounts = person.accounts.map((a) => a.id)
 
       const inGroups: Array<{ groupId: string; 名片: string }> = []
@@ -104,7 +103,7 @@ async function handlePeopleApiInner(
         群数: inGroups.length,
         关系: Math.round(rel.closeness),
         阶段: stageOf(rules, rel.closeness).名,
-        事实: facts.filter((f) => !f.faint && !f.supersededAt).length,
+        事实: countFacts(person.id),
         最近: last,
       }
     })
@@ -185,7 +184,7 @@ async function handlePeopleApiInner(
         ),
         锚点数: (rel.anchors ?? []).length,
       },
-      事实: loadFacts(id).filter((f) => !f.faint),
+      事实: loadFacts(id).filter((f) => !f.faint && !f.supersededAt),
       画像: loadProfile(id),
       印象: impressionOf(id),
       // 它自己给这人起的称呼（反思时自己取）；下面是你填的建议

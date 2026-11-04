@@ -360,8 +360,11 @@ export function importBackup(data: BackupV2, opts: ImportOptions = {}): ImportSt
   // 同一个备份导两次，原文会重复累积，检索和成员统计全都翻倍。
   const seenRaw = new Set<string>()
   try {
-    // 用 120 天窗口（raw 的保留期）覆盖现有原文
-    for (const t of recentRaw(120)) seenRaw.add(`${t.ts}\\u0000${t.scope}\\u0000${t.text}`)
+    // 用 120 天窗口（raw 的保留期）覆盖现有原文。
+    // ⚠ 这里以前写的是字面量 `\\u0000`（反斜杠+u0000 六个字符），
+    // 而下面 373 行用的是真的 NUL 字符——两边永远不相等，
+    // 于是"同一个备份导两次"的去重完全失效，原文翻倍、检索和成员统计跟着翻倍。
+    for (const t of recentRaw(120)) seenRaw.add(`${t.ts}\u0000${t.scope}\u0000${t.text}`)
   } catch {
     /* 读不到就用空的 */
   }
