@@ -84,7 +84,11 @@ export function shouldDistill(
   if (!turns.length) return false
   if (turns.length >= minTurns) return true
   const hours = (now - lastAt) / 3_600_000
-  return (cfg.每天至少 ?? 1) > 0 && lastAt > 0 && hours >= 24 && turns.length >= 4
+  // 「每天至少 N 次」以前只是布尔闸（>0 就按 24 小时算），
+  // 设成 2 或 3 完全没用。现在按值算间隔：N 次/天 → 24/N 小时一次。
+  const perDay = Number(cfg.每天至少 ?? DEFAULT_THRESHOLD.每天至少)
+  if (!Number.isFinite(perDay) || perDay <= 0) return false
+  return lastAt > 0 && hours >= 24 / perDay && turns.length >= 4
 }
 
 /** 跑一轮整理。导出是为了让测试能直接驱动（不等 30 分钟定时器）。 */

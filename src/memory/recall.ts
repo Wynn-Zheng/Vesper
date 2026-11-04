@@ -276,7 +276,13 @@ export function recall(opts: RecallOptions): Recalled {
       f: x.f,
       // 「重要」的事衰减慢（139 天半衰期），「平常」按正常节奏（35 天）。
       // 老数据没有 tier → 当 normal，和以前行为一致。
-      eff: effectiveConfidence(x.f, now, x.f.tier === 'major' ? 0.005 : 0.023),
+      // 衰减速度从 rules 的 记忆.衰减 读：接口一直有 decay 字段，但内部从来没用过，
+      // 所以用户在配置里改衰减是完全无效的，代码里写的是另一套数字（0.023）。
+      eff: effectiveConfidence(
+        x.f,
+        now,
+        x.f.tier === 'major' ? (opts.decay?.['高情绪'] ?? 0.005) : (opts.decay?.['普通'] ?? 0.02),
+      ),
       bm: factBmMax > 0 ? x.bmRaw / factBmMax : 0,
     }))
     .filter((x) => isPrivateScope || x.f.visibility === 'public')
@@ -382,7 +388,7 @@ export function recall(opts: RecallOptions): Recalled {
     .map((i) => {
       const t = Date.parse(`${i.date}T00:00:00`)
       const ref = Number.isNaN(t) ? now - 30 * DAY : t
-      let score = scoreOf(ref, 0.02, i.text, 6, query, weights, now)
+      let score = scoreOf(ref, opts.decay?.['普通'] ?? 0.02, i.text, 6, query, weights, now)
       // 洞察也补关键词分：它比 episode 短，一条常常就是一句判断，
       // 关键词命中的信号比"语义相似"更准。
       const bm = bm25(query, [i.text])[0] ?? 0

@@ -63,6 +63,8 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
     limit: opts.rules.记忆.检索.取回条数[0] ?? 6,
     weights: opts.rules.记忆.检索.权重,
     minScore: opts.rules.记忆.检索.最低分,
+    // 试聊必须和线上用同一份衰减参数，否则"试聊里调得好、上线就变"
+    decay: opts.rules.记忆.衰减,
   })
 
   // ⚠️ 这里要和 chat.ts 的 buildSystem 调用**保持同一份清单**。
