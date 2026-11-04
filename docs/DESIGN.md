@@ -191,8 +191,8 @@ NapCat 不是"一个开关"，是**QQ 这个平台的接入实现**。以后接�
 | type | 能力 | 分组 |
 |---|---|---|
 | `tool` | `ctx.registerTool()` —— 注册成模型能调用的工具 | 工具插件 |
-| `panel` | 提供前端面板（还没做） | 已安装 |
-| `transport` | 平台接入实现（NapCat 这种，还没抽象完） | 接入平台 |
+| `panel` | 自带 `panel.html`，控制台用**沙箱 iframe** 打开；面板通过 `postMessage` 桥调 `/api/plugins/<id>/call`（不拿 console token） | 已安装 |
+| `transport` | 平台接入实现（NapCat 就是这种） | 接入平台 |
 | `event` | 只 `ctx.on/emit`（默认，最弱） | 已安装 |
 
 ### 插件的 ctx
@@ -219,7 +219,8 @@ export function deactivate(ctx) { ... }
 | `net` | `ctx.fetch(url, init)` | `ctx.fetch` 不存在（`undefined`） |
 | `memory` | `ctx.readPersona(relPath)` —— 只能读 `persona/` 内，`..` 和绝对路径拒绝 | `ctx.readPersona` 不存在 |
 | `message` | `ctx.send(target, text)` —— 走宿主的 transport，跟它自己发消息同一条路 | `ctx.send` 不存在 |
-| `files` / `shell` | 还没接 | — |
+| `files` | `ctx.readFile / ctx.writeFile` —— 根是**这个插件自己的 `dataDir`**，越界与 junction 都由 realpath 拦下 | 两个方法不存在 |
+| `shell` | **已移除**（原白名单含 `node`/`python` = 任意代码执行；其余命令在 Windows 上大半不存在） | `ctx.exec` 不存在 |
 
 **装之前会展示**：点「安装」→ 填路径 → 读 `plugin.json` → 弹窗列出名字/版本/类型/权限 → 你点「仍然安装」才复制文件。
 
@@ -229,7 +230,7 @@ export function deactivate(ctx) { ... }
 - 但挡不住插件直接写 `globalThis.fetch(...)` 或 `import('node:fs')`
 - 真正的隔离要把插件丢进 Worker/子进程走 IPC，那会改插件写法 —— 这一版不做
 
-**未接的**：`files` / `shell`。这两个风险明显更大（能读全盘、能执行任意命令），暂时不给。\n\n**`ctx.send` 的实际链路**：插件 → `ctx.send` → `consoleOpts.transport.send` → NapCat。通道没连时抛「NapCat 未连接」，插件自己 catch 处理。
+**`ctx.send` 的实际链路**：插件 → `ctx.send` → `consoleOpts.transport.send` → NapCat。通道没连时抛「NapCat 未连接」，插件自己 catch 处理。
 
 ## 13. 不该出现在设置页的东西
 

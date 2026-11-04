@@ -22,7 +22,9 @@
 | DeepSeek API Key | 控制台「设置 → 模型」里填（[申请地址](https://platform.deepseek.com/)） |
 | NapCat（QQ 协议端） | 控制台「插件 → 接入平台 → QQ → 配置 → 一键安装」，或看 [docs/NapCat安装.md](docs/NapCat安装.md) |
 
-**数据放哪**：安装版是 `%APPDATA%\Vesper\data-root`，绿色版是 exe 同目录的 `data-root\`。
+**数据放哪**：一律是 `%APPDATA%\vesper\data-root`（注意是小写 `vesper`）。
+绿色版也一样 —— 程序装在只读目录时也能写数据。
+（老版本迁移过来的可能叫 `Vesper\data-root`，启动时会被识别并沿用。）
 里面是 `persona/`（人格和记忆）、`data/`（日志和缓存）、`.env`（你的 Key）——**全在本地，不上传**。
 
 ## 从源码跑（开发者）
@@ -81,7 +83,7 @@ npm start
 
 但它不是随便改：
 
-- **漂移检测**：每次改都算和上一版的相似度，低于 0.45 记一条 `drift.jsonl`
+- **漂移检测**：模型判定"这次是真的变了"、且和上一版字符相似度低于 0.9，记一条 `drift.jsonl`
 - **所有权**：`frontmatter` 的 `所有权: 我写 / 它写` 决定谁能改
   - `它写`：反思可以整体改写
   - `我写`：**原文锁死，它只能往「## 它补充的」那节追加**
@@ -172,24 +174,27 @@ src/console/  本地控制台（HTTP :7788，浏览器操作）
 
 | 目录 | 行数 | 职责 | 关键文件 |
 |---|---|---|---|
-| `src/channel/` | 1010 | 协议层：OneBot 解析、发送、图片段 | `onebot.ts`（收/鉴权）、`send.ts`（发/分句/延迟） |
-| `src/boot.ts` | 528 | **业务编排**：消息缓冲、延迟策略、退避、限流、聚合后交给 chat | 单文件 |
-| `src/loop/` | 1309 | **一轮对话**：prompt 组装、模型调用、工具循环、自评、压缩、引用判定 | `chat.ts`（主）、`prompt.ts`、`quote.ts` |
-| `src/memory/` | 2035 | 记忆全生命周期：存取、衰减、召回、抽取（distill） | `store.ts`、`facts.ts`、`recall.ts`、`distill.ts`、`core.ts` |
-| `src/self/` | 2113 | 自我认知：自述读写、反思、能力盘点、申请、代码地图、诊断 | `store.ts`、`reflect.ts`、`requests.ts`、`apply.ts` |
-| `src/relation/` | 537 | 关系值：四维评分、阶段、锚点（带理由） | `store.ts`、`evaluate.ts`、`format.ts` |
-| `src/people/` | 706 | 人物档案：meta、群名单同步、画像 | `store.ts`、`group.ts` |
-| `src/persona/` | 308 | 情绪（含衰减）、用户画像 | `mood.ts`、`profile.ts` |
-| `src/console/` | 4426 | 控制台后端（HTTP API），14 个文件按页面拆 | `server.ts`（路由）、`*-api.ts` |
-| `src/tools/` | 904 | 模型可调的工具 | `code.ts`、`desktop.ts`、`image.ts`、`request.ts` |
-| `src/plugins/` | 852 | 插件系统：清单、安装、宿主 | `manifest.ts`、`installer.ts`、`host.ts` |
-| `src/napcat/` | 749 | NapCat 管理：定位、启停、一键安装、自动接线 | `locate.ts`、`manager.ts`、`install.ts`、`wire.ts` |
-| `src/outward/` | 595 | 外部能力：B 站接口、刷视频、空间 | `bili.ts`、`watch.ts`、`qzone.ts` |
-| `src/scheduler/` | 393 | 主动行为调度：什么时候开口、什么时候做事 | `proactive.ts` |
-| `src/llm/` | 293 | DeepSeek 客户端（含视觉） | `deepseek.ts`、`vision.ts` |
-| `src/core/` | 850 | 基础设施：配置、日志、权限、限流、路径、文本相似度 | `config.ts`、`access.ts`、`paths.ts` |
-| `src/store/` | 145 | 原子写盘 | `fs.ts` |
-| `console/` | 6086 | **前端**（单个 index.html + 几个 js） | `index.html`、`napcat.js`、`plugins.js`、`plugin-install.js`、`test.js`、`settings.js`、`members.js`、`groups.js` |
+| `src/channel/` | 1358 | 协议层：OneBot 解析、发送、图片段 | `onebot.ts`（收/鉴权）、`send.ts`（发/分句/延迟） |
+| `src/boot.ts` | 1002 | **业务编排**：消息缓冲、延迟策略、退避、限流、聚合后交给 chat | 单文件 |
+| `src/loop/` | 1969 | **一轮对话**：prompt 组装、模型调用、工具循环、自评、压缩、引用判定 | `chat.ts`（主）、`prompt.ts`、`quote.ts` |
+| `src/memory/` | 2513 | 记忆全生命周期：存取、衰减、召回、抽取（distill） | `store.ts`、`facts.ts`、`recall.ts`、`distill.ts`、`core.ts` |
+| `src/self/` | 2460 | 自我认知：自述读写、反思、能力盘点、申请、代码地图、诊断 | `store.ts`、`reflect.ts`、`requests.ts`、`apply.ts` |
+| `src/relation/` | 669 | 关系值：四维评分、阶段、锚点（带理由） | `store.ts`、`evaluate.ts`、`format.ts` |
+| `src/people/` | 798 | 人物档案：meta、群名单同步、画像 | `store.ts`、`group.ts` |
+| `src/persona/` | 1395 | 情绪（含衰减）、用户画像、**角色卡**（卡作用域的数据隔离） | `mood.ts`、`profile.ts`、`card.ts` |
+| `src/console/` | 6995 | 控制台后端（HTTP API），21 个文件按页面拆 | `server.ts`（路由）、`*-api.ts`、`talk-schema.ts` |
+| `src/tools/` | 1054 | 模型可调的工具 | `code.ts`、`desktop.ts`、`image.ts`、`request.ts` |
+| `src/plugins/` | 1661 | 插件系统：清单、安装、宿主、沙箱路径 | `manifest.ts`、`installer.ts`、`host.ts`、`sandbox.ts` |
+| `src/napcat/` | 1197 | NapCat 管理：定位、启停、一键安装、自动接线 | `locate.ts`、`manager.ts`、`install.ts`、`wire.ts` |
+| `src/outward/` | 641 | 外部能力：B 站接口、刷视频、空间 | `bili.ts`、`watch.ts`、`qzone.ts` |
+| `src/scheduler/` | 853 | 主动行为调度：什么时候开口、什么时候做事 | `proactive.ts` |
+| `src/llm/` | 473 | DeepSeek 客户端（含视觉） | `deepseek.ts`、`vision.ts` |
+| `src/core/` | 1376 | 基础设施：配置、日志、权限、限流、路径、文本相似度 | `config.ts`、`access.ts`、`paths.ts` |
+| `src/store/` | 171 | 原子写盘 | `fs.ts` |
+| `console/` | 7985 | **前端**（单个 index.html + 几个 js） | `index.html`、`napcat.js`、`plugins.js`、`plugin-install.js`、`test.js`、`settings.js`、`members.js`、`groups.js` |
+
+> 行数是 2026-11 实测的**量级参考**，会随改动漂移；要看准的用
+> `Get-ChildItem src\<目录> -Recurse -Filter *.ts | Get-Content | Measure-Object -Line`。
 
 ### 3.3 为什么控制台是单文件 HTML
 
@@ -219,7 +224,7 @@ src/console/  本地控制台（HTTP :7788，浏览器操作）
      完整规则见 `docs/群聊行为.md`
    ↓
 3. src/boot.ts 的消息缓冲
-   - 不是每条都立刻回：安静时等 5 秒看有没有补充，活跃时等 2 秒
+   - 不是每条都立刻回：安静时等 **2 秒**、活跃时等 **5 秒**（活跃的群消息密，多留一点时间攒成一段）
    - 同一个人续发给 2 秒，换人 0.5 秒，被 @ 最多等 1 秒
    - 一批最多等 8 秒（批次上限），最多攒 20 条
    - 合并后当作一条处理；一批里有多个人说话时**逐条带名字**（小明：… / 小红：…），
@@ -337,7 +342,7 @@ src/console/  本地控制台（HTTP :7788，浏览器操作）
 └──────────────────────────────────────────────────────┘
 
 ┌─ 它是怎么变的 ── 看它改了什么，不是让你改 ─────────────┐
-│ 人格变化：选两个版本，行级 diff（绿加红删）             │
+│ 人格变化：后端已有版本列表/行级 diff/时间线，前端未接   │
 │ 它变过几次：时间线（时间、相似度、旧→新）               │
 └──────────────────────────────────────────────────────┘
 ```
@@ -442,34 +447,45 @@ Electron 的 asar 补丁会去解析 QQ 自己的 `application.asar`，报 `Inva
 ### 8.2 打包后
 
 ```
-%APPDATA%\Vesper\data-root\
-├── .env                       token + API Key
+%APPDATA%\vesper\data-root\
+├── .env                         token + API Key
 ├── persona\
-│   ├── self.md                它的自述（含所有权）
-│   ├── self-history\          人格快照 + drift.jsonl
-│   ├── requests.md            它提的申请
-│   ├── requests-rejected.json 忽略记录的冷却时间
-│   ├── core.md                不能越的线（只有人能改）
-│   ├── core-requests.md       core 的申请
-│   ├── rules.yaml             行为配置
-│   ├── access.yaml            谁能在哪说话
-│   ├── people\qq-xxx\
-│   │   ├── meta.json          id / name / accounts / role / nameLocked
-│   │   ├── facts.md           事实（带 by=me 标记）
-│   │   ├── profile.md         它写的散文画像
-│   │   ├── impression.md      一句话印象
-│   │   ├── open.md            待问的事
-│   │   └── relation.yaml      关系值 + 锚点
-│   ├── memory\
-│   │   ├── episodes\          经历（按日期分文件，scope 子目录）
-│   │   ├── raw\               原始对话（按日期分文件）
-│   │   ├── insights.jsonl     洞察
-│   │   └── .state.json        状态（去重、计数）
-│   ├── mood.yaml              当前情绪
-│   ├── life.md                它的生活
-│   └── emoji\                 表情包库存
-└── napcat\                    一键安装的 NapCat
+│   ├── rules.yaml               行为配置（"对话规则"页写的就是它）
+│   ├── access.yaml              谁能在哪说话 + 群聊模式
+│   ├── plugins.yaml             每个插件的配置
+│   ├── self.md / life.md        自述 / 生活（全局默认，卡里可覆盖）
+│   ├── codemap.md               代码地图（它自己维护）
+│   ├── issues.json              自检发现的问题
+│   ├── cards\                   ★ 角色卡：人格与记忆按卡隔离
+│   │   ├── current.txt          当前用哪张卡
+│   │   ├── <id>.md / <id>.self.md
+│   │   └── <id>\
+│   │       ├── memory\          这张卡的记忆：facts / episodes / raw / insights
+│   │       ├── self-history\    人格快照 + drift.jsonl
+│   │       ├── life.md
+│   │       └── plays.md
+│   ├── people\qq-xxx\          人物档案（跨卡共享）
+│   │   ├── meta.json            id / name / accounts / role / nameLocked
+│   │   ├── facts.md             事实（带 by=me 标记）
+│   │   ├── profile.md           散文画像（成员页可改）
+│   │   ├── impression.md        一句话印象
+│   │   ├── open.md              待问的事
+│   │   └── relation.yaml        关系值 + 锚点
+│   ├── groups\                  群名单缓存
+│   ├── emoji\                   表情包库存
+│   └── outward\                 刷视频 / 空间的状态
+├── data\
+│   ├── logs\                    按天的 jsonl
+│   ├── sessions\                会话历史（重启后接上）
+│   ├── console\                 控制台对话记录
+│   ├── plugins\                 每个插件的数据目录（files 权限的根）
+│   ├── versions\                人格快照
+│   └── .pid                     单实例锁
+└── napcat\                      一键安装的 NapCat（可选）
 ```
+
+> **记忆是"按角色卡隔离"的**：换一张卡，它记得的事、对每个人的关系、
+> 自我认知都是另一套。`persona/people/` 是跨卡共享的（人还是那个人）。
 
 **记忆文件都是 markdown / yaml，人能直接读改** —— 这是刻意的：让主人能直接读、直接改，不用装工具。
 
@@ -494,6 +510,8 @@ npm start
 
 首次启动会：
 - 按 `src/core/config.ts` 的 `DEFAULTS` 生成 `persona/rules.yaml`（缺什么补什么）
+  > 注意：这一步只有**打包版**做。源码跑的时候 `persona/` 是被 `.gitignore` 忽略的，
+  > 新 clone 下来没有 `rules.yaml` —— 控制台改规则会报 ENOENT。先 `cp` 一份模板或让打包版跑一次。
 - 生成 `.env`（如果没有）
 - 起 WS 服务在 8765 等 NapCat 连
 
@@ -501,7 +519,7 @@ npm start
 
 两种方式：
 
-1. **控制台「插件 → 接入平台 → QQ → 配置」→ 一键安装**（从包里复制，不用联网）
+1. **控制台「插件 → 接入平台 → QQ → 配置」→ 一键安装**（从官方源下载，需要联网）
 2. **自己装 OneKey 版**，然后把 `<版本>.Shell` 目录填进「插件 → 接入平台 → QQ → 配置」
 
 装完点「启动」，扫码登录。**`wire.ts` 会自动把 OneBot 连接指向 bot**（不用手配 WebSocket）。
@@ -518,7 +536,7 @@ node scripts/package-electron.ts
 ## 十、测试
 
 ```powershell
-npm run check-all     # 全量（80 项，实际跑出来会统计）
+npm run check-all     # 全量（83 项，实际跑出来会统计）
 npm test              # 单元测试
 npm run check         # 类型检查
 ```
@@ -541,9 +559,9 @@ npm run check         # 类型检查
 2. **试聊不带工具** —— 想验工具要去「工具连通性」或 QQ 里试
 3. **`abilities` 会自动盘点，可能夸大** —— 靠 `test-honesty` 守"被问时认错"
 4. **人格漂移不可完全避免** —— 有漂移检测和快照，但拦不住长期缓慢的变化
-5. **控制台单文件 6600+ 行** —— 编辑容易出错，靠按行改和语法检查兜底
+5. **控制台单文件 4900+ 行**（`console/index.html`）—— 编辑容易出错，靠按行改和语法检查兜底
 6. **打包体积 232 MB** —— 已不再内置 NapCat（它 1.2 GB，改为引导用户单独装）
-7. **矛盾检测有盲区** —— 只对相似度 0.45-0.9 的"灰色地带"问模型；低相似度的矛盾（「他在北京」→「他搬去上海了」）仍会是两条并存
+7. **矛盾检测有盲区** —— 只对相似度 0.45-0.9 的"灰色地带"问模型（这是**矛盾检测**的阈值，和"人格漂移检测"的 0.9 不是一回事）；低相似度的矛盾（「他在北京」→「他搬去上海了」）仍会是两条并存
 
 ---
 
@@ -555,8 +573,8 @@ npm run check         # 类型检查
 |---|---|
 | `docs/项目介绍.md` | **给别人看的版本**：功能展示 + 设计思路，重点讲自我页和插件生态 |
 | `docs/开发手册.md` | **怎么改代码**：8 个常见任务的 recipe（加工具/API/页面/prompt/记忆字段/定时任务/测试/插件）+ 提交前检查清单 |
-| `docs/交接说明.md` | **接手前先看这份**：这轮审了什么、改了什么、哪些明确不做、怎么跑测试、下一步该做什么（含真实群聊的 5 个验证场景） |
-| `docs/踩坑全记录.md` | **76 条坑的完整清单**，按业务域分，每条带文件:行号，改之前先搜一眼 |
+| `docs/交接说明.md` | **接手前先看这份**（新窗口 10 分钟接上）：项目是什么、四条命令、目录与数据在哪、五个核心概念、怎么验证、怎么发版、哪些还没做、下一步做什么 |
+| `docs/踩坑全记录.md` | **72 条坑的完整清单**，按业务域分，改之前按关键词搜（行号会漂，别按行号跳） |
 
 **规范与契约**：
 
