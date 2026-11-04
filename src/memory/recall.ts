@@ -435,8 +435,9 @@ export function recall(opts: RecallOptions): Recalled {
     })
   }
 
-  // 最近三天的事无条件带上：人本来就会自然想起最近发生的事，跟话题无关
-  // 顺序上放在高分的后面：相关的优先，最近的兜底
+  // 最近三天的事无条件带上：人本来就会自然想起最近发生的事，跟话题无关。
+  // 顺序上**放最前**：以前是 [...picked, ...recentEps]，picked 一旦占满 limit，
+  // 后面的 recentEps 会被 slice 静默切掉——"最近的兜底"等于不存在。
   const recentEps = episodes
     .filter((e) => {
       const t = Date.parse(`${e.date}T00:00:00`)
@@ -447,7 +448,12 @@ export function recall(opts: RecallOptions): Recalled {
 
   const merged: Episode[] = []
   const seen = new Set<string>()
-  for (const e of [...picked, ...recentEps]) {
+  // 相关度高的仍排最前，但要先给「最近 3 天」留出名额：
+  // 以前是 [...picked, ...recentEps]，picked 一旦占满 limit，recentEps 会被
+  // slice 静默切掉——"最近的兜底"等于不存在。现在先放 picked 的前 (limit-最近) 条，
+  // 再把最近 3 天全部塞进去，最后用剩余 picked 补满。
+  const pickedHead = picked.slice(0, Math.max(0, limit - recentEps.length))
+  for (const e of [...pickedHead, ...recentEps, ...picked]) {
     const key = episodeKey(e)
     if (!seen.has(key)) {
       seen.add(key)

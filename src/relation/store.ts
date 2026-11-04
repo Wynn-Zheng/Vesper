@@ -144,8 +144,9 @@ export function applyAnchor(
     event: anchor.event,
     dimension: anchor.dimension,
     direction: anchor.direction,
-    // 记实际变化量，不是请求量：99 分时 +2 实际只加了 1
-    amount: Math.abs(next - base),
+    // 记实际变化量，不是请求量：99 分时 +2 实际只加了 1。
+    // 取到 1 位小数：closeness 是浮点，直接存会留下 2.0000000000000004 这种噪声。
+    amount: Math.round(Math.abs(next - base) * 10) / 10,
     reason,
   }
 

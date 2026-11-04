@@ -446,14 +446,21 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 否则模型只看到 [图片]，会以为图好好的，答得跟真看见了一样。
   if (m.images?.length && opts.rules.视觉?.开启) {
     const visionModel = opts.rules.视觉.模型 || process.env.DEEPSEEK_VISION_MODEL || 'deepseek-v4-flash-vision-exp'
+    const maxImgs = opts.rules.视觉.最多张数
     const batch = await describeImagesDetailed(
-      m.images.slice(0, opts.rules.视觉.最多张数),
+      m.images.slice(0, maxImgs),
       {
         ...opts.llm,
         model: visionModel,
       },
       opts.rules.视觉.总预算毫秒,
     )
+    // 超过上限的图以前被静默丢掉：模型只看到前 N 张，会以为他就发了这些。
+    const dropped = Math.max(0, m.images.length - maxImgs)
+    if (dropped > 0) {
+      userContent += `\n（他一次发了 ${m.images.length} 张图，本轮只看了前 ${maxImgs} 张，还有 ${dropped} 张没看）`
+      info(`${dropped} 张图超出单轮上限，已在 prompt 里说明`)
+    }
     if (batch.notes.length || batch.failed.length) {
       userContent += `\n${renderImages(batch.notes, batch.failed)}`
       if (batch.notes.length) info(`看了 ${batch.notes.length} 张图`)

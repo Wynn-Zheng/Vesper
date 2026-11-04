@@ -28,10 +28,14 @@ function parse(text: string): JudgeResult | null {
   const m = /\{[\s\S]*\}/.exec(text)
   if (!m) return null
   try {
-    const o = JSON.parse(m[0]) as { 分?: number; 问题?: string }
-    const raw = Number(o.分 ?? 0)
+    const o = JSON.parse(m[0]) as { 分?: unknown; 问题?: unknown }
+    // 缺「分」不能当 0 分：0 分会被当成"回复很糟"，进而写进经验库当负面样本。
+    // 模型偶尔只回 `{"问题": "..."}` 或返回别的字段名，这种情况应当视为"没评"。
+    if (o.分 === undefined || o.分 === null) return null
+    const raw = Number(o.分)
     // 模型偶尔会给出 "abc" 这种，NaN 会一路渗进经验库，这里掐掉
-    const score = Number.isFinite(raw) ? Math.min(10, Math.max(0, raw)) : 0
+    if (!Number.isFinite(raw)) return null
+    const score = Math.min(10, Math.max(0, raw))
     return { score, issue: String(o.问题 ?? '').trim().slice(0, 80) }
   } catch {
     return null

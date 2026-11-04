@@ -118,8 +118,16 @@ export function buildRelationBlock(
   const recent = s.anchors.slice(-3)
   if (recent.length) {
     lines.push('- 最近让你们关系变化的几件事：')
+    // 关系数值是**故意对模型隐藏**的（见 relation 模块注释）。这里以前每条都带
+    // `（亲密 +2）`，等于把内部打分直接念给模型听，它会开始算分数、说"我们亲密 +2"。
+    // 需要排查时用 DEBUG_RELATION=1 打开。
+    const dbg = process.env.DEBUG_RELATION === '1'
     for (const a of recent) {
-      lines.push(`  ${a.date}｜${a.event}（${a.dimension} ${a.direction === 'up' ? '+' : '−'}${a.amount}）`)
+      lines.push(
+        dbg
+          ? `  ${a.date}｜${a.event}（${a.dimension} ${a.direction === 'up' ? '+' : '−'}${a.amount}）`
+          : `  ${a.date}｜${a.event}`,
+      )
     }
   }
 

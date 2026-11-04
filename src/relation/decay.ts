@@ -150,8 +150,10 @@ export function startRelationDecay(rules: () => Rules, intervalMs = 3600_000): (
       const today = todayStr()
       const people = listPeople()
       if (!people.length) return
-      // 一次读出来，所有人共用，别每个人读一遍三十个文件
-      const raw = recentRaw(30)
+      // 窗口必须覆盖最长的 grace（陌生阶段约 39 天）。以前这里传 30 天，
+      // 而 decayRelation 内部默认 120 天——调度器把窗口压回 30 天，
+      // 于是 39 天以上没联系的人读不到最后发言 → lastTalkAt=0 → 永不衰减。
+      const raw = recentRaw(120)
       for (const p of people) {
         const state = loadRelation(p.id)
         if (state.anchors.some((a) => a.date === today && a.event.includes('天没说话'))) continue
