@@ -669,7 +669,9 @@
     const inp = document.getElementById('nc-shelldir-input')
     if (!inp) return
     try {
-      await sendJson('/api/napcat/shelldir', { dir: inp.value.trim() }, 'PUT')
+      // 后端字段名是 shellDir（GET 回来的也是 shellDir）；这里以前发 dir，
+      // 于是"保存安装目录"永远存了个空字符串，看起来像恢复了自动探测。
+      await sendJson('/api/napcat/shelldir', { shellDir: inp.value.trim() }, 'PUT')
       toast(inp.value.trim() ? '安装目录已保存' : '已恢复自动探测')
       closeShelldirEdit()
       loadNapcat()

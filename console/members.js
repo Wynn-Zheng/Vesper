@@ -229,7 +229,11 @@
     if (bt) {
       api('/api/access')
         .then((a) => {
-          const denied = (a.memberDeny || []).includes(p.id)
+          // memberDeny 里存的是 QQ 号（后端 /api/member/block 写的就是它），
+          // 不是内部档案 id（qq-123）。以前拿 p.id 比对，永远不命中 →
+          // 已经屏蔽的人，按钮还显示"屏蔽"，再点一次又"屏蔽"一遍。
+          const qq = String(p.账号 || '')
+          const denied = qq !== '' && (a.memberDeny || []).includes(qq)
           bt.textContent = denied ? '已屏蔽' : '屏蔽'
           bt.style.background = denied ? '#f85149' : ''
           bt.style.color = denied ? '#fff' : ''
