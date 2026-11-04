@@ -91,7 +91,7 @@ console.log('\n=== 3. 关键词反应 ===')
 console.log('\n=== 4. 评分 ===')
 {
   const { scoreReply } = await import('../src/loop/score.ts')
-  const base = { addressed: false, isPrivate: false, followUp: false, text: '在吗', idleMinutes: 0, recentReplies: 0, talkValue: 0.4 }
+  const base = { addressed: false, isPrivate: false, text: '在吗', idleMinutes: 0, recentReplies: 0, talkValue: 0.4 }
 
   const p1 = scoreReply({ ...base, addressed: true }).probability
   check('被@ → 概率接近 1', p1 >= 0.99, String(p1))

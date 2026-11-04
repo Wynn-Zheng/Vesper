@@ -790,6 +790,8 @@ export class OnebotTransport implements Transport {
       // QQ 昵称单独留一份：群名片每个群不同，全局名必须用它
       senderNick: (ev.sender?.nickname ?? '').trim() || (ev.sender?.card ?? '').trim() || uid,
       passive: !isPrivate && !addressed && !followUp,
+      addressed: isPrivate || addressed,
+      followUp: !isPrivate && followUp,
       ...(observeOnly ? { observeOnly: true } : {}),
       ...(() => {
         const imgs = extractImages(ev.message)

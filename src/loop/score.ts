@@ -12,8 +12,6 @@ export interface ScoreParts {
   /** 被 @ 或被叫了名字 */
   addressed: boolean
   isPrivate: boolean
-  /** 刚才正在跟它说话（连续对话窗口内） */
-  followUp: boolean
   text: string
   /** 距上次说话多少分钟 */
   idleMinutes: number
@@ -51,11 +49,6 @@ export function scoreReply(p: ScoreParts): ScoreResult {
 
   const reasons: string[] = []
   let score = 0
-
-  if (p.followUp) {
-    score += 35
-    reasons.push('接着刚才的话')
-  }
 
   if (SHORT_ACK.test(p.text.trim())) {
     score -= 25

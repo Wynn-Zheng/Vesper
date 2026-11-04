@@ -125,7 +125,7 @@ console.log('\n=== 2. 极端配置组合 ===')
       check(`「${name}」prompt 能组装`, false, String(e).slice(0, 60))
     }
     try {
-      const s = scoreReply({ addressed: false, isPrivate: false, followUp: false, text: 'x', idleMinutes: 0, recentReplies: 0, talkValue: 0.5 })
+      const s = scoreReply({ addressed: false, isPrivate: false, text: 'x', idleMinutes: 0, recentReplies: 0, talkValue: 0.5 })
       check(`「${name}」评分概率合法`, s.probability >= 0 && s.probability <= 1, String(s.probability))
     } catch (e) {
       check(`「${name}」评分概率合法`, false, String(e).slice(0, 60))

@@ -390,7 +390,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
     const scopeKey = scopeOf(m.from)
     // 对方**真的又叫了它一次** → 续期计数清零（重新给三次"接着聊"的机会）。
     // 计数只在成功发送那里 +1，到 3 就不再续窗口。
-    if (m.from.kind === 'group' && !passive) {
+    if (m.from.kind === 'group' && m.addressed) {
       talkRenewals.delete(scopeKey + ':' + (m.senderId ?? m.from.id))
     }
     const bo = rules.行为.退避 ? backoff.get(scopeKey) : undefined
@@ -436,7 +436,6 @@ export function boot(transport: Transport, opts: BootOptions): void {
       const score = scoreReply({
         addressed: false,
         isPrivate: m.from.kind === 'private',
-        followUp: false,
         text,
         // 用 batch.prevAt（收消息时**先取后写**的快照），不要用 lastTalkAt()：
         // 后者在 604 行已经被更新成 m.at 了，算出来恒 ≈0，
@@ -543,7 +542,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
       const scopeNow = scopeOf(m.from)
       const lastQuote = lastQuoteAt.get(scopeNow) ?? Number.NEGATIVE_INFINITY
       const qd = shouldQuote(rules, m.from.kind, batch, m, {
-        addressed: !passive,
+        addressed: m.addressed ?? !passive,
         targetLen: text.length,
         reply,
         moodIntensity: currentMoodIntensity(),
@@ -880,7 +879,7 @@ export function boot(transport: Transport, opts: BootOptions): void {
     // 互相看不到对方的 user 消息，还可能同时压缩、后写覆盖前写。
     const key = scopeOf(m.from)
     const now = Date.now()
-    const addressed = !(m.passive ?? false)
+    const addressed = m.addressed ?? !(m.passive ?? false)
 
     // 档位是「关闭」：不聚合，每条立刻处理。
     //

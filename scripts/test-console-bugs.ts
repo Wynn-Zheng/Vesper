@@ -128,7 +128,7 @@ console.log('\n=== 5. 回复评分 ===')
 {
   const { scoreReply } = await import('../src/loop/score.ts')
 
-  const base = { addressed: false, isPrivate: false, followUp: false, text: '随便', idleMinutes: 0, recentReplies: 0, talkValue: 0.4 }
+  const base = { addressed: false, isPrivate: false, text: '随便', idleMinutes: 0, recentReplies: 0, talkValue: 0.4 }
 
   // 被 @ 必然高分
   const at = scoreReply({ ...base, addressed: true })

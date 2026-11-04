@@ -5,7 +5,6 @@ import { scoreReply, type ScoreParts } from '../src/loop/score.ts'
 const base: ScoreParts = {
   addressed: false,
   isPrivate: false,
-  followUp: false,
   text: '你好',
   idleMinutes: 0,
   recentReplies: 0,
@@ -32,11 +31,9 @@ test('求帮忙比普通陈述更想回', () => {
   assert.ok(request.probability > plain.probability)
 })
 
-test('连续对话会加分', () => {
-  const cold = scoreReply(at({ text: '那你呢' }))
-  const warm = scoreReply(at({ text: '那你呢', followUp: true }))
-  assert.ok(warm.probability > cold.probability)
-})
+// 「连续对话会加分（followUp）」这条已删除：scoreReply 只在群聊普通闲聊
+// （passive = 没 @ 也没在续话）时被调用，followUp 在那里恒为 false，
+// 那 35 分从来加不上。续话走的是另一条分支，不参与打分。
 
 test('很久没说话会更想开口', () => {
   const idle = scoreReply(at({ text: '今天天气不错', idleMinutes: 180 }))
@@ -58,13 +55,13 @@ test('深夜活跃度低时更安静', () => {
 })
 
 test('打分带上理由，方便看日志', () => {
-  const r = scoreReply(at({ text: '你觉得呢', followUp: true }))
+  const r = scoreReply(at({ text: '你觉得呢' }))
   assert.ok(r.reasons.length > 0)
-  assert.ok(r.reasons.some((x) => x.includes('接着刚才') || x.includes('意见')))
+  assert.ok(r.reasons.some((x) => x.includes('意见')))
 })
 
 test('分数被夹在 0~100', () => {
-  const high = scoreReply(at({ text: '帮我 你觉得 为什么 能不能', followUp: true, idleMinutes: 500, talkValue: 1 }))
+  const high = scoreReply(at({ text: '帮我 你觉得 为什么 能不能', idleMinutes: 500, talkValue: 1 }))
   const low = scoreReply(at({ text: '嗯', recentReplies: 5 }))
   assert.ok(high.score <= 100)
   assert.ok(low.score >= 0)
