@@ -214,21 +214,27 @@ console.log('\n=== F. 衰减极端值 ===')
 console.log('\n=== G. 真实数据 ===')
 {
   people.setPeopleRoot('persona/people')
-  store.setMemoryRoot?.('persona/memory')
+  // 以前写死 `qq-1234567890` 和旧记忆根 `persona/memory`：本机根本没有这个档案，
+  // 于是整段读到 0 条仍然打 ✓——「真实数据完整性」长期没检查任何东西。
+  const everyone = people.listPeople()
+  if (!everyone.length) {
+    console.log('  （没有真实人物档案，本段跳过——不算通过）')
+  } else {
+    const pid = everyone[0]!.id
+    const realFacts = facts.loadFacts(pid)
+    ok(`真实 facts 读到 ${realFacts.length} 条（${pid}）`)
+    if (realFacts.some((f) => f.faint)) bug('真实数据里出现了 faint 标记（不该持久化）')
+    else ok('真实 facts 没有 faint 残留')
 
-  const realFacts = facts.loadFacts('qq-1234567890')
-  ok(`真实 facts 读到 ${realFacts.length} 条`)
-  if (realFacts.some((f) => f.faint)) bug('真实数据里出现了 faint 标记（不该持久化）')
-  else ok('真实 facts 没有 faint 残留')
+    const realEps = store.loadEpisodes()
+    ok(`真实 episodes 读到 ${realEps.length} 条`)
+    const noTier = realEps.filter((e) => !e.importance)
+    if (noTier.length) bug('有 episode 缺 importance', String(noTier.length))
+    else ok('所有 episode 都有 importance')
 
-  const realEps = store.loadEpisodes()
-  ok(`真实 episodes 读到 ${realEps.length} 条`)
-  const noTier = realEps.filter((e) => !e.importance)
-  if (noTier.length) bug('有 episode 缺 importance', String(noTier.length))
-  else ok('所有 episode 都有 importance')
-
-  const realCore = core.loadCore()
-  ok(`真实核心记忆 ${realCore.length} 条`)
+    const realCore = core.loadCore()
+    ok(`真实核心记忆 ${realCore.length} 条`)
+  }
 }
 
 /* ============ H. 代码里有没有可疑残留 ============ */

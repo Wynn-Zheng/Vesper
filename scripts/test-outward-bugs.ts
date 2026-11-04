@@ -2,7 +2,7 @@
  * 外部能力体检：B站接口的纯逻辑 + 刷视频的状态机。
  * 不真调 B站。
  */
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -60,17 +60,20 @@ console.log('\n=== 3. bvid 校验 ===')
 /* ---------- 4. 不存在的分区走总热门 ---------- */
 console.log('\n=== 4. 未知分区 ===')
 {
-  // hot() 会发真请求，这里只验证参数处理：传不存在的分区名不该抛错
+  // 以前这里真发请求，网络失败也算"通过"（只验证参数处理不崩）。
+  // 现在 mock fetch：既能离线跑，又能真的断言「未知分区会回落到总热门」。
+  const origFetch = globalThis.fetch
+  let askedUrl = ''
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    askedUrl = String(input instanceof Request ? input.url : input)
+    return new Response(JSON.stringify({ code: 0, data: { list: [] } }), { status: 200 })
+  }) as typeof fetch
   try {
-    // 用一个必然失败的环境（不会真的拿到数据），只验证不崩
-    const r = await Promise.race([
-      bili.hot({ zone: '根本不存在的分区', limit: 1 }),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-    ])
-    check('未知分区不抛错（最多 8 秒内返回）', Array.isArray(r), typeof r)
-  } catch (e) {
-    // 网络问题也算通过（我们只验证"参数处理不崩"）
-    check('未知分区不抛错', /timeout/.test(String(e)), String(e).slice(0, 60))
+    const r = await bili.hot({ zone: '根本不存在的分区', limit: 1 })
+    check('未知分区不抛错且返回数组', Array.isArray(r), typeof r)
+    check('未知分区回落到总热门接口', askedUrl.includes('/x/web-interface/popular'), askedUrl.slice(0, 80))
+  } finally {
+    globalThis.fetch = origFetch
   }
 }
 
@@ -78,20 +81,30 @@ console.log('\n=== 4. 未知分区 ===')
 console.log('\n=== 5. 刷视频状态 ===')
 {
   const watch = await import('../src/outward/watch.ts')
+  const { writeFileSync } = await import('node:fs')
 
-  // 5a. loadWatched 读坏 JSON 返回空数组
+  // 用临时根：以前读的是真实 persona/outward/watched.json，
+  // 断言结果取决于用户昨天看过什么。
   const dir = mkdtempSync(join(tmpdir(), 'qqbot-watch-'))
-  console.log(`   （watch 的路径固定为 persona/outward，测试用真实路径但会备份）`)
+  writeFileSync(
+    join(dir, 'watched.json'),
+    JSON.stringify([{ bvid: 'BV1test', title: '测试视频', at: Date.now() }]),
+  )
+  watch.setWatchRoot(dir)
+  try {
+    check('loadWatched 读到 1 条', watch.loadWatched().length === 1)
+    check('watchedToday 返回数字', Number.isInteger(watch.watchedToday()) && watch.watchedToday() >= 0)
+    const list = watch.loadWatched()
+    const badItems = list.filter((w) => typeof w.bvid !== 'string' || typeof w.title !== 'string' || typeof w.at !== 'number')
+    check('每条都有 bvid/title/at', badItems.length === 0, JSON.stringify(badItems.slice(0, 1)))
 
-  // 5b. watchedToday 只算今天的
-  const today = watch.watchedToday()
-  check(`watchedToday 返回数字（${today}）`, Number.isInteger(today) && today >= 0)
-
-  // 5c. 结构完整性
-  const list = watch.loadWatched()
-  check('loadWatched 返回数组', Array.isArray(list))
-  const badItems = list.filter((w) => typeof w.bvid !== 'string' || typeof w.title !== 'string' || typeof w.at !== 'number')
-  check('每条都有 bvid/title/at', badItems.length === 0, JSON.stringify(badItems.slice(0, 1)))
+    // 坏 JSON 要能兜底
+    writeFileSync(join(dir, 'watched.json'), '{ 不是 json')
+    check('坏 JSON 返回空数组', watch.loadWatched().length === 0)
+  } finally {
+    watch.setWatchRoot('persona/outward')
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 /* ---------- 6. 表情包通道的边界（顺带）---------- */

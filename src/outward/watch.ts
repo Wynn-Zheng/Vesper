@@ -9,7 +9,12 @@ import { appendJsonl, writeAtomic } from '../store/fs.ts'
 import { detail, hot, humanDuration, type HotOptions } from './bili.ts'
 import type { VideoBrief, WatchResult, Watched } from './types.ts'
 
-const ROOT = 'persona/outward'
+let ROOT = 'persona/outward'
+
+/** 仅供测试/检查脚本：把「刷视频」的落盘根指到临时目录 */
+export function setWatchRoot(p: string): void {
+  ROOT = p
+}
 
 function watchedFile(): string {
   return join(ROOT, 'watched.json')

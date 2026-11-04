@@ -104,7 +104,8 @@ console.log('\n=== 5. lineDiff ===')
 
 console.log('\n=== 6. loadDrifts ===')
 {
-  // 用真实文件（persona/self-history/drift.jsonl 可能存在）
+  // 读真实文件（persona/self-history/drift.jsonl），但**没有数据时不能说通过**：
+  // 以前空数据也 pass++，于是这项检查在没漂移记录的机器上永远是绿的。
   const items = loadDrifts(5)
   check('返回数组', Array.isArray(items))
   check('不超过 5 条', items.length <= 5)
@@ -112,8 +113,7 @@ console.log('\n=== 6. loadDrifts ===')
     const it = items[0]!
     check('每条有 at/from/to/sim', typeof it.at === 'number' && typeof it.sim === 'number')
   } else {
-    console.log('  （本机还没有漂移记录，跳过字段检查）')
-    pass++
+    console.log('  （本机还没有漂移记录，跳过字段检查——不算通过）')
   }
 }
 

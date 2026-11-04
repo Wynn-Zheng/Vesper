@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -25,6 +25,7 @@ import {
   ensurePerson,
   isValidPersonId,
   listPeople,
+  personDir,
   personIdOf,
   savePerson,
   setPeopleRoot,
@@ -35,6 +36,7 @@ import { loadProfile, saveProfile } from '../src/persona/profile.ts'
 import { decayRelation } from '../src/relation/decay.ts'
 import { applyAnchor, loadRelation, saveRelation, setRelationRoot } from '../src/relation/store.ts'
 import { EMPTY_RELATION } from '../src/relation/types.ts'
+import { listSnapshots, restore, setVersionRoot, snapshot } from '../src/persona/version.ts'
 
 initLog('', false)
 
@@ -71,11 +73,12 @@ test('isValidPersonId 拦得住穿越和非法格式', () => {
 })
 
 test('非法 personId 建目录会抛错', () => {
-  assert.throws(() => {
-    // 直接调用内部路径拼接（通过 loadPerson 触发）
-    const bad = '../escape'
-    if (!isValidPersonId(bad)) throw new Error('非法的 personId')
-  })
+  // 以前这里只跑测试自己写的 `if (!isValidPersonId(bad)) throw`，从没调用 src，
+  // 于是恒通过、零覆盖。现在直接打真实入口 personDir。
+  assert.throws(() => personDir('../escape'), /非法的 personId/)
+  assert.throws(() => personDir('qq-../x'), /非法的 personId/)
+  assert.throws(() => personDir(''), /非法的 personId/)
+  assert.ok(personDir('qq-20001').replace(/\\/g, '/').endsWith('/qq-20001'))
 })
 
 /* ---------------- people：建档与复用 ---------------- */
@@ -103,18 +106,24 @@ test('快照能列出来，回滚后数据恢复', () => {
   const pid = personIdOf('qq', '20020')
   ensurePerson('qq', '20020', '回滚测试')
   appendFacts(pid, [{ text: '原始事实', date: today(), confidence: 0.9, visibility: 'public' }])
+  const factsFile = join(dir, 'people', pid, 'facts.md')
 
-  // 直接对临时 people 根拍快照（version.ts 用的是 persona/，这里只测逻辑）
-  const snapDir = join(dir, 'snap')
-  mkdirSync(snapDir, { recursive: true })
-  const before = readFileSync(join(dir, 'people', pid, 'facts.md'), 'utf8')
-  cpSync(join(dir, 'people', pid), join(snapDir, 'v1'), { recursive: true })
-  appendFacts(pid, [{ text: '新增事实', date: today(), confidence: 0.8, visibility: 'private' }])
-  assert.ok(readFileSync(join(dir, 'people', pid, 'facts.md'), 'utf8').includes('新增事实'))
+  // 真正调用 version.ts：以前用 cpSync 手搓快照/回滚，只测了 cpSync 本身。
+  setVersionRoot(join(dir, 'people'), join(dir, 'versions'))
+  try {
+    const id = snapshot('unit-test')
+    assert.ok(id, '应该拍出快照')
+    assert.ok(listSnapshots().some((s) => s.id === id), '快照应出现在列表里')
 
-  cpSync(join(snapDir, 'v1'), join(dir, 'people', pid), { recursive: true })
-  const after = readFileSync(join(dir, 'people', pid, 'facts.md'), 'utf8')
-  assert.equal(after, before, '回滚后应与快照一致')
+    appendFacts(pid, [{ text: '新增事实', date: today(), confidence: 0.8, visibility: 'private' }])
+    assert.ok(readFileSync(factsFile, 'utf8').includes('新增事实'))
+
+    assert.equal(restore(id!), true, '回滚应成功')
+    assert.ok(!readFileSync(factsFile, 'utf8').includes('新增事实'), '回滚后新增事实应消失')
+    assert.ok(readFileSync(factsFile, 'utf8').includes('原始事实'), '回滚后原始事实应还在')
+  } finally {
+    setVersionRoot('persona', 'data/versions')
+  }
 })
 
 /* ---------------- 限流 ---------------- */
