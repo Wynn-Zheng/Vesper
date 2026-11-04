@@ -245,10 +245,12 @@ const onebotOpts: OnebotOptions = {
   path: process.env['ONEBOT_PATH'] ?? '/onebot/v11/ws',
   token: process.env['ONEBOT_TOKEN'] ?? '',
   ownerQQ: process.env['OWNER_QQ'] || undefined,
-  allowGroup: (process.env['ALLOW_GROUP'] ?? 'false').toLowerCase() === 'true',
-  groupAllow: (process.env['GROUP_ALLOW'] ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-  memberAllow: (process.env['MEMBER_ALLOW'] ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-  requireAt: (process.env['GROUP_REQUIRE_AT'] ?? 'true').toLowerCase() !== 'false',
+  // 群里回不回、要不要 @、白/黑名单，权威来源只有一个：
+  // 控制台「权限」页写下的 persona/access.yaml（下面 getPolicy 每收一条消息重读）。
+  // 这里以前还从 .env 读了 ALLOW_GROUP / GROUP_ALLOW / MEMBER_ALLOW / GROUP_REQUIRE_AT，
+  // 和 access.yaml 的默认值不一致（一边默认关群、一边默认开群）——
+  // 用户改了控制台却发现"没生效"，其实是另一套开关在说话。
+  // .env 只保留一个作用：access.yaml 还不存在时，由 core/access.ts 的 fromEnv() 生成初始文件。
   botNames,
   // 控制台改了权限文件，下一条消息就生效
   getPolicy: () => loadAccess(),
