@@ -14,6 +14,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { warnAt } from '../core/log.ts'
+import { MAX_IMAGES_PER_MESSAGE } from '../core/limits.ts'
 import { chat } from './deepseek.ts'
 import type { LlmOptions } from './types.ts'
 
@@ -69,8 +70,8 @@ const SYSTEM = `你在帮一个聊天机器人看图。只描述，不评价。�
 /** 单张图最多 5MB。超过就不看，免得拖慢整个回复。 */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
-/** 一次最多看几张。配置层还有 视觉.最多张数，这里只是最后一道闸。 */
-const MAX_IMAGES = 4
+/** 一次最多看几张。chat 层已按 rules.视觉.最多张数 切过，这里只是最后一道闸。 */
+const MAX_IMAGES = MAX_IMAGES_PER_MESSAGE
 
 /** 单次下载的超时。 */
 const DOWNLOAD_TIMEOUT_MS = 15_000

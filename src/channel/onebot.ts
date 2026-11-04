@@ -4,6 +4,7 @@ import type { IncomingMessage } from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, WebSocket, type RawData } from 'ws'
 import { info, warnAt, errorAt } from '../core/log.ts'
+import { MAX_IMAGES_PER_MESSAGE } from '../core/limits.ts'
 import type { GroupMember, Transport } from '../core/transport.ts'
 import type { AccessPolicy } from '../core/access.ts'
 import { checkAccess } from '../core/access.ts'
@@ -244,8 +245,9 @@ export function extractImages(message: OBEvent['message']): string[] {
     else if (/^https?:\/\//i.test(url)) push(url)
     else if (/^https?:\/\//i.test(file)) push(file)
   }
-  // 一次最多 4 条引用，多了又慢又贵
-  return out.slice(0, 4)
+  // 这里是成本硬上限（见 core/limits.ts），不是"一次看几张"的配置：
+  // 那些由 rules.视觉.最多张数 在 chat 层切，只能调小。
+  return out.slice(0, MAX_IMAGES_PER_MESSAGE)
 }
 
 const IMAGE_UA =

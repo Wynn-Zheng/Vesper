@@ -548,8 +548,14 @@ await startConsole({
       port: consolePort,
       // 手机要访问就设 CONSOLE_HOST=0.0.0.0（默认只听本机）
       host: process.env['CONSOLE_HOST'] || '127.0.0.1',
-      // 控制台「对话」页要真聊：走和 QQ 同一条 generateReply
-      reply: (m, r) => generateReply(m as never, { rules: r, llm: llm!, tools: toolRegistry ?? undefined }),
+      // 控制台「对话」页要真聊：走和 QQ 同一条 generateReply。
+      // 没配 key 时 llm 是 undefined，以前这里用 llm! 硬塞：
+      // 控制台一发消息就在 generateReply 里抛 "Cannot read properties of undefined"，
+      // 用户只看到 500。现在给一句能看懂的错。
+      reply: (m, r) => {
+        if (!llm) throw new Error('没有配置 DEEPSEEK_API_KEY：控制台对话不可用（填到 .env 后重启）')
+        return generateReply(m as never, { rules: r, llm, tools: toolRegistry ?? undefined })
+      },
       token: consoleToken,
       getRules,
       transport,
