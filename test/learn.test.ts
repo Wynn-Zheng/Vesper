@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { initLog } from '../src/core/log.ts'
 import { loadJargon, saveJargon, explainJargon, renderJargon } from '../src/learn/jargon.ts'
 import { loadPlays, recordPlay, relevantPlays, renderPlays, savePlays } from '../src/learn/plays.ts'
@@ -17,7 +17,11 @@ import {
 initLog('', false)
 
 const dir = mkdtempSync(join(tmpdir(), 'qqbot-learn-'))
+const oldCwd = process.cwd()
 process.chdir(dir)
+// --test-isolation=none 下所有测试文件共用一个进程：不还原 cwd，
+// 后面的测试文件用相对路径就会落到这个临时目录（然后被删掉）。
+after(() => process.chdir(oldCwd))
 
 process.on('exit', () => {
   try {

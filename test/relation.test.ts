@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { DEFAULTS, stageOf } from '../src/core/config.ts'
 import { decayedMood, loadMood, saveMood } from '../src/persona/mood.ts'
 import { setPeopleRoot, personIdOf } from '../src/people/store.ts'
+import { setCardsRoot } from '../src/persona/card.ts'
 import { buildRelationBlock } from '../src/relation/format.ts'
 import { applyAnchor, loadRelation, saveRelation, setRelationRoot } from '../src/relation/store.ts'
 import { EMPTY_RELATION, type RelationState } from '../src/relation/types.ts'
@@ -13,6 +14,9 @@ import { EMPTY_RELATION, type RelationState } from '../src/relation/types.ts'
 const dir = mkdtempSync(join(tmpdir(), 'qqbot-rel-'))
 setPeopleRoot(join(dir, 'people'))
 setRelationRoot(join(dir, 'people'))
+// 心情是 card-scoped 的：不设卡根就会落到真实的 persona/mood.yaml，
+// 每跑一次单测就把用户当前心情覆盖掉。
+setCardsRoot(dir)
 
 const pid = personIdOf('qq', '1')
 const other = personIdOf('qq', '2')

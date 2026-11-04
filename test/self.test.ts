@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { buildSelfBlock, buildPhaseBlock } from '../src/self/format.ts'
 import { appendLife, loadLife, loadSelf, recentLife, saveSelf, setSelfFiles } from '../src/self/store.ts'
 import { DEFAULTS } from '../src/core/config.ts'
@@ -11,7 +11,10 @@ const dir = mkdtempSync(join(tmpdir(), 'qqbot-self-'))
 setSelfFiles(join(dir, 'self.md'), join(dir, 'life.md'))
 // 挪到临时目录：否则 buildSelfBlock 会读到项目里真实的角色卡，
 // 卡名会盖掉"还没有名字"/rules.yaml 名字这两条路径，测试就跟本机状态绑死了。
+const oldCwd = process.cwd()
 process.chdir(dir)
+// 共享进程模式下必须还原，否则后面的测试文件全在这个临时目录里跑。
+after(() => process.chdir(oldCwd))
 
 process.on('exit', () => {
   try {

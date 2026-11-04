@@ -339,6 +339,12 @@ async function waitReady(timeoutMs = 25000, checkAbort = () => '') {
  * 失败就整目录回滚。
  */
 function applyPendingUpdate() {
+  // 开发模式绝不应用更新包：__dirname 指向源码 electron/，cpSync 会把更新包
+  // 覆盖进仓库源码里。只有打包后的 app.asar 目录才该被替换。
+  if (!app.isPackaged) {
+    trace('[main] 开发模式，跳过待应用更新')
+    return
+  }
   const upd = path.join(DATA_ROOT, 'update')
   const pending = path.join(upd, 'pending.json')
   if (!existsSync(pending)) return
@@ -703,14 +709,34 @@ app.whenReady().then(async () => {
 })
 
 // 只有"我拉起的"后端才杀。复用别人的不能杀（那是用户手动开的）
-app.on('before-quit', () => {
+let quitReady = false
+app.on('before-quit', (ev) => {
   app.isQuitting = true
-  if (backend && !backend.killed) {
-    try {
-      backend.kill()
-    } catch {
-      /* ignore */
-    }
+  if (!backend || backend.killed || quitReady) return
+  // 直接 kill() 会跳过后端的落盘与 NapCat 停止（SIGTERM 在 Windows 上是
+  // TerminateProcess，Linux/macOS 才有信号语义）。这里先发 SIGINT 等最多 3 秒，
+  // 让后端把未写的批次刷完；超时再走原来的硬杀。
+  ev.preventDefault()
+  const proc = backend
+  const finish = () => {
+    quitReady = true
+    app.quit()
+  }
+  const timer = setTimeout(() => {
+    trace('[main] 后端 3 秒内没退出，强制结束')
+    try { proc.kill() } catch { /* ignore */ }
+    finish()
+  }, 3000)
+  proc.once('exit', () => {
+    clearTimeout(timer)
+    finish()
+  })
+  try {
+    proc.kill('SIGINT')
+  } catch {
+    clearTimeout(timer)
+    try { proc.kill() } catch { /* ignore */ }
+    finish()
   }
 })
 

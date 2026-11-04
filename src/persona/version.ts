@@ -2,9 +2,20 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { join, resolve, sep } from 'node:path'
 import { info, warnAt } from '../core/log.ts'
 
-const ROOT = 'persona'
+let ROOT = 'persona'
 // 快照必须放在 persona/ 外面：cpSync 不允许把目录复制进自己的子目录
-const DIR = 'data/versions'
+let DIR = 'data/versions'
+
+/**
+ * 仅供测试/检查脚本：把人格根与快照根指到临时目录。
+ *
+ * 为什么需要：快照接口的并发用例以前直接对**真实** persona/ 拍 10 张，
+ * 而且不清理——每跑一次 check-all 就挤掉用户 10 张真实历史（上限只有 60 张）。
+ */
+export function setVersionRoot(cardsRoot: string, versionsDir: string): void {
+  ROOT = cardsRoot
+  DIR = versionsDir
+}
 
 /** 保留多少天 */
 const KEEP_DAYS = 30

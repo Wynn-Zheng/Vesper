@@ -98,6 +98,11 @@ async function main(): Promise<void> {
   if (localSha !== local.app.sha256) fail('本地 latest.json 的 sha256 和 app.tar.gz 不一致（打包有问题）')
   console.log(`\n本地：${local.version}${local.git ? ' / ' + local.git : ''}  ${(local.app.size / 1024).toFixed(0)} KB`)
 
+  // 配置校验必须放在**任何远程写操作之前**：以前缺 UPDATE_URL 时 curl 失败被当成
+  // 「第一次发布」，接着照常备份 + 上传，最后核对环节才抛错，服务器上留下半成品。
+  if (!envFromFile('UPDATE_URL')) fail('没配置 UPDATE_URL（update.env 里），什么都没做')
+  if (!envFromFile('UPDATE_TOKEN')) fail('没配置 UPDATE_TOKEN（update.env 里），什么都没做')
+
   // 检查服务器上当前是什么版本（用 token 拉 latest.json）
   step('检查服务器上的当前版本')
   let remoteVersion = ''

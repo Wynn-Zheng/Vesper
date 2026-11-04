@@ -2,7 +2,9 @@
  * 并发与数据完整性检查。
  * 这些是最难靠读代码发现的问题：单线程跑一万次都正常，两个撞一起才暴露。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 /** 从 .env 读控制台 token（不依赖环境变量，直接跑也能通） */
 function envToken(): string {
   if (process.env.CONSOLE_TOKEN) return process.env.CONSOLE_TOKEN
@@ -48,24 +50,38 @@ function check(name: string, ok: boolean, detail = ''): void {
   }
 }
 
-/* ---------- 1. 并发写同一个文件 ---------- */
-console.log('=== 并发写 ===')
+/* ---------- 1. 快照写入：不重复、不丢、不碰真实数据 ---------- */
+console.log('=== 快照写入 ===')
 {
-  // 同时发 10 个快照请求，看会不会互相踩
-  const before = (await call('GET', '/api/versions')).json as { snapshots: unknown[] }
-  const results = await Promise.all(
-    Array.from({ length: 10 }, () => call('POST', '/api/action', { action: 'snapshot' })),
-  )
-  const okCount = results.filter((r) => r.status === 200).length
-  const after = (await call('GET', '/api/versions')).json as { snapshots: unknown[] }
-  check(
-    `10 个并发快照：${okCount} 个成功，新增 ${after.snapshots.length - before.snapshots.length} 个`,
-    okCount >= 8,
-    `成功 ${okCount}`,
-  )
-  // 快照 id 是时间戳，同一秒内多个会冲突——看有没有重复
-  const ids = (after.snapshots as Array<{ id: string }>).map((s) => s.id)
-  check('快照 id 不重复', new Set(ids).size === ids.length, `总数 ${ids.length}，去重后 ${new Set(ids).size}`)
+  // 以前这里通过 HTTP 让**真实**后端对**真实** persona/ 拍 10 张快照，且不清理。
+  // 每跑一次 check-all 就挤掉用户 10 张真实历史（上限只有 60 张），prune 还会删掉最老的
+  // ——删掉的那些手动补不回来。现在指向临时目录，测的东西不变：id 唯一、目录数与 id 数一致。
+  const { setVersionRoot, snapshot, listSnapshots } = await import('../src/persona/version.ts')
+  const tmp = mkdtempSync(join(tmpdir(), 'qqbot-conc-'))
+  mkdirSync(join(tmp, 'persona'), { recursive: true })
+  writeFileSync(join(tmp, 'persona', 'card.md'), 'name: 测试卡\n')
+  setVersionRoot(join(tmp, 'persona'), join(tmp, 'versions'))
+
+  try {
+    const before = listSnapshots().length
+    const ids = Array.from({ length: 10 }, () => snapshot('concurrency-test'))
+    const after = listSnapshots().length
+    const okIds = ids.filter((x): x is string => typeof x === 'string')
+    check(
+      `10 次快照：${okIds.length} 个返回 id，新增 ${after - before} 个`,
+      okIds.length >= 8,
+      `成功 ${okIds.length}`,
+    )
+    check(
+      '快照目录数与去重 id 数一致（同秒不会写出两个同 id 目录）',
+      after - before === new Set(okIds).size,
+      `新增 ${after - before} / 去重 ${new Set(okIds).size}`,
+    )
+  } finally {
+    // 还原真实根：本脚本同进程后面还会跑数据一致性检查
+    setVersionRoot('persona', 'data/versions')
+    rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 /* ---------- 2. 并发读 ---------- */
