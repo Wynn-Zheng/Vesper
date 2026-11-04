@@ -881,8 +881,9 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
       if (req.method === 'PUT' && path === '/api/access') {
-        const body = await readBody(req)
-        const data = JSON.parse(body || '{}') as Partial<AccessPolicy>
+        // 坏 body 统一走 readJson：它抛「请求体不是合法 JSON」，外层返回 400；
+        // 以前裸 JSON.parse 抛 SyntaxError，用户拿到的是 500 + 一段堆栈。
+        const data = (await readJson(req)) as Partial<AccessPolicy>
         const cur = loadAccess()
         /** 缺字段就沿用原值；只有真的传了数组才替换 */
         const arr = (v: unknown, fallback: string[]): string[] =>
@@ -941,8 +942,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       // ---- 记忆编辑：改错的、删掉不该留的 ----
       // 改可见性：全 private 的时候用户会想"这条其实可以说"
       if (req.method === 'PATCH' && path === '/api/facts/visibility') {
-        const body = await readBody(req)
-        const d = JSON.parse(body || '{}') as { text?: string; visibility?: string }
+        const d = (await readJson(req)) as { text?: string; visibility?: string }
         const text = String(d.text ?? '')
         const v = String(d.visibility ?? '')
         if (!text || !['public', 'private', 'unsure'].includes(v)) throw new Error('参数不对')
@@ -951,8 +951,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
       if ((req.method === 'PUT' || req.method === 'DELETE') && path === '/api/facts') {
-        const body = await readBody(req)
-        const d = JSON.parse(body || '{}') as { text?: string; newText?: string; confidence?: number }
+        const d = (await readJson(req)) as { text?: string; newText?: string; confidence?: number }
         const text = String(d.text ?? '')
         if (!text) throw new Error('缺少 text')
         if (req.method === 'DELETE') {
@@ -968,8 +967,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
       if ((req.method === 'PUT' || req.method === 'DELETE') && path === '/api/open') {
-        const body = await readBody(req)
-        const d = JSON.parse(body || '{}') as { text?: string; newText?: string }
+        const d = (await readJson(req)) as { text?: string; newText?: string }
         const text = String(d.text ?? '')
         if (!text) throw new Error('缺少 text')
         if (req.method === 'DELETE') {
@@ -981,8 +979,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
       if (req.method === 'DELETE' && path === '/api/episode') {
-        const body = await readBody(req)
-        const d = JSON.parse(body || '{}') as { id?: string; scope?: string }
+        const d = (await readJson(req)) as { id?: string; scope?: string }
         if (!d.id || !d.scope) throw new Error('缺少 id 或 scope')
         json(res, 200, { deleted: deleteEpisode(d.id, d.scope as never) })
         return
@@ -2217,10 +2214,12 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
         json(res, 200, {
           groups,
-          // 群名单之外的档案（私聊认识、不在任何群里的人）
+          // 群名单之外的档案（私聊认识、不在任何群里的人）。
+          // 带上 account：前端「建档」用的是 QQ 号，person.id 是内部档案 id，
+          // 拿它去建档会建出一个人 id 和账号完全对不上的档案。
           others: people
             .filter((p) => !groups.some((g) => g.members.some((m) => m.档案 === p.id)))
-            .map((p) => ({ id: p.id, name: p.name })),
+            .map((p) => ({ id: p.id, name: p.name, account: primaryAccount(p.id) })),
         })
         return
       }
@@ -2285,8 +2284,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
       if (req.method === 'POST' && path === '/api/try') {
         if (!opts.llm) throw new Error('没有模型配置')
-        const body = await readBody(req)
-        const data = JSON.parse(body || '{}') as {
+        const data = (await readJson(req)) as {
           text?: string
           history?: Array<{ role?: string; text?: string }>
         }
@@ -2317,8 +2315,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       }
 
       if (req.method === 'POST' && path === '/api/action') {
-        const body = await readBody(req)
-        const data = JSON.parse(body || '{}') as { action?: string; payload?: Record<string, unknown> }
+        const data = (await readJson(req)) as { action?: string; payload?: Record<string, unknown> }
         const result = await runAction(opts, data.action ?? '', data.payload ?? {}, personId)
         json(res, 200, { ok: true, result })
         return

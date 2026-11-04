@@ -212,11 +212,11 @@ export async function handleMiscApi(
   }
 
   if (method === 'POST' && path === '/api/napcat/restart') {
-    const stopped = await NC.stop()
-    // 等进程真退干净再启动，不然会抢端口
-    await new Promise((r) => setTimeout(r, 2500))
-    const started = NC.start()
-    json(res, 200, { ok: started.ok, stopped: stopped.detail, started: started.detail })
+    // 统一走 manager 的实现：它用 stopNow()（不吞错误、会等进程真退），
+    // 失败时还会把"停止阶段报了什么错"一起带上。以前这里自己 stop+等 2.5s+start，
+    // stop 的失败被丢掉，前端只看到 started 的 detail，排障时不知道是哪一步坏的。
+    const r = await NC.restart()
+    json(res, 200, r)
     return true
   }
 

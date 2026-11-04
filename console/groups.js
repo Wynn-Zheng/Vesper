@@ -99,7 +99,9 @@
       c.appendChild(el('div', 'op-t', '不在任何群里的'))
       c.appendChild(el('div', 'hint', '只私聊过，没在任何群名单里')).style.marginBottom = '8px'
       for (const m of DATA.others) {
-        c.appendChild(memberRow(m, null))
+        // 后端给的是"档案 id + QQ 号"；memberRow 里建档/打开档案都按 QQ 号走，
+        // 以前直接把档案 id 当账号传下去，建出来的人 id 和账号对不上。
+        c.appendChild(memberRow({ ...m, id: m.account || m.id, 昵称: m.name, 认识: true }, null))
       }
       box.appendChild(c)
     }
