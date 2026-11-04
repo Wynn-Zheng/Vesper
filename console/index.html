@@ -1685,7 +1685,18 @@ document.querySelector('aside').addEventListener('click', (e) => {
 
 // ---------- 状态 ----------
 let last = null
-async function loadStatus() {
+// 同一个时刻的多次调用合并成一次请求。
+// 实测打开一次控制台，/api/status 被请求了 7 次（首屏兜底 + runLoaders +
+// 切视图 + 各操作回调各来一次），页面白刷 6 遍、服务端也白跑 6 遍。
+let statusPromise = null
+function loadStatus() {
+  if (statusPromise) return statusPromise
+  statusPromise = doLoadStatus().finally(() => {
+    statusPromise = null
+  })
+  return statusPromise
+}
+async function doLoadStatus() {
   try {
     const s = await api('/api/status')
     last = s
