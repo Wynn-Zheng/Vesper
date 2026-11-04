@@ -27,7 +27,6 @@ import { loadRelation } from '../relation/store.ts'
 import { phaseOf } from '../self/format.ts'
 import { loadDrifts, loadLife, loadSelf, listSelfVersions } from '../self/store.ts'
 import { listSnapshots, restore } from '../persona/version.ts'
-import { loadProfile } from '../persona/profile.ts'
 import { handlePeopleApi } from './people-api.ts'
 import { handleDesktopApi } from './desktop-api.ts'
 import { handleMiscApi } from './misc-api.ts'
@@ -1088,25 +1087,6 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
       if (req.method === 'GET' && path === '/api/versions') {
         json(res, 200, { snapshots: listSnapshots() })
-        return
-      }
-
-      if (req.method === 'GET' && path === '/api/profile') {
-        json(res, 200, { text: loadProfile(personId) })
-        return
-      }
-
-      if (req.method === 'GET' && path === '/api/cost') {
-        json(res, 200, costOfToday())
-        return
-      }
-
-
-
-      // 核心记忆 + 它的申请。core.md 只有人能改，它只能申请。
-      if (req.method === 'GET' && path === '/api/core') {
-        const { loadCore, loadRequests } = await import('../memory/core.ts')
-        json(res, 200, { core: loadCore(), requests: loadRequests(), max: 30 })
         return
       }
 
