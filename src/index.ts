@@ -509,8 +509,9 @@ if (prunedLogs) info(`清理了 ${prunedLogs} 个过期日志文件（保留 ${k
   const { pruneRaw } = await import('./memory/store.ts')
   const prunedRaw = pruneRaw(120)
   if (prunedRaw) info(`清理了 ${prunedRaw} 天的原始对话（保留 120 天）`)
-  // 日志按天删（90 天）+ 每 6 小时跑一次：只在启动删的话，长期不重启会无限累积
-  setInterval(() => { try { pruneLogs(90) } catch { /* ignore */ } }, 6 * 3600_000).unref?.()
+  // 日志按天删（用启动时那个保留天数）+ 每 6 小时跑一次：
+// 只在启动删的话，长期不重启会无限累积。以前这里写死 90，和配置里的 30 打架。
+  setInterval(() => { try { pruneLogs(Number.isFinite(keepDays) && keepDays > 0 ? keepDays : 30) } catch { /* ignore */ } }, 6 * 3600_000).unref?.()
   setInterval(() => {
     try {
       const n = pruneRaw(120)
@@ -598,6 +599,15 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     // 先把待落盘的写入冲掉再退出：之前直接 process.exit(0)，
     // 正在生成的回复、后台评估、排队的写入会丢。
     void (async () => {
+      // 先停看门狗：它的定时器还在跑，退出过程中可能正好触发一次「重启 NapCat」，
+      // 于是刚关掉的进程又把 QQ 拉起来。以前 stopWatchdog 导出了却没人调。
+      try {
+        const { stopWatchdog } = await import('./napcat/manager.ts')
+        stopWatchdog()
+        info('掉线看门狗已停')
+      } catch {
+        /* ignore */
+      }
       try {
         await Promise.race([transport.stop(), new Promise((r) => setTimeout(r, 3000))])
       } catch {

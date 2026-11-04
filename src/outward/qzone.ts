@@ -8,6 +8,7 @@
  * 草稿存 persona/qzone-draft.md，人能直接改。
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { localMinute } from '../core/time.ts'
 import { info, warnAt } from '../core/log.ts'
 import { writeAtomic } from '../store/fs.ts'
 import type { QzonePost, Transport } from '../core/transport.ts'
@@ -102,7 +103,7 @@ function render(c: DraftFile): string {
     lines.push('（现在没有草稿）', '')
   } else {
     for (const d of c.drafts) {
-      const when = new Date(d.at).toISOString().slice(0, 16).replace('T', ' ')
+      const when = localMinute(d.at)
       lines.push(`## ${when}`)
       if (d.reason) lines.push(`- 为什么想发：${d.reason}`)
       if (d.images.length) lines.push(`- 图片：${d.images.join(', ')}`)
@@ -116,7 +117,7 @@ function render(c: DraftFile): string {
   if (c.published.length) {
     lines.push('## 已经发过的（留个记录）', '')
     for (const p of c.published.slice(-5).reverse()) {
-      const when = new Date(p.at).toISOString().slice(0, 16).replace('T', ' ')
+      const when = localMinute(p.at)
       lines.push(`## ${when} [已发 ${p.tid}]`)
       lines.push(p.content.slice(0, 80))
       lines.push('')

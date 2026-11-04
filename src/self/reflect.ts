@@ -1,5 +1,6 @@
 import { info, warnAt } from '../core/log.ts'
 import { similarity } from '../core/text.ts'
+import { localDate } from '../core/time.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import type { Rules } from '../core/config.ts'
@@ -364,7 +365,8 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
 
     const lines = (out.生活 ?? []).map((x) => String(x).trim()).filter((x) => x.length > 2)
     if (lines.length) {
-      const today = new Date().toISOString().slice(0, 10)
+      // 本地日期：toISOString() 是 UTC，凌晨 0–8 点写的生活记录会记成前一天
+      const today = localDate()
       appendLife(today, lines.slice(0, 2))
       info(`它写下了 ${Math.min(2, lines.length)} 条自己的事`)
     }

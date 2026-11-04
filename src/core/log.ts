@@ -124,12 +124,14 @@ export function errorAt(m: string, e?: Record<string, unknown>): void {
 }
 
 /** 删掉超过 N 天的日志文件，避免无限增长 */
-export function pruneLogs(days = 90): number {
+export function pruneLogs(days = 30): number {
   if (!toFile) return 0
   let removed = 0
   try {
     for (const f of readdirSync(logDir)) {
-      const m = /^(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(f)
+      // 轮转文件 `xxx.jsonl.1` 也要算：以前正则只认 `.jsonl`，
+      // 那份 50MB 的轮转文件永远不会被删（用户看到的日志目录只增不减）。
+      const m = /^(\d{4}-\d{2}-\d{2})\.jsonl(?:\.\d+)?$/.exec(f)
       if (!m) continue
       const t = Date.parse(`${m[1]}T00:00:00`)
       if (!Number.isNaN(t) && Date.now() - t > days * 86_400_000) {

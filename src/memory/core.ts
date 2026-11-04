@@ -17,6 +17,7 @@ import { info, warnAt } from '../core/log.ts'
 import { writeAtomic } from '../store/fs.ts'
 import { cardScopedPath } from '../persona/card.ts'
 import { sharedBigrams, similarity } from '../core/text.ts'
+import { localDate, localMinute } from '../core/time.ts'
 
 // 「不能越的线」和它的申请都按角色卡隔离
 const CORE_LEGACY = 'persona/core.md'
@@ -225,7 +226,7 @@ function renderRequests(reqs: CoreRequest[]): string {
   }
 
   for (const r of reqs) {
-    const when = new Date(r.at).toISOString().slice(0, 16).replace('T', ' ')
+    const when = localMinute(r.at)
     lines.push(`## ${when}`)
     lines.push(`- 类别：${r.kind}`)
     lines.push(`- 想记成核心的：${r.text}`)
@@ -283,7 +284,7 @@ export function approveRequest(index: number): { ok: boolean; item?: CoreItem } 
     return { ok: false }
   }
 
-  const item: CoreItem = { text: r.text, kind: r.kind, at: new Date().toISOString().slice(0, 10) }
+  const item: CoreItem = { text: r.text, kind: r.kind, at: localDate() }
   core.push(item)
   reqs.splice(index, 1)
 
@@ -310,7 +311,7 @@ export function addCore(text: string, kind: CoreKind): { ok: boolean; why: strin
   if (core.length >= MAX_CORE) return { ok: false, why: `已经有 ${MAX_CORE} 条了，先删一条` }
   if (core.some((c) => c.text === body)) return { ok: false, why: '已经有了' }
 
-  core.push({ text: body, kind, at: new Date().toISOString().slice(0, 10) })
+  core.push({ text: body, kind, at: localDate() })
   writeAtomic(CORE_FILE(), renderCore(core))
   return { ok: true, why: '加了' }
 }

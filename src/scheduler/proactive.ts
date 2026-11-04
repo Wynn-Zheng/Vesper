@@ -408,14 +408,24 @@ export function shouldProactive(i: GateInput): GateResult {
 
 /* ---------------- 生成与发送 ---------------- */
 
-const SYSTEM = `你要主动找他说一句话。只输出你要说的那句话，不要引号，不要解释，不要"在吗"这种开场白。
+/**
+ * 主动消息的 system prompt。
+ *
+ * 「不超过 30 个字」以前是写死的：用户把「每条最多字数」改成 60 或 15 之后，
+ * 主动消息还是 30 —— 这条配置对主动消息完全无效。
+ */
+function systemFor(rules: Rules): string {
+  const raw = Number(rules.说话?.每条最多字数)
+  const max = Number.isFinite(raw) && raw > 0 ? raw : 30
+  return `你要主动找他说一句话。只输出你要说的那句话，不要引号，不要解释，不要"在吗"这种开场白。
 
 规则：
-- 一句到两句话，总共不超过 30 个字。
+- 一句到两句话，总共不超过 ${max} 个字。
 - **说具体的事**：从"这次想说话的原因"里挑一件，提那个细节。
   不要只说"好久没聊了""在干嘛"——那是没话找话。
 - 像随口想到才说的，不是任务。
 - 如果你觉得现在没什么好说的，就只输出：不说`
+}
 
 export interface ProactiveOptions {
   llm: LlmOptions
@@ -570,7 +580,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
 
   const res = await chat(
     [
-      { role: 'system', content: SYSTEM },
+      { role: 'system', content: systemFor(loadRules().rules) },
       { role: 'user', content: context },
     ],
     { ...opts.llm, maxTokens: 120, temperature: 0.9 },
