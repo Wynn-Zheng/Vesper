@@ -14,6 +14,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { warnAt } from '../core/log.ts'
+import { isLocalImageRef } from '../core/image-ref.ts'
 import { MAX_IMAGES_PER_MESSAGE } from '../core/limits.ts'
 import { chat } from './deepseek.ts'
 import type { LlmOptions } from './types.ts'
@@ -194,10 +195,6 @@ export async function toDataUrl(url: string): Promise<string | null> {
   return download(url, Date.now() + DOWNLOAD_TIMEOUT_MS * 2 + RETRY_DELAY_MS)
 }
 
-/** 本地图片引用：file://、Windows 盘符、POSIX 绝对路径。 */
-function isLocalImageRef(u: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(u) || u.startsWith('file://') || u.startsWith('/')
-}
 
 /**
  * 图片引用能不能看：http(s) 或本地路径。

@@ -12,6 +12,22 @@ function endpoint(baseUrl: string): string {
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /**
+ * 区分"该重试的网络抖动"和"重试也没用的错误"。
+ *
+ * fetch 失败时抛的是 TypeError('fetch failed')，底层原因挂在 cause 上
+ * （ECONNRESET / ENOTFOUND / UND_ERR_CONNECT_TIMEOUT 等）；
+ * AbortSignal.timeout 抛的是 DOMException，name 为 TimeoutError / AbortError。
+ * 这些都是一次性的，等一会儿再来通常就好。
+ */
+function isTransientNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const text = `${err.name} ${err.message} ${String((err as { cause?: unknown }).cause ?? '')}`
+  return /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|EPIPE|UND_ERR|socket hang up|TimeoutError|AbortError|aborted/i.test(
+    text,
+  )
+}
+
+/**
  * 调一次模型。失败按"可重试/不可重试"区分：
  * - 401/400/422 视为配置错误，直接抛，不浪费配额
  * - 网络错误、429、5xx 重试 2 次
@@ -120,7 +136,9 @@ export async function chat(messages: ChatMessage[], opts: LlmOptions): Promise<L
       }
     } catch (err) {
       lastErr = err as Error
-      const retryable = err instanceof RetryableError
+      // fetch 自己抛的网络错误（DNS、连接重置、AbortSignal.timeout 的超时）
+      // 不是 RetryableError，以前一律当"不该重试"直接 break —— 结果一次抖动就失败。
+      const retryable = err instanceof RetryableError || isTransientNetworkError(err)
       if (!retryable || attempt === delays.length) break
       const wait = delays[attempt] ?? 1500
       warnAt(`模型调用失败，${wait}ms 后重试（第 ${attempt + 1} 次）`, { err: lastErr.message })
