@@ -114,7 +114,14 @@ async function main(): Promise<void> {
   }
   cpSync(join(ROOT, 'build'), join(APP, 'build'), { recursive: true })
   cpSync(join(ROOT, 'console'), join(APP, 'console'), { recursive: true })
-  ok('main.js / preload.js / build / console')
+  // 示例插件要跟着发行包走：控制台「插件」页读的是这里的目录，
+  // 少了它，装完打开插件页是空的 —— 用户会以为插件功能坏了。
+  if (existsSync(join(ROOT, 'plugins'))) {
+    cpSync(join(ROOT, 'plugins'), join(APP, 'plugins'), { recursive: true })
+    ok('main.js / preload.js / build / console / plugins')
+  } else {
+    ok('main.js / preload.js / build / console（没有 plugins/，跳过）')
+  }
 
 // 版本信息：控制台「关于」显示构建时间，也用于更新比对
   const pkgForVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version?: string }

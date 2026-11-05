@@ -191,7 +191,7 @@ const ENV_NOTE = {
   ONEBOT_PORT: 'NapCat 的反向 WS 端口。',
   ONEBOT_PATH: 'NapCat 的反向 WS 路径。',
   OWNER_QQ: '你的 QQ 号。填了它只认你；留空则谁私聊都回。',
-  ALLOW_GROUP: '群聊总开关。true = 能在群里说话，false = 群里完全不理。',
+  ALLOW_GROUP: '只在第一次生成 access.yaml 时参考；之后以控制台「设置 → 权限」为准。',
   GROUP_ALLOW: '只理这些群（逗号分隔）；留空 = 所有群。',
   GROUP_REQUIRE_AT: '群里必须 @ 它或叫它名字才回。',
   UPDATE_URL: '在线更新地址，留空则不检查。',
@@ -520,6 +520,11 @@ function failPage(info) {
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const logText = info.log ? esc(String(info.log).slice(-4000)) : ''
   const logFile = path.join(process.env.APPDATA || '', 'vesper-main.log')
+  // 开发模式跑的是 src/index.ts（Electron 33 内置 Node 20 不支持，开发时用系统 node），
+  // 打包后跑的才是 build/index.js。这里写死 build 会让人照着错误路径去找。
+  const entryHint = app.isPackaged
+    ? path.join(APP_ROOT, 'build', 'index.js')
+    : path.join(APP_ROOT, 'src', 'index.ts')
 
   return `<body style="background:#0d1117;color:#e6edf3;font:14px/1.7 system-ui;padding:40px;margin:0">
     <h2 style="color:#f85149;margin:0 0 6px">后端起不来</h2>
@@ -531,7 +536,7 @@ function failPage(info) {
     <div style="color:#8b949e;font-size:12px;line-height:1.9">
       <div>日志文件：<code style="color:#79c0ff">${esc(logFile)}</code></div>
       <div>数据目录：<code style="color:#79c0ff">${esc(DATA_ROOT)}</code></div>
-      <div>后端入口：<code style="color:#79c0ff">${esc(APP_ROOT)}\\build\\index.js</code></div>
+      <div>后端入口：<code style="color:#79c0ff">${esc(entryHint)}</code></div>
       <div style="margin-top:14px">把这一屏截图发出来就能定位。</div>
     </div>
   </body>`

@@ -1178,7 +1178,7 @@ export function rejectReason(ev: OBEvent, opts: OnebotOptions): string {
   }
 
   const allowGroup = opts.getPolicy ? opts.getPolicy().allowGroup : opts.allowGroup !== false
-  if (!allowGroup) return '群聊总开关没开（控制台「设置 → 权限」里打开，或 .env 的 ALLOW_GROUP=true）'
+  if (!allowGroup) return '群聊总开关没开（控制台「设置 → 权限」里打开）'
 
   const gid = String(ev.group_id ?? '')
 

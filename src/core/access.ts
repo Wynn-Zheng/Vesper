@@ -43,7 +43,13 @@ function split(v: string | undefined): string[] {
     .filter(Boolean)
 }
 
-/** 从 .env 推一份初始策略：第一次运行时用 */
+/**
+ * 从 .env 推一份初始策略：第一次运行时用。
+ *
+ * ⚠️ 只在 access.yaml 还不存在（首次运行）时生效。
+ * 文件一旦生成，之后改 .env 里的 ALLOW_GROUP 是**没有任何效果**的 ——
+ * 以控制台写进 access.yaml 的值为准。.env 里那几个键留着只是给老版本兼容。
+ */
 function fromEnv(): AccessPolicy {
   return {
     // .env 写了就听它的；没写则默认开 —— 这个程序装出来就是为了在群里用的，
