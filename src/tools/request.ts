@@ -31,7 +31,9 @@ export const requestChangeTool: Tool = {
       target: {
         type: 'string',
         enum: TARGETS,
-        description: '要改哪一项：name=名字, about=自述, traits=自己定的规矩, person=人物档案',
+        // 只能是 enum 里那三个：以前这里还写着 traits / person，模型照着描述去提，
+        // 结果被 enum 拒掉或者落到 apply 的「还没接上」分支，等于骗它白提一次。
+        description: '要改哪一项：name=名字, about=自述, card=角色卡里的某个字段',
       },
       content: {
         type: 'string',

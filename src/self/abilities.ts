@@ -18,7 +18,6 @@ export interface Ability {
   /** 一句话说明；模型可以自己改写成它自己的说法 */
   hint: string
   /** 最近用过多少次（0 = 没试过） */
-  usedRecently: number
 }
 
 function hoursAgo(n: number): number {
@@ -44,15 +43,13 @@ export function listAbilities(rules: Rules): Ability[] {
     name: '想事情',
     available: true,
     hint: '能琢磨、形成自己的看法；每天有两次专门用来反思（不是随时都在想）',
-    usedRecently: 0,
   })
   out.push({
     name: '记事',
     available: true,
     hint: '把人说过的事实、发生过的事、约定记成文字，以后能翻出来',
-    usedRecently: 0,
   })
-  out.push({ name: '聊天', available: true, hint: '能跟人一来一回地说话', usedRecently: 0 })
+  out.push({ name: '聊天', available: true, hint: '能跟人一来一回地说话' })
 
   // 刷视频：开关真开着才算
   const watchOn = Boolean(rules.外部?.刷视频?.开启)
@@ -72,7 +69,6 @@ export function listAbilities(rules: Rules): Ability[] {
         `（今天 ${watched} 个，上限 ${rules.外部?.刷视频?.每天最多 ?? '?'} 个；` +
         `手动点的不占这个额度）`
       : '还没接上',
-    usedRecently: watched,
   })
 
   // 发空间：草稿模式。
@@ -84,12 +80,11 @@ export function listAbilities(rules: Rules): Ability[] {
     hint: qzoneOn
       ? '能写说说草稿，但要人看过点「发出去」才真发（发出去收不回，虽然能删）'
       : '还没开（开了就能写草稿；发不发还是人说了算）',
-    usedRecently: 0,
   })
 
   // 注册表里的工具：有一个算一个
   for (const t of tools.list()) {
-    out.push({ name: t.name, available: true, hint: t.description, usedRecently: 0 })
+    out.push({ name: t.name, available: true, hint: t.description })
   }
 
   // 明确做不到的（这几条是硬事实，不是配置）
@@ -98,9 +93,8 @@ export function listAbilities(rules: Rules): Ability[] {
     name: '查 B站',
     available: true,
     hint: '能调 B站的公开接口：看热门榜单、拿视频的标题和简介。这是真联网',
-    usedRecently: 0,
   })
-  out.push({ name: '执行代码', available: false, hint: '跑不了程序', usedRecently: 0 })
+  out.push({ name: '执行代码', available: false, hint: '跑不了程序' })
 
   // 电脑操作：能不能看屏幕、能不能动手，都取决于配置，也取决于工具是否真的注册了。
   const deskOn = rules.电脑操作?.enabled === true
@@ -114,7 +108,6 @@ export function listAbilities(rules: Rules): Ability[] {
       : deskOn
         ? '配置里开了，但这台机器上没装上桌面工具，实际看不到'
         : '电脑操作没开，看不到屏幕',
-    usedRecently: 0,
   })
   out.push({
     name: '操作他的电脑',
@@ -126,20 +119,17 @@ export function listAbilities(rules: Rules): Ability[] {
         : deskOn
           ? '配置里开了，但这台机器上没装上桌面工具'
           : '电脑操作没开',
-    usedRecently: 0,
   })
 
   out.push({
     name: '打开网页/搜索',
     available: false,
     hint: '只能调 B站那几个接口，不能打开任意网页、不能搜索',
-    usedRecently: 0,
   })
   out.push({
     name: '看视频画面',
     available: false,
     hint: '只看得到标题和简介，看不到视频本身',
-    usedRecently: 0,
   })
   // 看图是真能看的（vision.ts），只是默认关着。
   // 文件仍然打不开（只能读 src/ 下的 .ts，见 diagnose.ts 的 safePath）。
@@ -150,13 +140,11 @@ export function listAbilities(rules: Rules): Ability[] {
     hint: visionOn
       ? '对方发图时能用视觉模型看清图里是什么（你自己是纯文本模型，靠另一次调用"翻译"成文字）'
       : '开了「视觉.开启」就能看图；现在关着',
-    usedRecently: 0,
   })
   out.push({
     name: '打开文件',
     available: false,
     hint: '只能读自己 src/ 下的 .ts 源码，读不了别的文件（也看不到别人的私事）',
-    usedRecently: 0,
   })
 
   return out

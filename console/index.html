@@ -3235,11 +3235,22 @@ function renderSelfThinkPage(body, d) {
         box.appendChild(t)
         if (r.reason) box.appendChild(el('div', 'self-req-why', r.reason))
         const acts = el('div', 'self-req-acts')
-        const ok = el('button', 'mini-btn', '批准')
+        // 按钮按申请类型说清楚批的是什么：一律写「批准」的话，
+        // 改名字和改角色卡看起来一样，点之前根本不知道要批准什么（B-17）。
+        const approveText = {
+          name: '批准改名',
+          about: '批准改自述',
+          card: '批准改卡',
+          abilities: '批准改能力',
+          plays: '批准改说话方式',
+          person: '批准改人物档案',
+        }[r.target] || '批准'
+        const ok = el('button', 'mini-btn', approveText)
         ok.onclick = () => decideRequest(r.id, 'approve', false)
         acts.appendChild(ok)
         if (r.target === 'about') {
           const grant = el('button', 'mini-btn', '批准并交权')
+          grant.title = '批准，并且以后这一类不再问，它自己说了算'
           grant.onclick = () => decideRequest(r.id, 'approve', true)
           acts.appendChild(grant)
         }

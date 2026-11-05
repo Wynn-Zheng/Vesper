@@ -136,19 +136,24 @@ function save(reqs: ChangeRequest[]): void {
 }
 
 /** 被忽略的记录（哪个字段、什么时候），用来做冷却 */
-const REJECT_FILE = 'persona/requests-rejected.json'
+// 拒绝冷却要按角色卡隔离：不同卡对同一字段的判断本来就不一样（A 卡不许改名，
+// B 卡允许），共用一个全局文件会让它们互相串冷却。
+const REJECT_FILE_LEGACY = 'persona/requests-rejected.json'
+function rejectFile(): string {
+  return cardScopedPath('requests-rejected.json', REJECT_FILE_LEGACY)
+}
 
 function loadRejected(): Record<string, number> {
-  if (!existsSync(REJECT_FILE)) return {}
+  if (!existsSync(rejectFile())) return {}
   try {
-    return JSON.parse(readFileSync(REJECT_FILE, 'utf8')) as Record<string, number>
+    return JSON.parse(readFileSync(rejectFile(), 'utf8')) as Record<string, number>
   } catch {
     return {}
   }
 }
 
 function saveRejected(map: Record<string, number>): void {
-  writeAtomic(REJECT_FILE, JSON.stringify(map, null, 2))
+  writeAtomic(rejectFile(), JSON.stringify(map, null, 2))
 }
 
 /* ============================================================
