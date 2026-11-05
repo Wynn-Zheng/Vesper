@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 能力清单。
  *
  * 这份数据从**实际配置和注册表**读出来，不是写死的文案：
@@ -33,6 +33,10 @@ function countRecent(list: Array<{ at: number }>): number {
 
 export function listAbilities(rules: Rules): Ability[] {
   const out: Ability[] = []
+  // 配置开着不等于真的能用：桌面工具在平台不支持时压根不会注册。
+  // 清单是喂给反思让它说"我现在能做什么"的，虚报一次它就会照着吹。
+  const registered = new Set(tools.list().map((t) => t.name))
+  const deskRegistered = registered.has('screenshot')
 
   // 这三条是核心能力，但也要说清"是什么"：
   // "想事情"靠的是模型 + 一轮反思，不是真有一个持续运转的脑子。
@@ -98,13 +102,18 @@ export function listAbilities(rules: Rules): Ability[] {
   })
   out.push({ name: '执行代码', available: false, hint: '跑不了程序', usedRecently: 0 })
 
-  // 电脑操作：能不能看屏幕、能不能动手，都取决于配置。
+  // 电脑操作：能不能看屏幕、能不能动手，都取决于配置，也取决于工具是否真的注册了。
   const deskOn = rules.电脑操作?.enabled === true
-  const deskCanDo = deskOn && rules.电脑操作?.允许操作 === true
+  const deskCanLook = deskOn && deskRegistered
+  const deskCanDo = deskCanLook && rules.电脑操作?.允许操作 === true
   out.push({
     name: '看他的屏幕',
-    available: deskOn,
-    hint: deskOn ? '能截图（带坐标刻度）、能看开了哪些窗口、能问屏幕多大' : '电脑操作没开，看不到屏幕',
+    available: deskCanLook,
+    hint: deskCanLook
+      ? '能截图（带坐标刻度）、能看开了哪些窗口、能问屏幕多大'
+      : deskOn
+        ? '配置里开了，但这台机器上没装上桌面工具，实际看不到'
+        : '电脑操作没开，看不到屏幕',
     usedRecently: 0,
   })
   out.push({
@@ -112,9 +121,11 @@ export function listAbilities(rules: Rules): Ability[] {
     available: deskCanDo,
     hint: deskCanDo
       ? '能点鼠标、打字、按键、滚轮、切窗口'
-      : deskOn
+      : deskCanLook
         ? '能看但动不了手（允许操作 关着）'
-        : '电脑操作没开',
+        : deskOn
+          ? '配置里开了，但这台机器上没装上桌面工具'
+          : '电脑操作没开',
     usedRecently: 0,
   })
 
