@@ -55,6 +55,8 @@ const GROUP_WORDS: Array<[EmojiMood, string[]]> = [
 
 /** 单字情绪词前面允许出现的程度词（「好气」「真累」「有点烦」） */
 const DEGREE_PREFIX = new Set(['好', '真', '太', '很', '超', '贼', '挺', '有点', '有些', '特别', '非常', '十分', '超级'])
+/** 单字情绪词后面允许出现的程度后缀（「困死了」「气炸了」） */
+const DEGREE_SUFFIX = new Set(['死了', '死', '爆', '炸', '了', '疯了', '坏了', '得慌'])
 
 export function moodGroup(word: string): EmojiMood | '' {
   const w = String(word ?? '').trim().toLowerCase()
@@ -66,12 +68,14 @@ export function moodGroup(word: string): EmojiMood | '' {
     if (words.some((k) => k.length >= 2 && w.includes(k))) return group
   }
   // 2) 单字词根不能到处 includes，否则「天气」→生气、「累计」→疲惫、「嘲笑」→开心。
-  //    只认整词，或"程度词 + 单字"：「好气」「真累」「有点烦」。
+  //    只认三种：整词、程度词+单字（好气）、单字+程度后缀（困死了）。
   for (const [group, words] of GROUP_WORDS) {
     const hit = words.some((k) => {
       if (k.length !== 1) return false
       if (w === k) return true
-      return w.endsWith(k) && DEGREE_PREFIX.has(w.slice(0, -k.length))
+      if (w.endsWith(k) && DEGREE_PREFIX.has(w.slice(0, -k.length))) return true
+      if (w.startsWith(k) && DEGREE_SUFFIX.has(w.slice(k.length))) return true
+      return false
     })
     if (hit) return group
   }
