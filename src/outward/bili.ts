@@ -19,10 +19,19 @@ async function sleep(ms: number): Promise<void> {
 }
 
 /** 相邻两次请求至少隔 400ms，别把 B站当靶子练 */
-async function throttle(): Promise<void> {
-  const gap = Date.now() - lastAt
-  if (gap < 400) await sleep(400 - gap)
-  lastAt = Date.now()
+// 以前是"读 lastAt → 差值不够就 sleep → 写 lastAt"，并发调用时每个请求
+// 都读到同一个旧 lastAt、sleep 同样的时长，然后**一起**发出去 —— 限速形同虚设。
+// 现在用一条 promise 链排队：每次调用排在上一次之后，间隔才真的成立。
+let chain: Promise<void> = Promise.resolve()
+function throttle(): Promise<void> {
+  const next = chain.then(async () => {
+    const gap = Date.now() - lastAt
+    if (gap < 400) await sleep(400 - gap)
+    lastAt = Date.now()
+  })
+  // 出错不能把链污染成 rejected，否则后续请求全部直接失败
+  chain = next.catch(() => {})
+  return next
 }
 
 async function getJson<T>(url: string): Promise<T | null> {
@@ -68,6 +77,9 @@ interface RawVideo {
   duration?: number
 }
 
+/** 已经提醒过的未知分区名，避免每次请求都刷一条 warn */
+const warnedZones = new Set<string>()
+
 export interface HotOptions {
   /** 分区名；不传就走总热门 */
   zone?: string
@@ -79,7 +91,15 @@ export interface HotOptions {
 export async function hot(opts: HotOptions = {}): Promise<VideoBrief[]> {
   const limit = Math.min(50, Math.max(1, opts.limit ?? 20))
   const rid = opts.zone ? ZONES[opts.zone] : undefined
-
+  // 分区名写错时会静默回落成总热门，用户以为自己看的是美食区。
+  // 每个写错的名字只提醒一次，避免每次刷视频都刷日志。
+  if (opts.zone && rid === undefined && !warnedZones.has(opts.zone)) {
+    warnedZones.add(opts.zone)
+    warnAt('配置里的 B站分区不认识，改用总热门', {
+      zone: opts.zone,
+      可选: Object.keys(ZONES).join(' / '),
+    })
+  }
   const url = rid
     ? `https://api.bilibili.com/x/web-interface/ranking/v2?rid=${rid}&type=all`
     : `https://api.bilibili.com/x/web-interface/popular?ps=50&pn=1`
