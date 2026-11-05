@@ -1,3 +1,4 @@
+
 import { OnebotTransport, markTalker, type OnebotOptions } from './channel/onebot.ts'
 import { createEmojiStore } from './emoji/store.ts'
 import { boot } from './boot.ts'
@@ -28,6 +29,9 @@ import { startEmojiTagger } from './scheduler/emoji-tagger.ts'
 import { startWatchdog, watchdogStatus } from './napcat/manager.ts'
 import { mkdirSync, readFileSync, rmSync, watchFile, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
+
+/** 各定时任务的停止函数：退出时统一调用，避免它们和 drainWrites 抢写盘 */
+const stops: Array<() => void> = []
 
 initLog()
 
@@ -394,8 +398,9 @@ if (apiKey) {
 
   // 定时器错开启动：六个都在同一秒触发的话，distiller 和 proactive 会同时调模型
   const llmRef = llm
+  // 退出时要能停掉这些定时器：它们会写盘，跟退出流程里的 drainWrites 抢
   setTimeout(() => {
-    startDistiller({ llm: llmRef })
+    stops.push(startDistiller({ llm: llmRef }))
     // 代码地图：启动时先确保有一份，之后每天刷一次。
     // 之前只做了"启动时刷"，refresher 写了却没人调 —— 长期不重启的话地图会过期。
     try {
@@ -403,29 +408,29 @@ if (apiKey) {
     } catch {
       /* 没有就算了，用到时会现场扫 */
     }
-    startCodeMapRefresher()
+    stops.push(startCodeMapRefresher())
     info('自动整理已启动（每 30 分钟检查一次）')
   }, 30_000)
 
   // 自我反思独立跑：一天两次，不管私聊有没有新消息
-  startSelfReflect(llmRef, () => loadRules().rules)
+  stops.push(startSelfReflect(llmRef, () => loadRules().rules))
   info('自我反思已启动（每 12 小时一次）')
 
   // 定时扫日志，找自己的毛病
-  startObserving(() => llmRef)
+  stops.push(startObserving(() => llmRef))
   info('自检已启动（每 6 小时扫一次日志）')
 
   // 它自己出去看东西
-  startWatching(llmRef, () => loadRules().rules)
+  stops.push(startWatching(llmRef, () => loadRules().rules))
   info('刷视频已启动（看 rules.yaml 的 外部.刷视频）')
 
   // 表情包补语义标签：收的时候 NapCat 不带情绪，攒着慢慢用视觉模型补
-  startEmojiTagger({ llm: llmRef, getRules: () => loadRules().rules })
+  stops.push(startEmojiTagger({ llm: llmRef, getRules: () => loadRules().rules }))
 
   const owner = process.env['OWNER_QQ'] || undefined
   if (owner) {
     setTimeout(() => {
-      startProactive({ llm: llmRef, transport, target: { kind: 'private', id: owner } })
+      stops.push(startProactive({ llm: llmRef, transport, target: { kind: 'private', id: owner } }))
       info('主动消息已启动（按关系阶段决定频率）')
     }, 90_000)
   }
@@ -503,12 +508,12 @@ info('已启动')
 }
 
 // 人格快照：改动后自动留一份，出问题能回滚
-startAutoSnapshot()
+stops.push(startAutoSnapshot())
 info('人格快照已启动（每 30 分钟检查改动）')
 
 // 久不联系，关系会淡
-startRelationDecay(getRules)
-startRateLimitSweeper()
+stops.push(startRelationDecay(getRules))
+stops.push(startRateLimitSweeper())
 info('关系降温与限流清理已启动')
 
 // 内存和磁盘的定期清理：跑一个月也不会无限涨
@@ -635,6 +640,18 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
       }
       try {
         const { drainWrites } = await import('./store/serialize.ts')
+      // 先把定时任务停掉：它们会写盘（整理、反思、快照），
+      // 不停的话会在 drainWrites 之后又写一笔，退出时留下半截或漏掉新的。
+      let stoppedCount = 0
+      for (const stop of stops.reverse()) {
+        try {
+          stop()
+          stoppedCount++
+        } catch {
+          /* 停不掉也要继续退 */
+        }
+      }
+      if (stoppedCount) info(`已停 ${stoppedCount} 个定时任务`)
         await drainWrites()
       } catch {
         /* ignore */
