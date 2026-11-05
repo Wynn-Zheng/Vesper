@@ -61,6 +61,16 @@ interface ProactiveState {
    * 正常人会先收一收、等对方开口。
    */
   noReply?: number
+  /**
+   * 上一次真的把消息发出去的时间。
+   *
+   * 和 lastAt 分开的原因：lastAt 以前什么情况都写——选择不说、内容和上次太像、
+   * 发送失败，全算"刚主动过"。于是它一旦"今天不想说"，间隔门就当他刚说过话，
+   * 接下来整整一个间隔都不会再试，主动消息变得比配置的还稀少。
+   */
+  lastSentAt?: number
+  /** 上一次"尝试"的时间（含选择不说、太像跳过、发送失败），用于短冷却 */
+  lastAttemptAt?: number
 }
 
 function stateFile(): string {
@@ -84,9 +94,21 @@ function loadState(): ProactiveState {
       lastAt: Number(raw.lastAt ?? 0),
       lastText: String(raw.lastText ?? ''),
       noReply: Number(raw.noReply ?? 0),
+      // 老文件只有 lastAt：那时它就是"上次真发出去"的时间，直接沿用
+      lastSentAt: Number(raw.lastSentAt ?? raw.lastAt ?? 0),
+      lastAttemptAt: Number(raw.lastAttemptAt ?? 0),
     }
     // 跨天重置「今天发了几次」，但保留"上次主动时间"和"连续没回"
-    if (state.date !== todayKey()) return { ...empty, lastAt: state.lastAt, lastText: state.lastText, noReply: state.noReply }
+    if (state.date !== todayKey()) {
+      return {
+        ...empty,
+        lastAt: state.lastAt,
+        lastText: state.lastText,
+        noReply: state.noReply,
+        lastSentAt: state.lastSentAt,
+        lastAttemptAt: state.lastAttemptAt,
+      }
+    }
     return state
   } catch {
     return empty
@@ -486,7 +508,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const lastUserAt = raw.filter((t) => t.role === 'user').reduce((max, t) => Math.max(max, t.ts), 0)
 
   // 上次主动之后他说过话吗？说过就说明互惠成立，连续没回清零
-  const replied = lastUserAt > state.lastAt
+  const replied = lastUserAt > (state.lastSentAt || state.lastAt)
 
   /* 停了太久就自动解冻。
    *
@@ -500,11 +522,12 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
    * "朋友联系中位数 27 天"对得上——停满一周还没动静，值得再试一次。
    */
   const STALE_MS = 7 * 86_400_000
-  const stale = state.lastAt > 0 && Date.now() - state.lastAt > STALE_MS
+  const sentAt = state.lastSentAt || state.lastAt
+  const stale = sentAt > 0 && Date.now() - sentAt > STALE_MS
   const noReply = replied || stale ? 0 : (state.noReply ?? 0)
   if ((replied || stale) && (state.noReply ?? 0) > 0) {
     saveState({ ...state, noReply: 0 })
-    if (stale && !replied) info(`主动消息：停了 ${Math.floor((Date.now() - state.lastAt) / 86_400_000)} 天，重新开始算`)
+    if (stale && !replied) info(`主动消息：停了 ${Math.floor((Date.now() - sentAt) / 86_400_000)} 天，重新开始算`)
   }
 
   const open = loadOpen(personId).filter((o) => o.kind === 'todo')
@@ -550,7 +573,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     now,
     stageName: stage.名,
     lastTalkAt,
-    lastProactiveAt: state.lastAt,
+    lastProactiveAt: state.lastSentAt || state.lastAt,
     todayCount: state.count,
     openCount: open.length,
     urge: urge.score,
@@ -622,13 +645,13 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const text = res.text.trim()
   if (!text || /^不说/.test(text)) {
     info('主动消息：选择不说')
-    saveState({ ...state, lastAt: Date.now(), noReply })
+    saveState({ ...state, lastAttemptAt: Date.now(), noReply })
     return
   }
 
   if (state.lastText && tooSimilar(state.lastText, text, Number(rules.行为.主动消息.去重相似度) || 0.6)) {
     info('主动消息：和上次太像，跳过', { text })
-    saveState({ ...state, lastAt: Date.now(), noReply })
+    saveState({ ...state, lastAttemptAt: Date.now(), noReply })
     return
   }
 
@@ -639,12 +662,12 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   // 还照样补一张表情包，用户什么都没收到，它以为自己说过了。
   if (sent === 0) {
     warnAt('主动消息没发出去（通道没连？），本次不计入额度', { 文本: text.slice(0, 30) })
-    saveState({ ...state, lastAt: Date.now(), noReply })
+    saveState({ ...state, lastAttemptAt: Date.now(), noReply })
     return
   }
   // 主动消息也配表情包：和被动回复同一个概率门（心情越强越容易发）
   await maybeSendEmojiTo(opts.target, rules)
-  saveState({ date: todayKey(), count: state.count + 1, lastAt: Date.now(), lastText: text, noReply: noReply + 1 })
+  saveState({ date: todayKey(), count: state.count + 1, lastAt: Date.now(), lastSentAt: Date.now(), lastAttemptAt: 0, lastText: text, noReply: noReply + 1 })
   info('主动消息已发送', { text, 由头: urge.reasons.join('、'), 连续没回: noReply + 1 })
 
   // 记进 raw，让它算作一次对话
