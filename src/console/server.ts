@@ -209,6 +209,19 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return parseJsonBody(await readBody(req))
 }
 
+/**
+ * 这个错误该返 400 还是 500。
+ *
+ * 以前一律 500：用户少填一个字段、id 写错、body 不是 JSON，看到的都是"服务器错误"，
+ * 前端只能笼统提示"失败"，也不知道是自己的请求问题。
+ * 这里按错误文案判断——不优雅，但比给每个 throw 套一个自定义类改动小得多，
+ * 而且这些文案都是本仓库自己写的（见各处的 throw new Error('缺少 …')）。
+ */
+function statusFor(err: unknown): number {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /缺少|不对|不是合法 JSON|不存在|超出|必须是|非法|格式|说点什么|没有模型|未知操作/.test(msg) ? 400 : 500
+}
+
 function status(opts: ConsoleOptions, personId: string): unknown {
   const rules = opts.getRules()
   const relation = loadRelation(personId)
@@ -1158,7 +1171,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
             }
             json(res, 200, { ok: true, data: { reply, ms: Date.now() - started } })
           } catch (e) {
-            json(res, 500, { ok: false, error: e instanceof Error ? e.message : String(e) })
+            json(res, statusFor(e), { ok: false, error: e instanceof Error ? e.message : String(e) })
           }
           return
         }
@@ -1467,7 +1480,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           writeAtomic('persona/rules.yaml', r.text)
           json(res, 200, { ok: true, 昵称: v })
         } catch (e) {
-          json(res, 500, { error: String(e) })
+          json(res, statusFor(e), { error: String(e) })
         }
         return
       }
@@ -1498,7 +1511,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           writeAtomic(RULES_FILE, r.text)
           json(res, 200, { ok: true, on })
         } catch (e) {
-          json(res, 500, { error: String(e) })
+          json(res, statusFor(e), { error: String(e) })
         }
         return
       }
@@ -1589,7 +1602,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           info(`对话规则已更新 ${Object.keys(applied).length} 项`)
           json(res, 200, { ok: true, applied, ...(failed.length ? { failed } : {}) })
         } catch (e) {
-          json(res, 500, { error: String(e) })
+          json(res, statusFor(e), { error: String(e) })
         }
         return
       }
@@ -1884,7 +1897,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         saveSelf({ ...cur, about: merged, aboutExtra: owner === 'it' ? '' : cur.aboutExtra, aboutOwner: owner })
         json(res, 200, { ok: true, aboutOwner: owner })
       } catch (e) {
-        json(res, 500, { error: e instanceof Error ? e.message : String(e) })
+        json(res, statusFor(e), { error: e instanceof Error ? e.message : String(e) })
       }
       return
     }
@@ -2185,10 +2198,11 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       json(res, 404, { error: 'not found' })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      // 用户输入类错误给 400，真出问题才给 500——否则前端分不清"我填错了"和"它坏了"
-      const isInput = /说点什么|缺少|不存在|没有模型|非法的|未知操作|请求体不是合法 JSON/.test(msg)
-      if (!isInput) warnAt('控制台请求出错', { path, err: msg })
-      json(res, isInput ? 400 : 500, { error: msg })
+      // 用户输入类错误给 400，真出问题才给 500——否则前端分不清"我填错了"和"它坏了"。
+      // 判定统一走 statusFor()，避免这里一套关键词、内层 catch 又一套。
+      const status = statusFor(err)
+      if (status !== 400) warnAt('控制台请求出错', { path, err: msg })
+      json(res, status, { error: msg })
     }
   })
 
