@@ -195,6 +195,18 @@ export async function watchOne(opts: WatchOptions): Promise<WatchResult> {
 /** 每 N 小时看一个；启动后先等 10 分钟，别一开机就抢网络 */
 export function startWatching(llm: LlmOptions | (() => LlmOptions), rules: () => Rules, intervalMs = 6 * 3600_000): () => void {
   const getLlm = typeof llm === 'function' ? llm : () => llm
+  // 这里有两个一次性 setTimeout（首次延迟、jitter），以前它们的句柄没保存，
+  // stop() 只清了 interval —— 停掉调度之后，已经排队的那个仍会到点跑，
+  // 表现就是「关掉刷视频，十分钟后它还是发了一条」。
+  const pending = new Set<ReturnType<typeof setTimeout>>()
+  const later = (fn: () => void, ms: number): void => {
+    const t = setTimeout(() => {
+      pending.delete(t)
+      fn()
+    }, ms)
+    t.unref?.()
+    pending.add(t)
+  }
   const run = () => {
     const r = rules()
     const conf = r.外部?.刷视频
@@ -202,12 +214,16 @@ export function startWatching(llm: LlmOptions | (() => LlmOptions), rules: () =>
     if (watchedToday() >= conf.每天最多) return
     // 随机再等一下，看起来不像定时任务
     const jitter = Math.floor(Math.random() * 20 * 60_000)
-    setTimeout(() => {
+    later(() => {
       void watchOne({ llm: getLlm(), rules: rules() }).catch(() => {})
     }, jitter)
   }
-  setTimeout(run, 10 * 60_000)
+  later(run, 10 * 60_000)
   const timer = setInterval(run, intervalMs)
   timer.unref?.()
-  return () => clearInterval(timer)
+  return () => {
+    clearInterval(timer)
+    for (const t of pending) clearTimeout(t)
+    pending.clear()
+  }
 }

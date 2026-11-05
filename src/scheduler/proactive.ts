@@ -103,8 +103,7 @@ function minutesOf(hhmm: string): number {
 }
 
 /** 静默时段判断，支持跨午夜（23:30 → 08:30） */
-export function inQuietHours(rules: Rules, now = new Date()): boolean {
-  const span = rules.行为.静默时段
+export function inQuietHours(rules: Rules, now = new Date()): boolean {  const span = rules.行为.静默时段
   // 配错形状（只写一个、写成数字）时当"没有静默时段"，而不是让 split 抛 TypeError ——
   // 那个异常会被上层 catch 吞掉，结果是主动消息永久失效，日志里只刷 warn。
   if (!Array.isArray(span) || span.length !== 2 || typeof span[0] !== 'string' || typeof span[1] !== 'string') {
@@ -116,6 +115,36 @@ export function inQuietHours(rules: Rules, now = new Date()): boolean {
   if (!Number.isFinite(start) || !Number.isFinite(end)) return false
   const cur = now.getHours() * 60 + now.getMinutes()
   return start <= end ? cur >= start && cur < end : cur >= start || cur < end
+}
+
+/** 分钟窗口判断，支持跨午夜（[1320, 60] = 22:00 到次日 01:00） */
+function inWindow(w: readonly [number, number], curMinutes: number): boolean {
+  const [a, b] = w
+  return a <= b ? curMinutes >= a && curMinutes < b : curMinutes >= a || curMinutes < b
+}
+
+/**
+ * 由静默时段反推的问候窗口（分钟）。
+ * 早上 = 静默结束后 2.5 小时；深夜 = 静默开始前 1.5 小时。
+ * 静默配错形状时退回默认 08:00–11:00 / 22:00–01:00。
+ */
+function greetingWindows(rules: Rules): { morning: [number, number]; night: [number, number] } {
+  const fallback: { morning: [number, number]; night: [number, number] } = {
+    morning: [480, 660],
+    night: [1320, 60],
+  }
+  const span = rules.行为.静默时段
+  if (!Array.isArray(span) || span.length !== 2 || typeof span[0] !== 'string' || typeof span[1] !== 'string') {
+    return fallback
+  }
+  const qs = minutesOf(span[0])
+  const qe = minutesOf(span[1])
+  if (!Number.isFinite(qs) || !Number.isFinite(qe)) return fallback
+  const morning: [number, number] = [qe, Math.min(qe + 150, 24 * 60 - 1)]
+  const night: [number, number] = [Math.max(qs - 90, 0), qs]
+  // 静默时段配成 0 长度或形状怪时别把它当窗口用
+  if (morning[1] <= morning[0] || night[1] <= night[0]) return fallback
+  return { morning, night }
 }
 
 /* ---------------- 阶段预算 ---------------- */
@@ -251,17 +280,21 @@ export function computeUrge(i: UrgeInput): { score: number; reasons: string[]; g
   // ⚠️ 光加 2 分是不够的：问候只在"今天没说过话"时成立（gap < 24h），
   // 而间隔门要求 minGapHours×0.3（朋友 36h×0.3 = 10.8h）—— 永远等不到。
   // 所以额外把 greeting 标出来，让调用方把间隔压到 8 小时内。
-  // 窗口也要避开静默时段（默认 23:30–08:30），否则 7:00–8:29 那段根本走不到。
-  const hour = i.now.getHours()
+  //
+  // 窗口不能写死：以前固定 8–11 / 22–1，而静默时段是可配的（默认 23:30–08:30）。
+  // 用户把静默改成 09:30 结束，早上那句就会撞进静默里，永远发不出去。
+  // 现在从静默时段反推：静默结束后 2.5 小时算早上，静默开始前 1.5 小时算深夜。
+  const win = greetingWindows(i.rules)
   const dayStart = new Date(i.now)
   dayStart.setHours(0, 0, 0, 0)
   const spokeToday = i.lastTalkAt >= dayStart.getTime()
+  const cur = i.now.getHours() * 60 + i.now.getMinutes()
   let greeting = false
-  if (!spokeToday && hour >= 8 && hour < 11) {
+  if (!spokeToday && inWindow(win.morning, cur)) {
     score += 2
     reasons.push('早上了，还没跟他说过话')
     greeting = true
-  } else if (!spokeToday && (hour >= 22 || hour < 1)) {
+  } else if (!spokeToday && inWindow(win.night, cur)) {
     score += 2
     reasons.push('很晚了，他还没睡')
     greeting = true
