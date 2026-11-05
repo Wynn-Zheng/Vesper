@@ -172,6 +172,18 @@ export function redactSecrets(text: string): string {
   return out
 }
 
+/** 去掉模型偶尔自带的引号包裹和 markdown 残留 */
+export function sanitize(text: string): string {
+  return text
+    .replace(/\r/g, '')
+    .replace(/^\s*["'「『]+|["'」』]+\s*$/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/`{1,3}/g, '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '')
+    .trim()
+}
+
 /**
  * 去掉它自己想 @ 人的企图。
  *
@@ -212,6 +224,16 @@ export function stripMentions(text: string): string {
  * 消息明明到群里了，却被当成没发出去：历史里的 assistant 被撤掉，
  * 它下一轮"不记得自己说过"，还会重复说一遍。
  */
+/**
+ * 出站清洗：**历史记的和真正发出去的必须是同一份**。
+ *
+ * 以前是两套：say() 只做 stripMentions(redactSecrets())，历史那边只做 sanitize()。
+ * 于是历史里可能留着密钥和 @（模型下一轮会以为自己说过），
+ * 而实发的内容里还带着 markdown 星号。
+ */
+export function cleanOutbound(text: string): string {
+  return stripMentions(redactSecrets(sanitize(text)))
+}
 export async function say(
   t: Transport,
   to: Target,
@@ -219,7 +241,7 @@ export async function say(
   rules: Rules,
 ): Promise<{ ids: string[]; sent: number }> {
   // 出站兜底：模型被套话时可能吐出 key / 私钥，发出去就收不回了
-  const safe = stripMentions(redactSecrets(text))
+  const safe = cleanOutbound(text)
   const parts = splitBySentence(safe, rules.说话.每条最多字数, rules.说话.每轮最多条数)
   const ids: string[] = []
   let sent = 0

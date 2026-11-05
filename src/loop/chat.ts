@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { Incoming, Target } from '../core/types.ts'
-import { sendImage, splitBySentence } from '../channel/send.ts'
+import { cleanOutbound, sendImage, splitBySentence } from '../channel/send.ts'
 import { matchKeywordReactions, renderKeywordReactions } from './keyword.ts'
 import { pickEmoji } from '../emoji/pick.ts'
 import { createEmojiStore, type EmojiStore } from '../emoji/store.ts'
@@ -54,17 +54,9 @@ function toSpecs(reg: ToolRegistry): ToolSpec[] {
 }
 
 
-/** 去掉模型偶尔自带的引号包裹和 markdown 残留 */
-export function sanitize(text: string): string {
-  return text
-    .replace(/\r/g, '')
-    .replace(/^\s*["'「『]+|["'」』]+\s*$/g, '')
-    .replace(/\*\*/g, '')
-    .replace(/`{1,3}/g, '')
-    .replace(/^#{1,6}\s*/gm, '')
-    .replace(/^\s*[-*]\s+/gm, '')
-    .trim()
-}
+// sanitize 搬去 channel/send.ts 了（出站清洗统一在那里）。
+// 这里保留再导出：内部与 test/prompt.test.ts 都还从 chat.ts 取它。
+export { sanitize } from '../channel/send.ts'
 
 /** 最近几轮里，它是不是在重复说同一件事 */
 export function detectRepeat(key: string): boolean {
@@ -576,7 +568,7 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
   // 但之前历史/原文/自评都记了完整 res.text —— 它会以为说过用户没看到的话，
   // 下一轮还会引用。这里先算出发得出去的部分，历史只记这部分。
   const sendable = splitBySentence(
-    sanitize(res.text),
+    cleanOutbound(res.text),
     Math.max(1, Number(opts.rules.说话.每条最多字数) || 40),
     Math.max(1, Number(opts.rules.说话.每轮最多条数) || 3),
   ).join('\n')
