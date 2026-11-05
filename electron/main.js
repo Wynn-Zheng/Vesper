@@ -543,9 +543,12 @@ function failPage(info) {
 }
 
 function createWindow(failInfo = null) {
-  // 打包时 preload 会被改名成 .cjs（app/manifest 里是 type:module，
-  // .js 会被当 ESM 解析，而 preload 必须是 CJS）。开发时还是 preload.js。
-  const preloadName = existsSync(path.join(__dirname, 'preload.cjs')) ? 'preload.cjs' : 'preload.js'
+  // preload 一律是 preload.js。
+  // 以前这里探测过 preload.cjs，理由是"打包时会被改名成 .cjs"——但那是错的：
+  // package-electron.ts 产出的 app/package.json 不带 type（默认 CJS），
+  // preload.js 本来就是 CJS，从来不需要改名。那个分支一直是死的，
+  // 留着只会让人以为有第二套布局。
+  const preloadName = 'preload.js'
 
   win = new BrowserWindow({
     width: 1360,
