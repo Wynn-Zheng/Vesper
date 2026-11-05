@@ -59,7 +59,9 @@ function load(): DraftFile {
  */
 function parseMarkdown(text: string): DraftFile {
   const out: DraftFile = { drafts: [], published: [] }
-  const blocks = text.split(/^---$/m)
+  // 旧格式用一行 `---` 分隔；正文里只要有一行 `---`（引用、分隔线）就会被切成两条草稿。
+  // 新格式换成 Markdown 注释，渲染时看不见，正文也不会撞上。旧文件照样能读。
+  const blocks = text.split(/^---$|^<!-- draft -->$/m)
 
   for (const block of blocks) {
     const t = block.trim()
@@ -90,6 +92,9 @@ function parseMarkdown(text: string): DraftFile {
   return out
 }
 
+/** 草稿之间的分隔行。用 Markdown 注释，正文里不会出现，渲染时也看不见。 */
+const DRAFT_SEP = '<!-- draft -->'
+
 function render(c: DraftFile): string {
   const lines: string[] = [
     '# 想说说的草稿',
@@ -109,7 +114,7 @@ function render(c: DraftFile): string {
       if (d.images.length) lines.push(`- 图片：${d.images.join(', ')}`)
       lines.push(d.content)
       lines.push('')
-      lines.push('---')
+      lines.push(DRAFT_SEP)
       lines.push('')
     }
   }
@@ -119,9 +124,10 @@ function render(c: DraftFile): string {
     for (const p of c.published.slice(-5).reverse()) {
       const when = localMinute(p.at)
       lines.push(`## ${when} [已发 ${p.tid}]`)
-      lines.push(p.content.slice(0, 80))
+      // 存全量：截断过的正文没法在「发过的」里回看原文
+      lines.push(p.content)
       lines.push('')
-      lines.push('---')
+      lines.push(DRAFT_SEP)
       lines.push('')
     }
   }
