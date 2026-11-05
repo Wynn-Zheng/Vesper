@@ -150,7 +150,7 @@ function inWindow(w: readonly [number, number], curMinutes: number): boolean {
  * 早上 = 静默结束后 2.5 小时；深夜 = 静默开始前 1.5 小时。
  * 静默配错形状时退回默认 08:00–11:00 / 22:00–01:00。
  */
-function greetingWindows(rules: Rules): { morning: [number, number]; night: [number, number] } {
+export function greetingWindows(rules: Rules): { morning: [number, number]; night: [number, number] } {
   const fallback: { morning: [number, number]; night: [number, number] } = {
     morning: [480, 660],
     night: [1320, 60],
