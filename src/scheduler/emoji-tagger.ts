@@ -38,6 +38,10 @@ export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
   const interval = opts.intervalMs ?? 10 * 60_000
   let timer: NodeJS.Timeout | null = null
   let stopped = false
+  // 打标失败的次数。以前每轮都取 pending 的前 batch 张，只要有几张坏图打不出来，
+  // 它们就一直占着队头，后面的永远轮不到 —— 表现为"库存越攒越多，标签一直不长"。
+  const failures = new Map<string, number>()
+  const MAX_FAILS = 3
 
   async function runOnce(): Promise<number> {
     const rules = opts.getRules()
@@ -46,14 +50,19 @@ export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
 
     const store = createEmojiStore(ROOT, { libraryCap: rules.表情包.库存上限 })
     const pending = (await store.list()).filter(untagged)
-    if (!pending.length) return 0
+    // 连续失败太多次的先让开，别堵着队头
+    const usable = pending.filter((x) => (failures.get(x.id) ?? 0) < MAX_FAILS)
+    if (!usable.length) {
+      if (pending.length) warnAt('表情包打标：剩下的都反复失败，先搁置', { 数量: pending.length })
+      return 0
+    }
 
     const visionModel =
       rules.视觉.模型 || process.env['DEEPSEEK_VISION_MODEL'] || 'deepseek-v4-flash-vision-exp'
     const llm: LlmOptions = { ...opts.llm, model: visionModel }
 
     let done = 0
-    for (const item of pending.slice(0, batch)) {
+    for (const item of usable.slice(0, batch)) {
       let buffer: Buffer
       try {
         buffer = await readFile(join(ROOT, item.file))
@@ -63,7 +72,13 @@ export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
       }
       const ext = item.file.split('.').pop() ?? 'png'
       const tags = await tagEmoji({ buffer, ext }, llm)
-      if (!tags) continue
+      if (!tags) {
+        const n = (failures.get(item.id) ?? 0) + 1
+        failures.set(item.id, n)
+        if (n >= MAX_FAILS) warnAt('表情包打标连续失败，这一张先跳过', { id: item.id, 次数: n })
+        continue
+      }
+      failures.delete(item.id)
       if (await store.setMeta(item.id, tags)) done++
     }
 
