@@ -49,5 +49,16 @@ export function isEmojiCandidate(seg: SegmentLike, meta: EmojiMeta): boolean {
   const sizeOk = typeof size === 'number' && Number.isFinite(size) && size > 0 && size <= EMOJI_MAX_SIZE
   const widthOk = typeof width === 'number' && Number.isFinite(width) && width > 0 && width <= EMOJI_MAX_EDGE
   const heightOk = typeof height === 'number' && Number.isFinite(height) && height > 0 && height <= EMOJI_MAX_EDGE
-  return sizeOk && widthOk && heightOk
+  if (!sizeOk) return false
+
+  // NapCat 有些版本只给 size，不给宽高。以前这里一律 false，
+  // 于是那些群的表情包一张都进不了库（用户只看到"库存是空的"）。
+  // 没有尺寸信息时退回按体积判断：表情包普遍几十到几百 KB，
+  // 上限的一半（256KB）作为更保守的门槛。
+  const dimsKnown =
+    typeof width === 'number' && Number.isFinite(width) && width > 0 &&
+    typeof height === 'number' && Number.isFinite(height) && height > 0
+  if (!dimsKnown) return (size as number) < EMOJI_MAX_SIZE / 2
+
+  return widthOk && heightOk
 }
