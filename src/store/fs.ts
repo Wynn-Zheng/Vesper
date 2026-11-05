@@ -18,6 +18,18 @@ export function ensureDir(p: string): void {
   mkdirSync(p, { recursive: true })
 }
 
+/**
+ * 同步小睡。
+ *
+ * writeAtomic 是同步函数（renameSync），没法 await；以前用 `while (Date.now() < until) {}`
+ * 空转 30ms —— 那是在真烧 CPU，而且是在"写盘被占用"这种本来就紧张的时刻。
+ * Atomics.wait 是真正的阻塞睡眠，线程让出去，不占核。
+ */
+function sleepSync(ms: number): void {
+  const sab = new SharedArrayBuffer(4)
+  Atomics.wait(new Int32Array(sab), 0, 0, ms)
+}
+
 /** 原子写：先写 .tmp 再 rename。半截 JSON 比没有文件更糟。 */
 export function writeAtomic(file: string, content: string): void {
   ensureDir(dirname(file))
@@ -34,10 +46,7 @@ export function writeAtomic(file: string, content: string): void {
         renameSync(tmp, file)
         renamed = true
       } catch {
-        const until = Date.now() + 30
-        while (Date.now() < until) {
-          /* 给占用者让路 */
-        }
+        sleepSync(30)
       }
     }
     if (!renamed) {
