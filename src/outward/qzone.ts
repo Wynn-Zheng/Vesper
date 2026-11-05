@@ -273,8 +273,9 @@ export async function composeDraft(
   const mood = loadMood()
   const life = recentLife(3)
 
-  // 把已有的草稿也告诉它：不然会连着写三条一样的
-  const { loadDrafts } = await import('./qzone.ts').catch(() => ({ loadDrafts: () => ({ drafts: [] }) }))
+  // 把已有的草稿也告诉它：不然会连着写三条一样的。
+  // 以前这里 await import('./qzone.ts') —— 自己动态 import 自己，
+  // 再多一层 .catch() 兜底：真出错时会被当成"没有草稿"，静默写出重复内容。
   const existing = loadDrafts().drafts.map((d) => d.content).slice(-5)
 
   const material = [
