@@ -5,6 +5,7 @@ import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import type { RawTurn } from '../memory/types.ts'
 import { writeAtomic } from '../store/fs.ts'
+import { serialized } from '../store/serialize.ts'
 import { cardScopedPath } from '../persona/card.ts'
 
 /**
@@ -111,6 +112,9 @@ export async function learnJargon(turns: RawTurn[], llm: LlmOptions, groupId: st
 
     const today = new Date().toISOString().slice(0, 10)
     let added = 0
+    // 与 expression 同样的问题：全是重复命中时 added 为 0，
+    // count 涨在内存里却没落盘，下次读回来还是旧次数。
+    let counted = 0
     for (const item of parse(res.text)) {
       const word = (item.词 ?? '').trim()
       const meaning = (item.意思 ?? '').trim()
@@ -118,6 +122,7 @@ export async function learnJargon(turns: RawTurn[], llm: LlmOptions, groupId: st
       if (known.has(word)) {
         const old = existing.find((j) => j.word === word)!
         old.count += 1
+        counted++
         continue
       }
       existing.push({ word, meaning, evidence: (item.依据 ?? '').trim().slice(0, 60), count: 1, date: today })
@@ -125,9 +130,11 @@ export async function learnJargon(turns: RawTurn[], llm: LlmOptions, groupId: st
       added++
     }
 
-    if (added) {
-      saveJargon(groupId, existing)
-      info(`学到 ${added} 个群内黑话`, { 群: groupId })
+    if (added || counted) {
+      // saveJargon 是"读出整份 store → 改本群 → 整体写回"，
+      // 两个群同时学的时候后写的会把先写的那群整段吃掉。按 key 串行。
+      serialized('jargon', () => saveJargon(groupId, existing))
+      if (added) info(`学到 ${added} 个群内黑话`, { 群: groupId })
     }
     return added
   } catch {

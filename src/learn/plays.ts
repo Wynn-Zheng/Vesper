@@ -210,7 +210,8 @@ function doRecordPlay(score: number, scene: string, reply: string): void {
   const isGood = score >= 7
   const dup = items.findIndex((p) => similarity(p.scene, s) > 0.9 && p.score >= 7 === isGood)
   if (dup >= 0) {
-    items[dup] = { score, scene: s, reply: r, date: today() }
+    // 整条替换会丢掉 checked（它被人标过精选，是人工判断，不该因为重记一次就没了）
+    items[dup] = { ...items[dup], score, scene: s, reply: r, date: today() }
   } else {
     items.push({ score, scene: s, reply: r, date: today() })
   }
