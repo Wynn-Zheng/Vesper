@@ -103,7 +103,10 @@ async function think(llm: LlmOptions, v: { title: string; up: string; desc: stri
       { ...llm, maxTokens: 120, temperature: 0.9 },
     )
     const t = res.text.trim()
-    if (!t || t === '没感觉' || t.includes('没感觉')) return ''
+    // 只认「整句就是没感觉」或「以它开头」。
+    // 以前用 includes：一句"对抽象梗没感觉，但猫可以"会被整条丢掉，
+    // 而它其实是有内容的感想。
+    if (!t || t === '没感觉' || t.startsWith('没感觉')) return ''
     return t.split('\n')[0]!.slice(0, 60)
   } catch (err) {
     warnAt('看完想感想失败', { err: String(err).slice(0, 60) })

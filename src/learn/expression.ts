@@ -203,11 +203,23 @@ export async function learnExpressions(
 
     const todayStr = today()
     let added = 0
+    // 只有"重复命中"时 added 是 0，落盘条件以前只看 added，
+    // 于是 count 涨了却没写盘——下次读回来还是旧次数，加权永远上不去。
+    let counted = 0
     for (const cand of candidates) {
       // 同一条别记两遍；已经有的就把次数加一，加权时会更靠前
       const dup = existing.find((e) => e.text === cand.text || similarity(e.text, cand.text) > 0.85)
       if (dup) {
         dup.count += 1
+        counted++
+        // 命中重复 = 又出现过一次，挪到末尾（LRU）。
+        // saveExpressions 用 slice(-MAX_KEEP) 淘汰前排，老的高频说法
+        // 如果一直待在前排，会被当成"最老的"先扔掉。
+        const at = existing.indexOf(dup)
+        if (at >= 0 && at !== existing.length - 1) {
+          existing.splice(at, 1)
+          existing.push(dup)
+        }
         continue
       }
       if (known.has(cand.text)) continue
@@ -225,7 +237,7 @@ export async function learnExpressions(
       added++
     }
 
-    if (added) {
+    if (added || counted) {
       // 落盘时重新读一次再合并：distill 分批整理会并行跑好几个 learnExpressions，
       // 各自拿着开头那份快照直接写回，后写的会把先写的那批吃掉。
       serialized('expressions', () => {
@@ -241,7 +253,7 @@ export async function learnExpressions(
         }
         saveExpressions(latest)
       })
-      info(`学到 ${added} 条群里的说法`, { 群: groupId })
+      if (added) info(`学到 ${added} 条群里的说法`, { 群: groupId })
     }
     return added
   } catch {
