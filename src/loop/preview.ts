@@ -1,23 +1,10 @@
 import type { Rules } from '../core/config.ts'
 import type { LlmOptions } from '../llm/types.ts'
 import { chat } from '../llm/deepseek.ts'
-import { recall, renderRecalled } from '../memory/recall.ts'
+import { recall } from '../memory/recall.ts'
 import { personOfAccount, loadPerson } from '../people/store.ts'
-import { loadMood } from '../persona/mood.ts'
-import { loadProfile } from '../persona/profile.ts'
-import { buildRelationBlock } from '../relation/format.ts'
-import { loadRelation } from '../relation/store.ts'
-import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
-import { loadCard, cardPromptBlock } from '../persona/card.ts'
-import { matchKeywordReactions, renderKeywordReactions } from './keyword.ts'
-import { loadCodeMapBrief } from '../self/codemap.ts'
-import { renderCoreForPrompt } from '../memory/core.ts'
-import { renderPendingForPrompt } from '../self/requests.ts'
-import { renderSpeechHabit } from '../self/speech.ts'
-import { renderGrowth } from '../self/growth.ts'
-import { todoForPrompt } from '../memory/intent.ts'
-import { relevantPlays, renderPlays } from '../learn/plays.ts'
 import { buildSystem } from './prompt.ts'
+import { buildSystemInputs } from './system-inputs.ts'
 
 export interface PreviewOptions {
   rules: Rules
@@ -71,45 +58,22 @@ export async function previewReply(text: string, opts: PreviewOptions): Promise<
   // 以前只有 10 个字段（漏了 desktop/core/requests/speech/expression/growth/
   // intent/codeMap/personRole/consoleMode/keyword/repeatHint），
   // 于是试聊里它说"我看不到屏幕"，而线上其实能截图 —— 用户在试聊里调 prompt 会被误导。
-  const system = buildSystem({
-    keyword: renderKeywordReactions(matchKeywordReactions(opts.rules, text)),
-    rules: opts.rules,
-    card: cardPromptBlock(loadCard()),
-    actionDesc: loadCard()?.actionDesc === true,
-    self: buildSelfBlock(opts.rules, new Date(), personId, loadPerson(personId)?.name ?? opts.accountId),
-    codeMap: loadCodeMapBrief(),
-    personName: loadPerson(personId)?.name ?? opts.accountId,
-    personRole: loadPerson(personId)?.role,
-    profile: loadProfile(personId),
-    relation: buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
-      // 试聊走私聊 scope：不传 inGroup（默认 false）
-      since: loadPerson(personId)?.firstSeen,
-      callName: loadPerson(personId)?.callName,
+  const system = buildSystem(
+    buildSystemInputs({
+      rules: opts.rules,
+      scope,
+      text,
+      personId,
+      personName: loadPerson(personId)?.name ?? opts.accountId,
+      selfPersonName: loadPerson(personId)?.name ?? opts.accountId,
+      // 试聊走私聊语义：不带群上下文、不带黑话、不算"隔了多久"
+      inGroup: false,
+      groupBlock: '',
+      gapHours: null,
+      expressionText: '',
+      recalled,
     }),
-    consoleMode: scope.startsWith('private:console-'),
-    core: renderCoreForPrompt(),
-    requests: renderPendingForPrompt(),
-    speech: renderSpeechHabit(),
-    expression: '',
-    growth: renderGrowth(),
-    desktop: {
-      只读: opts.rules.电脑操作?.enabled === true,
-      可操作: opts.rules.电脑操作?.enabled === true && opts.rules.电脑操作?.允许操作 === true,
-    },
-    abilities: {
-      bili: opts.rules.外部?.刷视频?.开启 !== false,
-      qzone: opts.rules.外部?.发空间?.开启 !== false,
-    },
-    intent: todoForPrompt(),
-    memory: [
-      renderRecalled(recalled),
-      renderPlays(relevantPlays(text, 3, opts.rules.表达学习?.只用精选 ?? false)),
-    ]
-      .filter((s) => s.trim())
-      .join('\n\n'),
-    userChars: text.length,
-    phase: buildPhaseBlock(opts.rules),
-  })
+  )
 
   const res = await chat(
     [

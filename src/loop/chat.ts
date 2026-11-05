@@ -4,35 +4,23 @@ import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import type { Incoming, Target } from '../core/types.ts'
 import { cleanOutbound, sendImage, splitBySentence } from '../channel/send.ts'
-import { matchKeywordReactions, renderKeywordReactions } from './keyword.ts'
 import { pickEmoji } from '../emoji/pick.ts'
 import { createEmojiStore, type EmojiStore } from '../emoji/store.ts'
 import { chat } from '../llm/deepseek.ts'
 import { describeImagesDetailed, renderImages } from '../llm/vision.ts'
 import type { ChatMessage, LlmOptions, ToolSpec } from '../llm/types.ts'
 import type { ToolRegistry } from '../tools/registry.ts'
-import { recall, renderRecalled, similarity } from '../memory/recall.ts'
-import { renderCoreForPrompt } from '../memory/core.ts'
-import { renderPendingForPrompt } from '../self/requests.ts'
-import { renderSpeechHabit } from '../self/speech.ts'
-import { renderGrowth } from '../self/growth.ts'
-import { todoForPrompt } from '../memory/intent.ts'
+import { recall, similarity } from '../memory/recall.ts'
 import { markMentioned, unmentionedIssues } from '../self/observe.ts'
 import { personOfMessage, scopeOf } from '../memory/scope.ts'
 import { loadPerson } from '../people/store.ts'
 import { decayedMood, loadMood } from '../persona/mood.ts'
-import { loadProfile } from '../persona/profile.ts'
 import { renderGroupContext } from '../people/group.ts'
 import { explainJargon, renderJargon } from '../learn/jargon.ts'
 import { pickExpressions, renderExpressions } from '../learn/expression.ts'
-import { relevantPlays, renderPlays } from '../learn/plays.ts'
-import { buildRelationBlock } from '../relation/format.ts'
-import { loadRelation } from '../relation/store.ts'
-import { buildSelfBlock, buildPhaseBlock } from '../self/format.ts'
-import { loadCodeMapBrief } from '../self/codemap.ts'
 import { compressHistory, shouldCompress } from './compress.ts'
 import { buildPrompt, buildSystem, renderHeard } from './prompt.ts'
-import { loadCard, cardPromptBlock } from '../persona/card.ts'
+import { buildSystemInputs } from './system-inputs.ts'
 import { getHeard, getSession, getTurns, historyMessages, pushTurn, sessionKey, setSummary } from './session.ts'
 
 export interface GenerateOptions {
@@ -345,78 +333,27 @@ export async function generateReply(m: Incoming, opts: GenerateOptions): Promise
         .join('\n\n')
     : ''
 
-  const system = buildSystem({
-    // 关键词反应：命中关键词就给模型一句"该怎么反应"的提示
-    keyword: renderKeywordReactions(matchKeywordReactions(opts.rules, text)),
-    rules: opts.rules,
-    card: cardPromptBlock(loadCard()),
-    actionDesc: loadCard()?.actionDesc === true,
-    self: buildSelfBlock(opts.rules, new Date(), personId, m.from.name),
-    codeMap: loadCodeMapBrief(),
-    // 群里 m.from.name 是群名，不能当人名用
-    // 群里 m.from.name 是群名，不能当人名用
-    personName: m.senderName ?? m.senderNick ?? m.from.id,
-    // 角色（主人/朋友…）用档案里的，别让 prompt 按显示名去猜 ——
-    // 群里显示名是群名片，重名/改名会把「关系：主人」挂错人。
-    personRole: loadPerson(personId)?.role,
-    profile: loadProfile(personId),
-    relation: [
-      // 群里不渲染私聊口吻的称呼；顺带把"认识几天"告诉它
-      buildRelationBlock(opts.rules, loadRelation(personId), loadMood(), Date.now(), {
-        inGroup: scope.startsWith('group:'),
-        since: loadPerson(personId)?.firstSeen,
-        // 它自己给这人起的称呼（没有就回落到 rules.yaml 的 关系.昵称）
-        callName: loadPerson(personId)?.callName,
-      }),
-      // 隔了多久没说话：以前只有主动消息算这个，正常对话里它不知道
-      // "你们上次说话是 6 天前"，于是只会像刚才那样接话。
-      // 阈值 2 小时：刚聊完的间隔没必要说，说了反而奇怪。
-      gapHours !== null && gapHours >= 2
-        ? `距离上次说话：${Math.round(gapHours)} 小时（${gapHours >= 48 ? '隔了挺久' : '不算久'}）`
-        : '',
+  const system = buildSystem(
+    buildSystemInputs({
+      rules: opts.rules,
+      scope,
+      text,
+      personId,
+      // 群里 m.senderName 是群名片，缺了才回落昵称/QQ
+      personName: m.senderName ?? m.senderNick ?? m.from.id,
+      // self 段里"你和谁"：群里 m.from.name 是群名
+      selfPersonName: m.from.name ?? '',
+      inGroup,
       groupBlock,
-    ]
-      .filter((s) => s.trim())
-      .join('\n\n'),
-    // 核心记忆：只能人改的那部分，优先级最高
-    // 这一轮在不在控制台（scope 是 private:console-xxx）
-    consoleMode: scope.startsWith('private:console-'),
-    core: renderCoreForPrompt(),
-    // 它提了、还在等批的申请（不告诉它，下次会以为自己已经改了）
-    requests: renderPendingForPrompt(),
-    // 说话习惯（长度/问句比例/口头禅），从它自己说过的话里统计
-    speech: renderSpeechHabit(),
-    // 这个群里学到的说法（"属实""抽象"这种）：只往群聊里放，
-    // 私聊里带一堆某个群的黑话会很怪。
-    expression: scope.startsWith('group:')
-      ? renderExpressions(pickExpressions(text, 3, opts.rules.表达学习?.只用精选 ?? false))
-      : '',
-    // 成长的痕迹（以前怎么看自己 vs 现在）
-    growth: renderGrowth(),
-    // 电脑操作开了没：决定 prompt 里说"能看屏幕"还是"不能"
-    desktop: {
-      只读: opts.rules.电脑操作?.enabled === true,
-      可操作: opts.rules.电脑操作?.enabled === true && opts.rules.电脑操作?.允许操作 === true,
-    },
-    abilities: {
-      bili: opts.rules.外部?.刷视频?.开启 !== false,
-      qzone: opts.rules.外部?.发空间?.开启 !== false,
-    },
-    // 它自己准备做的事（intent.md），和"待问"不是一回事
-    intent: todoForPrompt(),
-    // 只用精选模式：只注入人工审过的经验
-    memory: [
-      renderRecalled(recalled),
-      renderPlays(relevantPlays(text, 3, opts.rules.表达学习?.只用精选 ?? false)),
-    ]
-    .filter((s) => s.trim())
-    .join('\n\n'),
-    userChars: m.text.length,
-    phase: buildPhaseBlock(opts.rules),
-    repeatHint: detectRepeat(key),
-    // 群聊：prompt 里要说明"你可以选择这次不说话"、以及不要 @ 人
-    groupChat: inGroup,
-  })
+      gapHours,
+      expressionText: inGroup
+        ? renderExpressions(pickExpressions(text, 3, opts.rules.表达学习?.只用精选 ?? false))
+        : '',
+      recalled,
+      groupChat: inGroup,
+      repeatHint: detectRepeat(key),
+    }),
+  )
 
   // 群聊里必须标明"谁说的"：不标的话历史里全是"用户"，它就分不清三个人。
   // 一批里有多条消息时 boot 已经拆好逐条发言，这里按行渲染；
