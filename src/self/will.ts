@@ -27,6 +27,8 @@ function FILE(): string {
 export interface WillState {
   /** 什么时候盘的 */
   at: number
+  /** 印象最后一次被改的时间（改印象不该刷新 at，否则"今天的意愿"永不过期） */
+  editedAt?: number
   /** 今天想不想主动找人说话 */
   talk: boolean
   talkReason: string
@@ -68,6 +70,8 @@ export function loadWill(): WillState {
 
     return {
       at: Number(data.at ?? 0) || 0,
+      // 老文件没有这个字段；缺了就沿用 at，至少不是 0
+      editedAt: Number(data.editedAt ?? 0) || Number(data.at ?? 0) || 0,
       talk: Boolean(data.talk),
       talkReason: String(data.talkReason ?? ''),
       watch: Boolean(data.watch),
@@ -116,7 +120,10 @@ export function setImpression(personId: string, text: string): void {
   const w = loadWill()
   const trimmed = text.slice(0, 120)
   w.impressions[personId] = trimmed
-  w.at = Date.now()
+  // 不碰 at：at 是"今天这份意愿是什么时候定的"，衰减/过期都看它。
+  // 以前每写一次印象就把它刷成当下，于是只要还在聊天、还在反思，
+  // 意愿就永远不会过期。改印象只记 editedAt。
+  w.editedAt = Date.now()
   saveWill(w)
 
   // 人能直接读写的版本。下次反思前如果被手改过，会被覆盖——这是有意的：
