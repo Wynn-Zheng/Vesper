@@ -49,7 +49,7 @@ export interface SpeechStats {
  * 统计成口音会误导（它下次就会莫名其妙以"能看"开头）。
  */
 const OPENER_WHITELIST = new Set([
-  '嗯', '嗯，', '哦', '噢', '啊', '诶', '哎',
+  '嗯', '哦', '噢', '啊', '诶', '哎',
   '那', '这', '行', '行吧', '好吧', '是', '对',
   '其实', '不过', '所以', '反正', '就是', '然后', '而且',
   '我觉', '你说', '你这', '不是', '没有', '有点',
@@ -92,10 +92,15 @@ export function analyzeSpeech(): SpeechStats | null {
 
   const openers = new Map<string, number>()
   for (const t of texts) {
-    const p = t.slice(0, 2)
-    if (p.length < 2 || OPENER_STOP.has(p)) continue
+    // 白名单里单字和两字混着放（「嗯」「那」是单字，「其实」「不过」是两字）。
+    // 以前只取 slice(0, 2) 去比，「那就算了吧」拿到的是「那就」，永远匹配不上 ——
+    // 单字那批等于白写，topOpeners 长期是空的。
+    const two = t.slice(0, 2)
+    const one = t.slice(0, 1)
+    const p = OPENER_WHITELIST.has(two) ? two : OPENER_WHITELIST.has(one) ? one : ''
+    if (!p || p.length > 2) continue
+    if (OPENER_STOP.has(p)) continue
     // 只认语气词/连接词。实词片段（"能看""代码"）不算口音
-    if (!OPENER_WHITELIST.has(p)) continue
     if (!/^[\u4e00-\u9fa5]+$/.test(p)) continue
     openers.set(p, (openers.get(p) ?? 0) + 1)
   }
