@@ -7,7 +7,7 @@ import type { Rules } from '../core/config.ts'
 import { recentRaw, loadEpisodes } from '../memory/store.ts'
 import { loadOpen } from '../people/open.ts'
 import { listPeople, savePerson } from '../people/store.ts'
-import { appendLife, loadLife, loadSelf, logDrift, saveSelf } from './store.ts'
+import { SELF_ABOUT_MAX, appendLife, loadLife, loadSelf, logDrift, saveSelf } from './store.ts'
 import { listAbilities, renderAbilities } from './abilities.ts'
 import { loadWill, saveWill, setImpression } from './will.ts'
 import { applyCardField, loadCard, renderCard, saveCard, SELF_EDITABLE_FIELDS } from '../persona/card.ts'
@@ -272,7 +272,7 @@ export async function reflectSelf(opts: SelfReflectOptions): Promise<boolean> {
         }
       } else if (next !== doc.aboutExtra) {
         // 「我写」模式：原文锁死，只更新它补充的那一段
-        doc.aboutExtra = next.slice(0, 600)
+        doc.aboutExtra = next.slice(0, SELF_ABOUT_MAX)
         touched = true
       }
     }

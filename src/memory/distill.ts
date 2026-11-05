@@ -7,7 +7,7 @@ import { loadPerson, personOfAccount } from '../people/store.ts'
 import { appendFacts, isDeleted, loadFacts, supersedeFact, touchFact, type Visibility } from './facts.ts'
 import { similarity } from './recall.ts'
 import { appendInsights, loadEpisodes, nextEpisodeId, saveEpisode } from './store.ts'
-import { appendLife, loadSelf, saveSelf } from '../self/store.ts'
+import { SELF_ABOUT_MAX, appendLife, loadSelf, saveSelf } from '../self/store.ts'
 import { refreshProfile } from '../persona/profile.ts'
 import { learnJargon } from '../learn/jargon.ts'
 import { learnExpressions } from '../learn/expression.ts'
@@ -466,7 +466,7 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
           touched = true
         }
       } else if (next !== doc.aboutExtra) {
-        doc.aboutExtra = next.slice(0, 600)
+        doc.aboutExtra = next.slice(0, SELF_ABOUT_MAX)
         touched = true
       }
     }

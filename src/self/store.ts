@@ -38,6 +38,15 @@ export function resetSelfFiles(): void {
   historyOverride = null
 }
 
+/**
+ * 自述正文的长度上限。
+ *
+ * 以前三处各写各的：apply.ts 用 1200，reflect.ts 和 distill.ts 用 600。
+ * 同一句话走不同入口，截断位置不一样 —— 用户会觉得"我写的东西被吃掉一截"。
+ * 统一到 1200（取松的那个，已存在的内容不会被截短）。
+ */
+export const SELF_ABOUT_MAX = 1200
+
 export interface SelfDoc {
   name: string
   nameReason: string

@@ -9,7 +9,7 @@ import { saveEpisode, nextEpisodeId, today } from '../memory/store.ts'
 import type { Episode } from '../memory/types.ts'
 import { applyCardField, loadCard, saveCard, SELF_EDITABLE_FIELDS } from '../persona/card.ts'
 import { labelOf, type ChangeRequest } from './requests.ts'
-import { loadSelf, saveSelf } from './store.ts'
+import { SELF_ABOUT_MAX, loadSelf, saveSelf } from './store.ts'
 
 export interface ApplyResult {
   ok: boolean
@@ -33,7 +33,7 @@ export function applyRequest(r: ChangeRequest, grant = false): ApplyResult {
 
     case 'about': {
       const doc = loadSelf()
-      const text = r.content.trim().slice(0, 1200)
+      const text = r.content.trim().slice(0, SELF_ABOUT_MAX)
       if (!text) return { ok: false, detail: '内容是空的' }
 
       if (doc.aboutOwner === 'me') {
