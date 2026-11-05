@@ -3603,17 +3603,26 @@ async function loadDesktopLog() {
 // NapCat 页（内嵌它的 WebUI）
 // ============================================================
 
-async function loadNapcat() {
+// NapCat 状态标签的统一写入口。
+// 以前 index.html 的 loadNapcat 和 napcat.js 里的登录轮询各自直接改 #nc-state，
+// 两边都在跑，状态就会互相覆盖（刚显示"已登录"又被拉回"检查中…"）。
+function setNapcatState(text, bg) {
   const tag = $('nc-state')
+  if (!tag) return
+  tag.textContent = text
+  tag.style.background = bg
+  tag.style.color = '#fff'
+}
+window.setNapcatState = setNapcatState
+
+async function loadNapcat() {
   const hint = $('nc-hint')
   const frame = $('nc-frame')
-  if (!tag) return
+  if (!$('nc-state')) return
 
   try {
     const r = await api('/api/napcat')
-    tag.textContent = r.running ? '在跑' : '没跑'
-    tag.style.background = r.running ? 'var(--green)' : 'var(--red)'
-    tag.style.color = '#fff'
+    setNapcatState(r.running ? '在跑' : '没跑', r.running ? 'var(--green)' : 'var(--red)')
 
     if (hint) {
       hint.textContent = r.running

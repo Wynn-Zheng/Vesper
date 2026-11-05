@@ -38,12 +38,7 @@
       //   否则「启动」按钮永远不显示，用户只能自己去命令行开 NapCat。
       if (!d.available) {
         hidePanel()
-        const tag = document.getElementById('nc-state')
-        if (tag) {
-          tag.textContent = '没在跑'
-          tag.style.background = '#f85149'
-          tag.style.color = '#fff'
-        }
+        window.setNapcatState?.('没在跑', '#f85149')
         renderInfo(d, false, d.reason)
         loadWebuiFrame()
         loadNapcatConsole()
@@ -53,12 +48,7 @@
       if (d.isLogin) {
         // 登录成功 → 收起面板，恢复成正常样子
         hidePanel()
-        const tag = document.getElementById('nc-state')
-        if (tag) {
-          tag.textContent = '已登录'
-          tag.style.background = '#238636'
-          tag.style.color = '#fff'
-        }
+        window.setNapcatState?.('已登录', '#238636')
         renderInfo(d, true)
         loadWebuiFrame(d.webuiAuto || d.webui)
         loadNapcatConsole()
@@ -79,12 +69,7 @@
         showPanel()
         loadNapcatConsole()
         renderQrcode()
-        const tag = document.getElementById('nc-state')
-        if (tag) {
-          tag.textContent = '待扫码'
-          tag.style.background = '#d29922'
-          tag.style.color = '#fff'
-        }
+        window.setNapcatState?.('待扫码', '#d29922')
         startPoll()
       }
     } catch (e) {
@@ -245,12 +230,7 @@
         if (d.available && d.isLogin) {
           stopPoll()
           hidePanel()
-          const tag = document.getElementById('nc-state')
-          if (tag) {
-            tag.textContent = '已登录'
-            tag.style.background = '#238636'
-            tag.style.color = '#fff'
-          }
+          window.setNapcatState?.('已登录', '#238636')
           toast('登录成功')
         }
       } catch {
