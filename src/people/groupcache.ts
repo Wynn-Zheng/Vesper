@@ -16,6 +16,7 @@ import { join } from 'node:path'
 import { info, warnAt } from '../core/log.ts'
 import { serialized } from '../store/serialize.ts'
 import { writeAtomic } from '../store/fs.ts'
+import { memoryRoot } from '../memory/store.ts'
 
 export interface CachedMember {
   id: string
@@ -195,7 +196,9 @@ export function knownGroups(): string[] {
 
   // 2. 记忆目录里有群聊记录的
   try {
-    const dir = join('persona', 'memory', 'episodes')
+    // 必须跟着当前角色卡的 memory 根走：写死 persona/memory 时，
+    // 切到别的卡还会把上一张卡的群聊进来，群名单就串了。
+    const dir = join(memoryRoot(), 'episodes')
     for (const name of readdirSync(dir)) {
       const m = /^group-(\d+)$/.exec(name)
       if (m) out.add(m[1]!)
