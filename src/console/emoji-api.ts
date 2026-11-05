@@ -131,6 +131,15 @@ export async function handleEmojiApi(
    * 为了一个上传去接 multipart 解析器不值当。
    */
   if (req.method === 'POST' && path === '/api/emoji/upload') {
+    // 先看声明的大小，再决定读不读：base64 会把体积撑大约 1/3，
+    // 一张 6MB 的图在 body 里约 8MB。以前是先整包读进内存再判断，
+    // 传一个几百 MB 的包就会把进程吃满。
+    const declared = Number(req.headers['content-length'] ?? '')
+    const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+    if (Number.isFinite(declared) && declared > MAX_UPLOAD_BYTES) {
+      json(res, 413, { ok: false, error: `图片太大（${Math.round(declared / 1024 / 1024)}MB，上限 8MB）` })
+      return true
+    }
     const body = (await readJson(req)) as { ext?: unknown; data?: unknown; mood?: unknown; tags?: unknown }
     const raw = typeof body?.data === 'string' ? body.data : ''
     if (!raw) {

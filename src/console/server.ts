@@ -194,8 +194,22 @@ function text(res: ServerResponse, code: number, body: string, type = 'text/plai
 }
 
 async function readBody(req: IncomingMessage): Promise<string> {
+  // 以前这里没有任何上限：一个带巨大 body 的请求就能把进程内存吃满。
+  // 64MB 是备份导入的上限（见备份恢复那段），其余接口都远小于它。
+  const MAX_BODY_BYTES = 64 * 1024 * 1024
+  const declared = Number(req.headers['content-length'] ?? '')
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    throw new Error(`请求体太大（声明 ${declared} 字节，上限 64MB）`)
+  }
   const chunks: Buffer[] = []
-  for await (const c of req) chunks.push(c as Buffer)
+  let total = 0
+  for await (const c of req) {
+    const buf = c as Buffer
+    total += buf.byteLength
+    // 没有 content-length 的分块传输也要挡：边读边算
+    if (total > MAX_BODY_BYTES) throw new Error(`请求体太大（已读 ${total} 字节，上限 64MB）`)
+    chunks.push(buf)
+  }
   return Buffer.concat(chunks).toString('utf8')
 }
 
@@ -219,6 +233,8 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
  */
 function statusFor(err: unknown): number {
   const msg = err instanceof Error ? err.message : String(err)
+  // 体积超限单独给 413：前端能据此提示"文件太大"，而不是笼统的失败
+  if (/太大/.test(msg)) return 413
   return /缺少|不对|不是合法 JSON|不存在|超出|必须是|非法|格式|说点什么|没有模型|未知操作/.test(msg) ? 400 : 500
 }
 
