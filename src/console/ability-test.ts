@@ -8,10 +8,11 @@
  * 接口通不通），不能当场验的（比如截图要桌面）就给一句实话，
  * 不假装成功。
  */
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadRules } from '../core/config.ts'
 import { srcRoot } from '../core/paths.ts'
+import { cardScopedPath } from '../persona/card.ts'
 
 export type AbilityTestResult = {
   ok: boolean
@@ -72,14 +73,19 @@ export async function testAbility(id: string): Promise<AbilityTestResult> {
     }
 
     case 'jargon': {
-      const n = countFiles('persona/jargon')
+      // 真实存放位置是卡片的 jargon.yaml（老数据回落到 persona/jargon.yaml）。
+      // 以前查的是一个**从来不存在的目录** persona/jargon/，所以永远报"还没学到"，
+      // 哪怕 jargon.yaml 里已经攒了几百条。
+      const f = cardScopedPath('jargon.yaml', 'persona/jargon.yaml')
+      const n = sizeOf(f)
       if (n === 0) return done(true, '还没学到黑话（正常，需要先聊一段时间）')
-      return done(true, `${n} 条黑话`)
+      return done(true, `已学到黑话（${f}，${n} 字节）`)
     }
 
     case 'plays': {
-      const n = countFiles('persona/plays')
-      return done(true, n === 0 ? '还没有精选句子（聊多了会攒）' : `${n} 条`)
+      const f = cardScopedPath('plays.md', 'persona/learned/plays.md')
+      const n = sizeOf(f)
+      return done(true, n === 0 ? '还没有精选句子（聊多了会攒）' : `已攒下精选（${f}，${n} 字节）`)
     }
 
     case 'vision': {
@@ -133,6 +139,15 @@ export async function testAbility(id: string): Promise<AbilityTestResult> {
 
     default:
       return done(false, '这个能力还没有自检项')
+  }
+}
+
+/** 文件字节数；不存在或读不了按 0（自检用：不关心内容，只关心"有没有攒下东西"） */
+function sizeOf(p: string): number {
+  try {
+    return statSync(p).size
+  } catch {
+    return 0
   }
 }
 
