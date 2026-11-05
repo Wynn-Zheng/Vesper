@@ -88,15 +88,23 @@ function usageStats(): Map<string, { count: number; last: number; recent: Array<
       if (!line.includes('用了工具')) continue
       try {
         const j = JSON.parse(line) as { ts?: number; extra?: { 工具?: string; 轮?: number } }
-        const tool = j.extra?.工具
+        // 日志里一条记录可能是多个工具（chat.ts 写的是 toolCalls.map(name).join(',')），
+        // 以前整串当一个 key 存，`stat('screenshot')` 永远查不到 "screenshot,click"，
+        // 能力页的工具调用次数就一直是 0。按逗号拆开逐个计数。
+        const names = String(j.extra?.工具 ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
         const ts = j.ts ?? 0
-        if (!tool || ts < cutoff) continue
-        const cur = out.get(tool) ?? { count: 0, last: 0, recent: [] }
-        cur.count++
-        cur.last = Math.max(cur.last, ts)
-        cur.recent.push({ at: ts, ok: true })
-        if (cur.recent.length > 20) cur.recent = cur.recent.slice(-20)
-        out.set(tool, cur)
+        if (!names.length || ts < cutoff) continue
+        for (const tool of names) {
+          const cur = out.get(tool) ?? { count: 0, last: 0, recent: [] }
+          cur.count++
+          cur.last = Math.max(cur.last, ts)
+          cur.recent.push({ at: ts, ok: true })
+          if (cur.recent.length > 20) cur.recent = cur.recent.slice(-20)
+          out.set(tool, cur)
+        }
       } catch {
         /* 坏行跳过 */
       }
