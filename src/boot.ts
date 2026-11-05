@@ -26,6 +26,15 @@ import { maybeSendEmoji } from './loop/chat.ts'
  * 群里刷屏的时候等于白烧 token。
  */
 const backoff = new Map<string, { since: number; count: number; pending: number }>()
+
+/** 硬上限：按插入顺序删最旧的，防止某个 Map 长期只增不减 */
+function capMap<K, V>(m: Map<K, V>, max = 800): void {
+  while (m.size > max) {
+    const first = m.keys().next()
+    if (first.done) break
+    m.delete(first.value)
+  }
+}
 export interface BootOptions {
   /** 每次消息都取一次，这样 rules.yaml 改了能立刻生效 */
   getRules: () => Rules
@@ -254,6 +263,35 @@ export function boot(transport: Transport, opts: BootOptions): void {
   const replyTimes = new Map<string, number[]>()
   /** 每个会话上次引用回复的时间，用来做冷却（刚引过就别再引） */
   const lastQuoteAt = new Map<string, number>()
+
+  /**
+   * 定期收一遍这几个 Map。
+   *
+   * 它们都只增不减：跑一天下来，哪怕只跟几十个群说过话，lastTalk / replyTimes /
+   * lastSent 也会按"会话 × 人"的基数慢慢攒起来；长期挂着不关的进程内存只涨不落。
+   * 半小时扫一次，过期条目删掉，再兜一层硬上限。
+   */
+  const pruneMaps = (): void => {
+    const now = Date.now()
+    for (const [k, v] of lastSent) if (now - v.at > 86_400_000) lastSent.delete(k)
+    for (const [k, v] of lastTalk) if (now - v > 7 * 86_400_000) lastTalk.delete(k)
+    for (const [k, v] of lastQuoteAt) if (now - v > 86_400_000) lastQuoteAt.delete(k)
+    // 续期计数跟着会话走：会话都没记录了就一起清掉
+    for (const k of talkRenewals.keys()) if (!lastTalk.has(k)) talkRenewals.delete(k)
+    for (const [k, v] of replyTimes) {
+      const kept = v.filter((t) => now - t < 300_000)
+      if (kept.length) replyTimes.set(k, kept)
+      else replyTimes.delete(k)
+    }
+    capMap(buffers)
+    capMap(lastSent)
+    capMap(talkRenewals)
+    capMap(lastTalk)
+    capMap(replyTimes)
+    capMap(lastQuoteAt)
+  }
+  const pruneTimer = setInterval(pruneMaps, 30 * 60_000)
+  pruneTimer.unref?.()
 
   /** 当前情绪强度 0~1。引用判定用它判断「这句话是不是把情绪挑起来了」。 */
   const currentMoodIntensity = (): number => {
