@@ -296,22 +296,10 @@ export function startObserving(getLlm: () => LlmOptions, intervalMs = 6 * 3600_0
       if (!sure.length) return
       info(`扫了一遍日志，${sure.length} 个确定的问题`)
 
-      // 有位置但还没诊断过的，读一下代码猜原因
-      const todo = sure.filter((i) => !i.guess && i.where).slice(0, 2)
-      if (!todo.length) return
-      const { diagnose } = await import('./diagnose.ts')
-      for (const issue of todo) {
-        const d = await diagnose(issue, getLlm())
-        if (!d) continue
-        const cur = loadIssueStore()
-        const hit = cur.items.find((x) => x.key === issue.key)
-        if (hit) {
-          hit.guess = d
-          hit.guessAt = BOOT_AT
-        }
-        saveIssueStore(cur)
-        info(`诊断了 ${issue.where}：${d.why.slice(0, 40)}`)
-      }
+      // 以前这里还会对最多 2 个问题各花一次 LLM 调用去"读代码猜原因"，把结果写进
+      // issues.json 的 guess。问题是控制台、prompt、诊断页全都不读它 ——
+      // 等于每次启动后 2 分钟白烧两次调用（B-18）。
+      // 问题本身的收集（进 prompt 的那条链路）不依赖它，故整段删掉。
     } catch {
       /* 扫失败不影响主流程 */
     }
