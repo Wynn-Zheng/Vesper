@@ -10,12 +10,13 @@
  *   2. 超时短（最慢的一项 3 秒），不能让体检本身卡住
  *   3. 结果分三级：ok / warn / fail —— warn 是"能用但有隐患"
  */
-import { existsSync, statfsSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync, statfsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadRules } from '../core/config.ts'
 import { knownGroups, groupMembers } from '../people/groupcache.ts'
 import { listPeople, loadPerson } from '../people/store.ts'
 import { exePath as aiDesktopExe } from '../tools/desktop.ts'
+import { writeAtomic } from '../store/fs.ts'
 
 export type CheckLevel = 'ok' | 'warn' | 'fail'
 
@@ -124,7 +125,25 @@ function dataWritable(): CheckItem {
     if (!st.isDirectory()) {
       return { id: 'data', name: '数据目录', level: 'fail', detail: 'persona 不是目录' }
     }
-    return { id: 'data', name: '数据目录', level: 'ok', detail: 'persona/ 可访问' }
+    // 名字叫 dataWritable，之前却只查了"目录在不在"。
+    // 目录在、但只读（权限错、只读挂载、被别的进程锁住）时，
+    // 体检照样显示绿色，直到它想写记忆才炸。这里真写一次再删掉。
+    // 走 writeAtomic：控制台代码不许直接 writeFileSync（有测试守着），
+    // 而且它同样是"往这个目录真写一个文件"，验证目的一样。
+    const probe = join(dir, `.health-probe-${process.pid}`)
+    try {
+      writeAtomic(probe, 'ok')
+    } finally {
+      try {
+        // writeAtomic 的临时文件名带 pid 和随机串，没法按固定名字删；按前缀扫一遍
+        for (const f of readdirSync(dir)) {
+          if (f.startsWith('.health-probe-')) rmSync(join(dir, f), { force: true })
+        }
+      } catch {
+        /* 删不掉不影响结论 */
+      }
+    }
+    return { id: 'data', name: '数据目录', level: 'ok', detail: 'persona/ 可读写' }
   } catch (err) {
     return {
       id: 'data',
@@ -250,7 +269,8 @@ function napcat(state: { connected?: boolean }): CheckItem {
     level: 'fail',
     detail: '没连上',
     fix:
-      '① NapCat 开着吗 ② NapCat 的 WebSocket 客户端指向 ws://127.0.0.1:8765/onebot/v11/ws 吗 ' +
+      // 端口不能写死：用户改过 ONEBOT_PORT 后，提示里给一个错的地址反而更误导
+      `① NapCat 开着吗 ② NapCat 的 WebSocket 客户端指向 ws://127.0.0.1:${(process.env.ONEBOT_PORT ?? '8765').trim() || '8765'}/onebot/v11/ws 吗 ` +
       '③ QQ 掉线了吗（NapCat 会跟着断）',
   }
 }
