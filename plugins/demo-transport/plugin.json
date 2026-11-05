@@ -1,0 +1,19 @@
+{
+  "id": "demo-transport",
+  "name": "示例通道",
+  "version": "0.1.0",
+  "type": "transport",
+  "platform": "demo",
+  "entry": "index.mjs",
+  "description": "演示 transport 类型：一个假的平台接入，只把消息打到控制台日志，不连任何真实平台。",
+  "author": "示例",
+  "permissions": [],
+  "configSchema": {
+    "echo": {
+      "type": "boolean",
+      "label": "回声模式",
+      "default": true,
+      "hint": "打开后收到什么就回什么，方便验证通道"
+    }
+  }
+}

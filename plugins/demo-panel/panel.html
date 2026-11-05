@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>示例面板</title>
+<style>
+  /* 面板在 iframe 里，自己管样式。
+     不做成控制台那种深色是因为它可能是任何东西——这是"插件自由发挥"的地方。 */
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 16px;
+    font: 13px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: #16171c; color: #d8d9de;
+  }
+  h1 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+  .hint { font-size: 11.5px; color: #7c7f8a; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  button {
+    font: inherit; cursor: pointer;
+    padding: 7px 14px; border-radius: 7px;
+    border: 1px solid rgba(255,255,255,.1); background: #1e1f25; color: #d8d9de;
+  }
+  button:hover { border-color: rgba(255,255,255,.2); }
+  #count { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #out {
+    border: 1px solid rgba(255,255,255,.08); border-radius: 8px;
+    padding: 10px; height: 220px; overflow-y: auto;
+    font: 11.5px/1.7 ui-monospace, Consolas, monospace; color: #9a9da8;
+    background: #121317;
+  }
+</style>
+</head>
+<body>
+  <h1>示例面板</h1>
+  <div class="hint">
+    这个页面跑在 iframe 里，拿不到主控制台的 window。要数据就走
+    <code>/api/plugins/demo-panel/call</code>。
+  </div>
+
+  <div class="row">
+    <button id="btn-ping">调一次后端</button>
+    <button id="btn-count">读计数</button>
+    <span>计数：<span id="count">—</span></span>
+  </div>
+
+  <div id="out"></div>
+
+<script>
+  const log = (msg) => {
+    const box = document.getElementById('out')
+    const line = document.createElement('div')
+    line.textContent = new Date().toLocaleTimeString() + '  ' + msg
+    box.appendChild(line)
+    box.scrollTop = box.scrollHeight
+  }
+
+  // 面板跑在沙箱 iframe 里（不透明源），**拿不到控制台 token**，也不能自己
+  // 带 x-console-token 发请求。要数据请走 postMessage 桥，由宿主代发：
+  //   发：{ type: 'vesper:call', reqId, action, payload }
+  //   收：{ type: 'vesper:result', reqId, ok, data?, error? }
+  // 这样面板即使引了第三方 JS，也只能动这个插件自己的东西。
+  const pending = new Map()
+  let seq = 0
+
+  window.addEventListener('message', (ev) => {
+    const d = ev.data
+    if (!d || d.type !== 'vesper:result') return
+    const p = pending.get(d.reqId)
+    if (!p) return
+    pending.delete(d.reqId)
+    if (d.ok) p.resolve(d.data)
+    else p.reject(new Error(d.error || '调用失败'))
+  })
+
+  const call = (action, payload) =>
+    new Promise((resolve, reject) => {
+      const reqId = 'r' + ++seq + '-' + Date.now()
+      pending.set(reqId, { resolve, reject })
+      parent.postMessage({ type: 'vesper:call', reqId, action, payload }, '*')
+      // 宿主没响应时别让按钮永远转圈
+      setTimeout(() => {
+        if (!pending.has(reqId)) return
+        pending.delete(reqId)
+        reject(new Error('宿主没响应（面板桥超时）'))
+      }, 15000)
+    })
+
+  document.getElementById('btn-ping').onclick = async () => {
+    try {
+      log('ping → ' + JSON.stringify(await call('ping')))
+    } catch (e) {
+      log('ping 失败：' + e.message)
+    }
+  }
+
+  document.getElementById('btn-count').onclick = async () => {
+    try {
+      const d = await call('count')
+      document.getElementById('count').textContent = String(d.count)
+      log('计数 → ' + d.count)
+    } catch (e) {
+      log('计数失败：' + e.message)
+    }
+  }
+
+  log('面板已加载。它和主控制台是隔离的，只能通过 /call 拿数据。')
+</script>
+</body>
+</html>

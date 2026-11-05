@@ -1,0 +1,13 @@
+{
+  "id": "weather",
+  "name": "天气",
+  "version": "0.1.0",
+  "type": "tool",
+  "entry": "index.mjs",
+  "description": "示例：注册一个 get_weather 工具，模型想知道天气时会调用它。",
+  "author": "QQbot",
+  "permissions": ["net"],
+  "configSchema": {
+    "city": { "type": "string", "label": "默认城市", "default": "广州", "hint": "模型没指定城市时用这个" }
+  }
+}

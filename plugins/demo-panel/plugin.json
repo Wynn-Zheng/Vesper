@@ -1,0 +1,18 @@
+{
+  "id": "demo-panel",
+  "name": "示例面板",
+  "version": "0.1.0",
+  "type": "panel",
+  "entry": "index.mjs",
+  "description": "演示 panel 类型：插件自带一个页面，在控制台里以 iframe 打开。",
+  "author": "示例",
+  "permissions": [],
+  "configSchema": {
+    "greeting": {
+      "type": "string",
+      "label": "打招呼的话",
+      "default": "你好",
+      "hint": "面板里 ping 时后端返回它"
+    }
+  }
+}

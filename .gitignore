@@ -18,6 +18,9 @@ electron/dist/
 # 外部插件：装了就不提交（示例 demo 例外）
 plugins/*
 !plugins/demo/
+!plugins/demo-panel/
+!plugins/demo-transport/
+!plugins/weather/
 
 # 更新源索引：这是仓库自带的，要进版本控制
 # （plugins/* 默认忽略是因为装进来的第三方插件不该进仓库）

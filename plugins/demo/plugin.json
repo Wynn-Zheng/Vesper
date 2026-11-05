@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "最小的插件示例：只写一行日志，用来验证加载链路通不通。可以照着它写自己的。",
   "author": "内置示例",
-  "entry": "index.js",
+  "entry": "index.mjs",
   "configSchema": {
     "说明": {
       "type": "string",
