@@ -1,6 +1,7 @@
 import { renderConsoleForPrompt } from '../console/activity.ts'
 import type { Rules } from '../core/config.ts'
 import { loadCard } from '../persona/card.ts'
+import { loadLearnings } from '../persona/learnings.ts'
 import { loadSelf, recentLife } from './store.ts'
 import { impressionOf } from './will.ts'
 import { unmentionedIssues } from './observe.ts'
@@ -115,6 +116,29 @@ export function buildSelfBlock(rules: Rules, _now = new Date(), personId = '', p
   // 它自己总结的能力：这是它的自我认知，不是我们写的
   if (self.abilities) {
     lines.push(`- 你觉得自己能做什么：${self.abilities.replace(/\s+/g, ' ').trim()}`)
+  }
+
+  // 它记下的东西（B-93）。
+  //
+  // 以前 learnings 只躺在控制台里：用户点「添加」教它一句「以后别这么回」，
+  // 它记下来了，可每次生成回复都看不到这条 —— 记了等于没记。
+  // 只取最近 5 条、每条截 80 字：这东西会随时间越攒越多，全塞进去会把 prompt 撑爆，
+  // 也会让"原则"变成一堆互相冲突的句子。
+  try {
+    const learned = loadLearnings()
+      .filter((l) => String(l.text || '').trim())
+      .sort((a, b) => (b.at || 0) - (a.at || 0))
+      .slice(0, 5)
+    if (learned.length) {
+      lines.push('- 你记下的（自己学的、或被交代过的，按时间倒序）：')
+      for (const l of learned) {
+        const src = l.source === 'user' ? '被交代' : '自己学'
+        lines.push(`  · [${l.kind}/${src}] ${l.text.replace(/\s+/g, ' ').trim().slice(0, 80)}`)
+      }
+      lines.push('  · 这些是你知道的事，不是这轮必须说的内容；用得上再提。')
+    }
+  } catch {
+    /* 读不到不影响组装 */
   }
 
   // 性格 / 语言风格 / 喜好 / 讨厌 由角色卡提供（buildSystem 里在 self 段之前已经塞进去了），
