@@ -34,14 +34,14 @@ process.on('exit', () => {
 /* ---------------- 黑话 ---------------- */
 
 test('黑话：存进去能读出来', () => {
-  saveJargon('100', [{ word: '典', meaning: '形容某件事很离谱', evidence: '太典了', count: 2, date: '2026-10-25' }])
+  saveJargon('100', [{ word: '典', meaning: '形容某件事很离谱', count: 2, date: '2026-10-25' }])
   const list = loadJargon('100')
   assert.equal(list.length, 1)
   assert.equal(list[0]!.word, '典')
 })
 
 test('黑话：不同群互不影响', () => {
-  saveJargon('200', [{ word: '绷', meaning: '忍不住笑', evidence: '', count: 1, date: '2026-10-25' }])
+  saveJargon('200', [{ word: '绷', meaning: '忍不住笑', count: 1, date: '2026-10-25' }])
   assert.equal(loadJargon('100').length, 1)
   assert.equal(loadJargon('200').length, 1)
   assert.equal(loadJargon('100')[0]!.word, '典')
@@ -49,8 +49,8 @@ test('黑话：不同群互不影响', () => {
 
 test('黑话：只在说到这个词时才解释', () => {
   saveJargon('300', [
-    { word: '典', meaning: '形容离谱', evidence: '', count: 1, date: '2026-10-25' },
-    { word: '绷', meaning: '忍不住笑', evidence: '', count: 1, date: '2026-10-25' },
+    { word: '典', meaning: '形容离谱', count: 1, date: '2026-10-25' },
+    { word: '绷', meaning: '忍不住笑', count: 1, date: '2026-10-25' },
   ])
   const hit = explainJargon('这也太典了', '300')
   assert.equal(hit.length, 1)
@@ -59,7 +59,7 @@ test('黑话：只在说到这个词时才解释', () => {
 })
 
 test('黑话：渲染成给模型看的文字', () => {
-  saveJargon('400', [{ word: '典', meaning: '形容离谱', evidence: '', count: 1, date: '2026-10-25' }])
+  saveJargon('400', [{ word: '典', meaning: '形容离谱', count: 1, date: '2026-10-25' }])
   const text = renderJargon(explainJargon('太典了', '400'))
   assert.ok(text.includes('典'))
   assert.ok(text.includes('形容离谱'))

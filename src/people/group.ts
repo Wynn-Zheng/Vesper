@@ -48,7 +48,6 @@ export {
   groupMembers,
   isKnownMember,
   knownGroups,
-  resetMemberCacheEverywhere,
   membersAreStale,
   refreshAllGroups,
   refreshGroupMembers,

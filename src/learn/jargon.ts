@@ -21,8 +21,6 @@ import { cardScopedPath } from '../persona/card.ts'
 export interface Jargon {
   word: string
   meaning: string
-  /** 在原句里是怎么用的 */
-  evidence: string
   count: number
   date: string
 }
@@ -125,7 +123,7 @@ export async function learnJargon(turns: RawTurn[], llm: LlmOptions, groupId: st
         counted++
         continue
       }
-      existing.push({ word, meaning, evidence: (item.依据 ?? '').trim().slice(0, 60), count: 1, date: today })
+      existing.push({ word, meaning, count: 1, date: today })
       known.add(word)
       added++
     }

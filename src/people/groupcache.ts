@@ -237,18 +237,6 @@ export function clearMemberCache(): void {
   mem.clear()
 }
 
-/** 连盘一起清（测试用） */
-export function resetMemberCacheEverywhere(): void {
-  mem.clear()
-  try {
-    for (const gid of knownGroups()) {
-      const f = fileOf(gid)
-      if (existsSync(f)) writeAtomic(f, JSON.stringify({ groupId: gid, at: 0, members: [] }))
-    }
-  } catch {
-    /* 清不掉就算了 */
-  }
-}
 
 /* ============================================================
  * 从快照恢复群名单

@@ -97,7 +97,6 @@ await check('新增成功：图片落盘、index.json 结构正确', async () =>
     ext: '.png',
     mood: '开心',
     tags: ['笑', '开心'],
-    source: 'test',
   })
   firstId = r.id
 

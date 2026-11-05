@@ -29,7 +29,6 @@ export interface AddEmojiInput {
   ext: string
   mood?: string
   tags?: string[]
-  source?: string
 }
 
 export interface AddEmojiResult {
@@ -251,9 +250,6 @@ export function createEmojiStore(
   }
 
   async function add(input: AddEmojiInput): Promise<AddEmojiResult> {
-    // source 目前只作为调用方的来源标记，索引结构里不落盘
-    void input.source
-
     const hash = createHash('sha256').update(input.buffer).digest('hex')
     const id = hash.slice(0, 16)
     if (input.buffer.byteLength > MAX_EMOJI_BYTES) {

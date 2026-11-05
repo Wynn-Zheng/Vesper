@@ -170,7 +170,6 @@ export async function handleEmojiApi(
     const result = await store.add({
       buffer,
       ext: wantExt,
-      source: 'console',
       ...(typeof body?.mood === 'string' && body.mood.trim() ? { mood: body.mood.trim().slice(0, 12) } : {}),
       ...(Array.isArray(body?.tags)
         ? {

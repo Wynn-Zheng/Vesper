@@ -81,7 +81,7 @@ const DOWNLOAD_TIMEOUT_MS = 15_000
 const RETRY_DELAY_MS = 300
 
 /** 整批图片的总预算：到点就收工，没看完的算失败，不拖住回复。 */
-export const DEFAULT_BUDGET_MS = 8_000
+const DEFAULT_BUDGET_MS = 8_000
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 

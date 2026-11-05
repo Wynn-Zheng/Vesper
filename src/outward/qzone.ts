@@ -25,8 +25,6 @@ export interface Draft {
   images: string[]
   /** 为什么想发（它自己的一句话） */
   reason?: string
-  /** 已经发出去了？发过的保留记录 */
-  tid?: string
 }
 
 interface DraftFile {

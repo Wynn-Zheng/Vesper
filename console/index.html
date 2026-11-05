@@ -1570,10 +1570,6 @@ const TITLES = { dashboard: '仪表盘', self: '自我', ability: '插件', peop
 let currentGroup = 'dashboard'
 let currentViewId = 'v-dashboard'
 
-/** 当前显示的是哪个 view（切人后要重新拉它的数据） */
-function activeView() {
-  return currentViewId
-}
 
 /**
  * 直接切到某个 view（不进导航栏）。
@@ -1805,15 +1801,6 @@ async function loadPeople() {
 }
 
 
-async function createPerson(accountId, name) {
-  try {
-    await sendJson('/api/person/create', { accountId, name })
-    toast('已建档：' + (name || accountId))
-    await loadPeople()
-  } catch (e) {
-    alert('失败：' + e.message)
-  }
-}
 
 function openPerson(id) {
   // 旧的 v-person 详情页已废弃：openPerson 原来设 hash + showGroup('people',1)，
@@ -1945,13 +1932,6 @@ function selfEmpty(text) {
   return el('div', 'self-empty', text)
 }
 
-/** 一行「标签 + 输入框」 */
-function selfField(label, inputEl) {
-  const row = el('div', 'self-field')
-  row.appendChild(el('label', '', label))
-  row.appendChild(inputEl)
-  return row
-}
 
 /** 一行「标签 + 多个输入框」 */
 

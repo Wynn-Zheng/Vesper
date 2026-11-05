@@ -19,7 +19,7 @@ import type { LlmOptions } from '../llm/types.ts'
  * 系统情绪是模型自由生成的（"有点烦"、"挺开心的"），要是表情包也用自由词，
  * 两边永远不会精确相等。固定一张表 + 下面的归一化，才有机会对上。
  */
-export const EMOJI_MOODS = [
+const EMOJI_MOODS = [
   '开心',
   '难过',
   '生气',
@@ -32,7 +32,7 @@ export const EMOJI_MOODS = [
   '嘲讽',
 ] as const
 
-export type EmojiMood = (typeof EMOJI_MOODS)[number]
+type EmojiMood = (typeof EMOJI_MOODS)[number]
 
 /**
  * 把任意情绪词归到上面那张表里的一个。

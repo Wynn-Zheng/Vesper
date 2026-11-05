@@ -98,13 +98,6 @@
   }
 
 
-/** 简单的 HTML 转义（settings.js 里没有全局的） */
-function escHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
 
 async function loadModel() {
       const box = document.getElementById('model-body')

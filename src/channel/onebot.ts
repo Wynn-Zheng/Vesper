@@ -449,7 +449,6 @@ export async function captureEmojiSegments(
       const result = await opts.store.add({
         buffer: image.buffer,
         ext: image.ext,
-        source: 'onebot',
       })
       if (result.added) {
         added++
