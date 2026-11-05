@@ -137,6 +137,9 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
       const ts = Number(rec.ts) || 0
       if (existing) {
         existing.count++
+        // where 以前只在第一次出现时记下，之后行号变了也不更新，
+        // 展示出来的"位置"可能早就对不上了。取最近一次出现的位置。
+        if (where) existing.where = where
         if (ts) {
           existing.lastAt = Math.max(existing.lastAt, ts)
           existing.firstAt = existing.firstAt ? Math.min(existing.firstAt, ts) : ts
@@ -190,6 +193,8 @@ export function findIssues(opts: ObserveOptions = {}): Issue[] {
 /* ============ 定时扫 + 待提 ============ */
 
 const ISSUES_FILE = 'persona/issues.json'
+/** 本进程启动时刻：用来判断缓存的诊断是不是"这次代码算出来的" */
+const BOOT_AT = Date.now()
 
 export interface StoredIssue extends Issue {
   /** 提过的时间；0 = 还没提 */
@@ -201,6 +206,14 @@ export interface StoredIssue extends Issue {
     certainty: '确定' | '大概' | '猜的'
     howToFix: string
   }
+  /**
+   * 这份 guess 是哪个进程算出来的。
+   *
+   * 以前缓存只按 key 认，代码改过之后仍复用旧诊断 —— 明明已经修了，
+   * 它还会照着旧结论说"这里有问题"。带上进程启动时间：重启一次就作废，
+   * 代价是重启后多读一次代码，比给出过期结论便宜得多。
+   */
+  guessAt?: number
 }
 
 interface IssueStore {
@@ -243,11 +256,12 @@ export function refreshIssues(): StoredIssue[] {
 
   const items: StoredIssue[] = found.map((i) => {
     const prev = oldMap.get(i.key)
+    // 只复用"本进程算出来的"诊断；代码改过（重启过）就让它重读
+    const guessFresh = prev?.guess && prev.guessAt === BOOT_AT
     return {
       ...i,
       mentionedAt: prev?.mentionedAt ?? 0,
-      // 诊断结果留着：代码没变的话不用重新读一遍
-      ...(prev?.guess ? { guess: prev.guess } : {}),
+      ...(guessFresh ? { guess: prev.guess, guessAt: prev.guessAt } : {}),
     }
   })
 
@@ -291,7 +305,10 @@ export function startObserving(getLlm: () => LlmOptions, intervalMs = 6 * 3600_0
         if (!d) continue
         const cur = loadIssueStore()
         const hit = cur.items.find((x) => x.key === issue.key)
-        if (hit) hit.guess = d
+        if (hit) {
+          hit.guess = d
+          hit.guessAt = BOOT_AT
+        }
         saveIssueStore(cur)
         info(`诊断了 ${issue.where}：${d.why.slice(0, 40)}`)
       }
