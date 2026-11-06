@@ -53,7 +53,6 @@
             st.style.color = ''
             try {
               const r = await sendJson('/api/test/tool', { id: t.id })
-              st.textContent = r.ms + 'ms'
               st.style.color = r.ok ? '#3fb950' : '#f85149'
               st.title = r.detail + (r.preview ? '\n' + r.preview : '')
               st.textContent = (r.ok ? '✓ ' : '✗ ') + r.detail.slice(0, 20)

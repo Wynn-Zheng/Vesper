@@ -182,6 +182,5 @@
     }
   }
 
-  window.confirmInstall = confirmInstall
   window.openInstallDialog = openInstallDialog
 })()

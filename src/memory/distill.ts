@@ -362,7 +362,6 @@ async function distillOnce(opts: DistillOptions): Promise<DistillResult> {
   if (isPrivate) {
     const r = await mergeFactsInto(opts.personId, data.facts ?? [], date, opts.llm)
     accepted = r.accepted
-    conflicts = r.conflicts
     pendingSupersede.push(...r.supersedes)
   } else if (isGroupScope && (data.facts ?? []).length) {
     const index = speakerIndex(opts.turns)
@@ -559,12 +558,10 @@ async function mergeFactsInto(
   llm: LlmOptions,
 ): Promise<{
   accepted: FactRow[]
-  conflicts: Array<{ text: string; date: string; kind: 'pending' }>
   /** 需要失效的旧事实：调用方确认新事实写进去了再执行 */
   supersedes: Array<{ oldText: string; newText: string }>
 }> {
   const accepted: FactRow[] = []
-  const conflicts: Array<{ text: string; date: string; kind: 'pending' }> = []
   const supersedes: Array<{ oldText: string; newText: string }> = []
   // 只和「在世」的事实比：失效的还参与判定的话，会判成 same 去 touch 一条死事实
   const existing = loadFacts(personId).filter((f) => !f.supersededAt)
@@ -619,7 +616,7 @@ async function mergeFactsInto(
     accepted.push({ text, date, confidence, visibility, tier, ...(source ? { source } : {}) })
   }
 
-  return { accepted, conflicts, supersedes }
+  return { accepted, supersedes }
 }
 
 /**
