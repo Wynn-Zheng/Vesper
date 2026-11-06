@@ -2,7 +2,7 @@ import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import { chat } from '../llm/deepseek.ts'
 import type { LlmOptions } from '../llm/types.ts'
-import { appendOpen, loadOpen } from '../people/open.ts'
+import { appendOpen } from '../people/open.ts'
 import { loadPerson, personOfAccount } from '../people/store.ts'
 import { appendFacts, isDeleted, loadFacts, supersedeFact, touchFact, type Visibility } from './facts.ts'
 import { similarity } from './recall.ts'
@@ -649,5 +649,3 @@ export async function distill(opts: DistillOptions): Promise<DistillResult> {
   }
   return total
 }
-
-export { loadOpen }

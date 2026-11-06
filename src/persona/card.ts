@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 角色卡：一张卡 = 一套人设。
  *
  * 为什么独立成文件（persona/cards/<id>.md）而不是塞进 self.md：
@@ -63,8 +63,6 @@ export interface CharCard {
   dislikes: string[]
   /** 反应：场景 → 表现 */
   reactions: Record<string, string>
-  /** 原始正文（保存时整体写回，避免丢用户手写的其他段落） */
-  raw?: string
 }
 
 const EMPTY_CARD = (id: string): CharCard => ({
@@ -128,7 +126,6 @@ function pairs(text: string): Record<string, string> {
 export function parseCard(id: string, text: string): CharCard {
   const { meta, body } = splitFront(text)
   const card = EMPTY_CARD(id)
-  card.raw = body.trim()
   card.name = meta['名字'] ?? ''
   card.birthday = meta['生日'] ?? ''
   card.actionDesc = meta['小动作描写'] === '开'
