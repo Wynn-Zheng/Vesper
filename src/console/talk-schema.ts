@@ -34,6 +34,8 @@ export interface TalkListItem {
   /** tags = 字符串数组（关键词列表），text = 单行文字，number = 数字 */
   kind: 'text' | 'tags' | 'number'
   hint?: string
+  /** true = 允许留空（留空就不写这个键，用于 StageRule 里的可选字段） */
+  optional?: boolean
 }
 
 export interface TalkField {
@@ -408,6 +410,35 @@ export const TALK_FIELDS: TalkField[] = [
       { key: '反应', label: '反应', kind: 'text', hint: '追加给模型的一句指令' },
     ],
   },
+  {
+    path: '行为.频率规则',
+    label: '按时段调发言频率',
+    hint: '留空就是全天用上面那个「发言频率」。时段写 09:00-18:00，值 0-1，越接近 1 越积极。',
+    kind: 'list',
+    group: '说话的节奏',
+    level: 'advanced',
+    items: [
+      { key: '时段', label: '时段', kind: 'text', hint: '如 09:00-18:00' },
+      { key: '值', label: '频率', kind: 'number', hint: '0-1' },
+    ],
+  },
+  {
+    path: '关系.阶段',
+    label: '关系阶段',
+    hint: '关系值（0-100）到多少算哪个阶段，以及每个阶段怎么称呼你、多久主动一次。改之前先确认「至」是递增的。',
+    kind: 'list',
+    group: '和你的关系',
+    level: 'advanced',
+    items: [
+      { key: '名', label: '阶段名', kind: 'text' },
+      { key: '至', label: '到多少', kind: 'number', hint: '0-100' },
+      { key: '称呼', label: '怎么称呼', kind: 'text', hint: '写怎么叫，不是称呼本身' },
+      { key: '主动', label: '主动说明', kind: 'text', hint: '给人看的，如「一周左右一次」' },
+      { key: '主动间隔小时', label: '间隔(小时)', kind: 'number', optional: true },
+      { key: '每日上限', label: '每天最多', kind: 'number', optional: true },
+      { key: '最小由头', label: '由头门槛', kind: 'number', hint: '0-10', optional: true },
+    ],
+  },
 ]
 
 /** 按路径从配置对象里取值（'行为.防抖.档位' → rules.行为.防抖.档位） */
@@ -489,6 +520,8 @@ export function validateTalkValues(
             continue
           }
           if (r.kind === 'number') {
+            // 可选字段留空 = 不写这个键，别写成 0（0 和「没设」行为不同）
+            if (r.optional && (v === '' || v === undefined || v === null)) continue
             const n = Number(v)
             if (!Number.isFinite(n)) {
               bad = `第 ${i + 1} 行的「${r.label}」要是数字`
@@ -499,6 +532,7 @@ export function validateTalkValues(
           }
           const s = String(v ?? '').trim()
           if (!s) {
+            if (r.optional) continue
             bad = `第 ${i + 1} 行的「${r.label}」不能为空`
             return
           }
