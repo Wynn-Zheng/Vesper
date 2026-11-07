@@ -73,7 +73,11 @@ console.log('=== 1. 说能做 → 代码里要有 ===')
   const c = claim('查 B站')
   check('查B站: 声明能做', c.found && c.available)
   check('查B站: 代码里真 fetch bilibili', SRC.includes('api.bilibili.com') && SRC.includes('fetch('))
-  check('查B站: 说明提到"这是真联网"', c.hint.includes('真联网'), c.hint)
+  // 改过（B-19）：现在这条不写"这是真联网"了，因为那是定时任务在调，
+  // 模型在对话里没有这个工具。真正要验的是这两件事都说清了：
+  // ① 确实是真调接口（不是编的） ② 模型自己现查不了。
+  check('查B站: 说明是真调接口', c.hint.includes('接口'), c.hint)
+  check('查B站: 说明对话里没法现查', c.hint.includes('对话里'), c.hint)
 }
 
 /* ============ 2. 说"不能做"的，代码里确实没有 ============ */
