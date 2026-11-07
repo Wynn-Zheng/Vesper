@@ -663,6 +663,13 @@
 .talk-name{font-size:12.5px;color:var(--text);line-height:1.5}
 .talk-hint{font-size:11px;color:var(--dim2);line-height:1.55;margin-top:2px}
 .talk-right{flex:none;display:flex;align-items:center;gap:6px}
+.talk-list{display:flex;flex-direction:column;gap:6px;min-width:320px;max-width:520px}
+.talk-list-row{display:flex;align-items:flex-end;gap:6px;background:var(--panel2);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:6px}
+.talk-list-cell{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.talk-list-label{font-size:10.5px;color:var(--dim2)}
+.talk-list-input{width:100%}
+.talk-list-del{flex:none;color:var(--red);border-color:rgba(248,81,73,.35)}
+.talk-list-bar{display:flex;gap:6px}
 .talk-right .self-select{min-width:132px}
 .talk-unit{font-size:11px;color:var(--dim2)}
 .talk-requires-tip{font-size:10.5px;color:var(--dim2);margin-top:3px}
@@ -3382,7 +3389,7 @@ function talkRow(field, values, envOverrides) {
       })
     }
     right.appendChild(sel)
-  } else {
+  } else if (field.kind === 'number') {
     const inp = el('input', 'self-input num')
     inp.type = 'number'
     if (field.step != null) inp.step = String(field.step)
@@ -3402,6 +3409,66 @@ function talkRow(field, values, envOverrides) {
     }
     right.appendChild(inp)
     if (field.unit) right.appendChild(el('span', 'talk-unit', field.unit))
+  }
+  if (field.kind === 'list') {
+    // 对象数组：一行一条，逐字段编辑，整张表一起保存（B-15）。
+    // 以前这类配置只能「设置 → 对话规则（YAML）」整段改，改错一个缩进就整份读不出来。
+    const draft = Array.isArray(cur) ? JSON.parse(JSON.stringify(cur)) : []
+    const box = el('div', 'talk-list')
+    const paint = () => {
+      box.textContent = ''
+      draft.forEach((row, i) => {
+        const line = el('div', 'talk-list-row')
+        for (const item of field.items || []) {
+          const cell = el('div', 'talk-list-cell')
+          cell.appendChild(el('div', 'talk-list-label', item.label))
+          const inp2 = document.createElement('input')
+          inp2.className = 'self-input talk-list-input'
+          const v = row[item.key]
+          inp2.value = Array.isArray(v) ? v.join('，') : String(v === undefined || v === null ? '' : v)
+          inp2.placeholder = item.hint || ''
+          inp2.oninput = () => {
+            if (item.kind === 'tags') {
+              row[item.key] = inp2.value
+                .split(/[,，]/)
+                .map((s) => s.trim())
+                .filter(Boolean)
+            } else if (item.kind === 'number') {
+              row[item.key] = Number(inp2.value)
+            } else {
+              row[item.key] = inp2.value
+            }
+          }
+          cell.appendChild(inp2)
+          line.appendChild(cell)
+        }
+        const del = el('button', 'mini-btn talk-list-del', '删')
+        del.title = '删掉这一条'
+        del.onclick = () => {
+          draft.splice(i, 1)
+          paint()
+        }
+        line.appendChild(del)
+        box.appendChild(line)
+      })
+      const bar = el('div', 'talk-list-bar')
+      const add = el('button', 'mini-btn', '+ 添加一条')
+      add.onclick = () => {
+        const made = {}
+        for (const item of field.items || []) made[item.key] = item.kind === 'tags' ? [] : ''
+        draft.push(made)
+        paint()
+      }
+      bar.appendChild(add)
+      const save = el('button', 'mini-btn', '保存这张表')
+      save.onclick = () => {
+        saveTalkField(field.path, draft, paint)
+      }
+      bar.appendChild(save)
+      box.appendChild(bar)
+    }
+    paint()
+    right.appendChild(box)
   }
 
   // 被环境变量覆盖的项：改了不生效，所以标出来并禁用（B-03）。

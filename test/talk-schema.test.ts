@@ -14,13 +14,16 @@ const byPath = new Map(TALK_FIELDS.map((f) => [f.path, f]))
 
 test('每个字段都有路径、标签、说明和分组', () => {
   for (const f of TALK_FIELDS) {
-    assert.ok(f.path.includes('.'), `${f.path} 应该是 分组.键 的形式`)
+    // 顶层数组（关键词反应）没有分组前缀，其余都该是「分组.键」
+    assert.ok(f.path.includes('.') || f.kind === 'list', `${f.path} 应该是 分组.键 的形式`)
     assert.ok(f.label && f.label.length > 0, `${f.path} 缺 label`)
     assert.ok(f.hint && f.hint.length > 0, `${f.path} 缺 hint（用户要知道改了会怎样）`)
     assert.ok(f.group, `${f.path} 缺 group`)
     assert.ok(f.level === 'basic' || f.level === 'advanced', `${f.path} 的 level 不对`)
     if (f.kind === 'choice') assert.ok((f.options ?? []).length >= 2, `${f.path} 的选项太少`)
     if (f.kind === 'number') assert.ok(f.min != null && f.max != null, `${f.path} 缺范围`)
+    // 列表类型必须说清每行长什么样，否则前端渲染不出来
+    if (f.kind === 'list') assert.ok((f.items ?? []).length >= 1, `${f.path} 没声明 items`)
   }
 })
 

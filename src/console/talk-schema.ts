@@ -20,11 +20,20 @@
  *   在那之前不给界面，避免造假开关。
  */
 
-export type TalkFieldKind = 'switch' | 'choice' | 'number'
+export type TalkFieldKind = 'switch' | 'choice' | 'number' | 'list'
 
 export interface TalkOption {
   value: string | number | boolean
   label: string
+}
+
+/** 对象数组里每个元素长什么样（B-15） */
+export interface TalkListItem {
+  key: string
+  label: string
+  /** tags = 字符串数组（关键词列表），text = 单行文字，number = 数字 */
+  kind: 'text' | 'tags' | 'number'
+  hint?: string
 }
 
 export interface TalkField {
@@ -40,6 +49,8 @@ export interface TalkField {
   level: 'basic' | 'advanced'
   /** choice 用 */
   options?: TalkOption[]
+  /** kind === 'list' 时：每个元素的字段定义 */
+  items?: TalkListItem[]
   /** number 用 */
   min?: number
   max?: number
@@ -384,6 +395,19 @@ export const TALK_FIELDS: TalkField[] = [
     group: '自动行为',
     level: 'advanced',
   },
+  {
+    path: '关键词反应',
+    label: '关键词反应',
+    hint: '看到这些话（或匹配这些正则）时，额外告诉它该怎么接。改完对之后的消息生效。',
+    kind: 'list',
+    group: '自动行为',
+    level: 'advanced',
+    items: [
+      { key: '关键词', label: '关键词', kind: 'tags', hint: '命中任一个就算' },
+      { key: '正则', label: '正则', kind: 'tags', hint: '高级，一般留空' },
+      { key: '反应', label: '反应', kind: 'text', hint: '追加给模型的一句指令' },
+    ],
+  },
 ]
 
 /** 按路径从配置对象里取值（'行为.防抖.档位' → rules.行为.防抖.档位） */
@@ -425,6 +449,72 @@ export function validateTalkValues(
       continue
     }
 
+    if (field.kind === 'list') {
+      if (!Array.isArray(raw)) {
+        errors.push(`${field.label}：要传数组`)
+        continue
+      }
+      const rules = field.items ?? []
+      const out: Record<string, unknown>[] = []
+      let bad = ''
+      raw.forEach((row, i) => {
+        if (bad) return
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+          bad = `第 ${i + 1} 行不是一条配置`
+          return
+        }
+        const src = row as Record<string, unknown>
+        const item: Record<string, unknown> = {}
+        for (const r of rules) {
+          const v = src[r.key]
+          if (r.kind === 'tags') {
+            const arr = Array.isArray(v)
+              ? v.map((x) => String(x).trim()).filter(Boolean)
+              : String(v ?? '')
+                  .split(/[,，]/)
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+            // 正则要先能编译：写错的到匹配时才炸，比这里拒绝糟得多
+            if (r.key === '正则') {
+              for (const re of arr) {
+                try {
+                  new RegExp(re)
+                } catch {
+                  bad = `第 ${i + 1} 行的正则不合法：${re}`
+                  return
+                }
+              }
+            }
+            item[r.key] = arr
+            continue
+          }
+          if (r.kind === 'number') {
+            const n = Number(v)
+            if (!Number.isFinite(n)) {
+              bad = `第 ${i + 1} 行的「${r.label}」要是数字`
+              return
+            }
+            item[r.key] = n
+            continue
+          }
+          const s = String(v ?? '').trim()
+          if (!s) {
+            bad = `第 ${i + 1} 行的「${r.label}」不能为空`
+            return
+          }
+          item[r.key] = s
+        }
+        // 整行都空的就丢掉，别往配置里塞空条目
+        const empty = Object.values(item).every((x) => (Array.isArray(x) ? x.length === 0 : !x))
+        if (!empty) out.push(item)
+      })
+      if (bad) {
+        errors.push(`${field.label}：${bad}`)
+        continue
+      }
+      values.push({ path, value: out, coerced: false })
+      continue
+    }
     if (field.kind === 'switch') {
       if (typeof raw !== 'boolean') {
         errors.push(`${field.label}：要传 true / false`)

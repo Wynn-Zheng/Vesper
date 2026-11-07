@@ -1601,7 +1601,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
         }
 
         try {
-          const { setConfigPath } = await import('./config-write.ts')
+          const { setConfigBlock, setConfigPath } = await import('./config-write.ts')
           const { writeAtomic } = await import('../store/fs.ts')
           const YAML = (await import('yaml')).default
           let raw = readFileSync('persona/rules.yaml', 'utf8')
@@ -1622,8 +1622,14 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           const applied: Record<string, unknown> = {}
           const failed: string[] = []
 
+          const byPath = new Map(TALK_FIELDS.map((f) => [f.path, f]))
           for (const item of checked.values) {
-            const r = setConfigPath(raw, item.path, item.value)
+            // 对象数组要走整块替换：setConfigPath 是逐行改标量的，写不了多行列表（B-15）
+            const field = byPath.get(item.path)
+            const r =
+              field && field.kind === 'list'
+                ? setConfigBlock(raw, item.path, item.value)
+                : setConfigPath(raw, item.path, item.value)
             if (!r.ok) {
               failed.push(`${item.path}：${r.error ?? '写不进去'}`)
               continue
