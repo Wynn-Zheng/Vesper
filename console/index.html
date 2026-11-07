@@ -3276,14 +3276,28 @@ async function loadTalkRules(force) {
  */
 async function saveTalkField(path, value, onFail) {
   try {
-    const r = await sendJson('/api/talk-rules', { values: { [path]: value } }, 'PUT')
+    // 带上「我读到的是哪一版」：文件在别处被改过时后端回 409，不再静默覆盖（B-02）
+    const r = await sendJson(
+      '/api/talk-rules',
+      { values: { [path]: value }, version: TALK_CACHE ? TALK_CACHE.version : '' },
+      'PUT',
+    )
     if (r && r.ok === false) throw new Error(r.error || '保存失败')
     if (TALK_CACHE && TALK_CACHE.values) TALK_CACHE.values[path] = value
+    if (TALK_CACHE && r && r.version) TALK_CACHE.version = r.version
     toast('已保存')
     refreshTalkRequires()
   } catch (e) {
     if (onFail) onFail()
-    alert('保存失败：' + (e && e.message ? e.message : String(e)))
+    const msg = e && e.message ? e.message : String(e)
+    if (msg.indexOf('被改过') >= 0) {
+      alert(msg + '页面会重新读一次配置。')
+      loadTalkRules(true).then(function () {
+        showGroup('self', 1)
+      }).catch(function () {})
+      return
+    }
+    alert('保存失败：' + msg)
   }
 }
 

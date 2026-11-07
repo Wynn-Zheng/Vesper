@@ -231,6 +231,15 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
  * 这里按错误文案判断——不优雅，但比给每个 throw 套一个自定义类改动小得多，
  * 而且这些文案都是本仓库自己写的（见各处的 throw new Error('缺少 …')）。
  */
+/** 配置内容指纹：乐观并发用（B-02）。只看内容，不看 mtime。 */
+function configFingerprint(): string {
+  try {
+    return createHash('sha1').update(readFileSync('persona/rules.yaml', 'utf8')).digest('hex').slice(0, 12)
+  } catch {
+    return ''
+  }
+}
+
 function statusFor(err: unknown): number {
   const msg = err instanceof Error ? err.message : String(err)
   // 体积超限单独给 413：前端能据此提示"文件太大"，而不是笼统的失败
@@ -1543,6 +1552,10 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
        * 写坏一个类型会让 loadRules 抛错 → 下次启动整份回落 DEFAULTS。
        * 这里先校验、再写、写后 parse 复验，任何一步不过都不落盘。
        */
+      // ---- 配置乐观并发（B-02）----
+      // 两个标签页同时改配置时，后保存的会静默覆盖前一个：用户看到的界面
+      // 还是自己那份，实际文件已经是别人的值。这里用内容指纹挡住：
+      // 客户端带上「我读到的版本」，服务端发现文件变了就拒绝。
       if (req.method === 'GET' && path === '/api/talk-rules') {
         const loaded = loadRules()
         const rules = loaded.rules as unknown
@@ -1555,6 +1568,8 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           warnings: loaded.warnings ?? [],
           // 哪些键正被 .env 覆盖：界面要把控件标灰，否则改了也不生效（B-03）
           envOverrides: activeEnvOverrides(),
+          // 客户端保存时回传它；文件变了就会被拒（B-02）
+          version: configFingerprint(),
           path: loaded.path,
         })
         return
@@ -1569,6 +1584,11 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           return
         }
         const input = (body as { values?: unknown })?.values
+        // 客户端上次读到的版本；不传就按老行为（兼容脚本/旧页面）
+        const clientVersion =
+          typeof (body as { version?: unknown })?.version === 'string'
+            ? ((body as { version: string }).version || '')
+            : ''
         if (!input || typeof input !== 'object' || Array.isArray(input)) {
           json(res, 400, { error: '缺少 values（对象：{键路径: 值}）' })
           return
@@ -1585,6 +1605,20 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           const { writeAtomic } = await import('../store/fs.ts')
           const YAML = (await import('yaml')).default
           let raw = readFileSync('persona/rules.yaml', 'utf8')
+
+          // 乐观并发：文件在「我读到」和「我要写」之间被改过，就拒绝而不是覆盖（B-02）。
+          // 两个标签页各自改一项时，后保存的会静默吃掉前一个的改动 —— 而且两边界面
+          // 都显示自己的值，谁都不知道发生了什么。
+          if (clientVersion) {
+            const current = configFingerprint()
+            if (current && current !== clientVersion) {
+              json(res, 409, {
+                error: '配置在你打开页面之后被改过了。刷新页面再改，避免覆盖掉别人的修改。',
+                version: current,
+              })
+              return
+            }
+          }
           const applied: Record<string, unknown> = {}
           const failed: string[] = []
 
@@ -1618,7 +1652,7 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
 
           writeAtomic('persona/rules.yaml', raw)
           info(`对话规则已更新 ${Object.keys(applied).length} 项`)
-          json(res, 200, { ok: true, applied, ...(failed.length ? { failed } : {}) })
+          json(res, 200, { ok: true, applied, version: configFingerprint(), ...(failed.length ? { failed } : {}) })
         } catch (e) {
           json(res, statusFor(e), { error: String(e) })
         }
