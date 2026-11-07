@@ -688,6 +688,35 @@ function applyEnvOverrides(rules: Rules): Rules {
   }
 }
 
+/**
+ * 哪些配置项会读环境变量（B-03）。
+ *
+ * 同一个值两个入口：`rules.yaml` 和环境变量。环境变量优先级更高，
+ * 于是用户在控制台改了 rules 却不生效，还以为控制台坏了。
+ * 这里把对应关系集中写一份，控制台据此标「被 .env 覆盖」并禁用控件。
+ */
+export const ENV_OVERRIDE_MAP: Record<string, string> = {
+  '上下文压缩.摘要阈值': 'CTX_SUMMARY_THRESHOLD',
+  '上下文压缩.保留最近': 'CTX_KEEP_RECENT',
+  '表情包.开启': 'EMOJI_ENABLED',
+  '表情包.每条最多': 'EMOJI_MAX_PER_REPLY',
+  '表情包.库存上限': 'EMOJI_LIBRARY_CAP',
+  '表情包.概率': 'EMOJI_CHANCE',
+  '表情包.心情加成': 'EMOJI_MOOD_BOOST',
+}
+
+/**
+ * 当前真正生效的环境覆盖：配置路径 → 环境变量名。
+ * 只返回**已设置**的那些 —— 没设的键仍然由 rules.yaml 说了算。
+ */
+export function activeEnvOverrides(): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [path, name] of Object.entries(ENV_OVERRIDE_MAP)) {
+    const v = process.env[name]
+    if (v !== undefined && v.trim() !== '') out[path] = name
+  }
+  return out
+}
 export interface LoadResult {
   rules: Rules
   warnings: string[]

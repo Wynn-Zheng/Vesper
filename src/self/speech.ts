@@ -121,7 +121,16 @@ export function analyzeSpeech(): SpeechStats | null {
 export function renderSpeechHabit(): string {
   const s = analyzeSpeech()
   if (!s) return ''
+  return renderSpeechFrom(s)
+}
 
+/**
+ * 纯渲染：给定统计结果，产出 prompt 里那一段。
+ *
+ * 从 `renderSpeechHabit` 里拆出来是为了可测（B-53 那类脆弱测试的根因都是
+ * 「逻辑和读盘绑死，测试只能靠真实数据」）。
+ */
+export function renderSpeechFrom(s: SpeechStats): string {
   const lines: string[] = ['【你说话的习惯】']
 
   // 长度：只在明显偏长/偏短时提醒

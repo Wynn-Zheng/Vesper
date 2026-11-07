@@ -4,7 +4,7 @@ import { networkInterfaces } from 'node:os'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import type { Rules } from '../core/config.ts'
-import { asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
+import { activeEnvOverrides, asGroupChatMode, loadRules, stageOf } from '../core/config.ts'
 import { TALK_FIELDS, readPath, validateTalkValues } from './talk-schema.ts'
 import { errorAt, info, warnAt, logBus, type LogRecord } from '../core/log.ts'
 import type { Transport } from '../core/transport.ts'
@@ -1553,6 +1553,8 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
           values,
           // 加载告警（比如某个键类型不对）：让界面能提示"你这份配置有问题"
           warnings: loaded.warnings ?? [],
+          // 哪些键正被 .env 覆盖：界面要把控件标灰，否则改了也不生效（B-03）
+          envOverrides: activeEnvOverrides(),
           path: loaded.path,
         })
         return
@@ -1955,7 +1957,8 @@ export async function startConsole(opts: ConsoleOptions): Promise<void> {
       // 这个是给人看的（"怎么开、参数是什么、用过几次"）。
       if (req.method === 'GET' && path === '/api/ability') {
         const { abilityCards } = await import('./ability.ts')
-        json(res, 200, { cards: abilityCards(freshRules(opts)) })
+        // envOverrides：这些能力参数可能被 .env 覆盖，界面要标出来（B-03）
+        json(res, 200, { cards: abilityCards(freshRules(opts)), envOverrides: activeEnvOverrides() })
         return
       }
 

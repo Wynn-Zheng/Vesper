@@ -96,13 +96,22 @@ console.log('\n=== 4. 说话习惯 ===')
     check('中位长度在 5~40 之间', s.medianLen >= 5 && s.medianLen <= 40, String(s.medianLen))
     check('问句比例 [0,1]', s.questionRatio >= 0 && s.questionRatio <= 1, String(s.questionRatio))
 
-    const r = speech.renderSpeechHabit()
+    // 用构造数据验渲染：真实数据「一切正常」时 renderSpeechHabit 会返回空
+    // （设计如此，不占 prompt），拿它当「渲染一定非空」的断言会随数据量波动。
+    const r = speech.renderSpeechFrom({
+      samples: 25,
+      avgLen: 40,
+      medianLen: 40,
+      longRatio: 0.9,
+      questionRatio: 0.5,
+      topOpeners: [{ text: '嗯', count: 5 }],
+    })
     check('渲染出了内容', r.length > 0, '')
     check('提到长度', r.includes('个字'), '')
-    // 问句比例现在 24% > 20%，应该提醒
-    if (s.questionRatio > 0.2) {
-      check('问句偏多时有提醒', r.includes('问句'), r)
-    }
+    check('问句偏多时有提醒', r.includes('问句'), r)
+    // 真实数据：要么没信号（空），要么至少长度那句在
+    const real = speech.renderSpeechHabit()
+    check('真实数据不会渲染出半截', real === '' || real.includes('个字'), real)
   }
 
   // 过滤器：实词片段不算口音

@@ -3260,6 +3260,9 @@ function renderSelfThinkPage(body, d) {
 /** 拉一次 schema + 当前值，缓存在这里；改一项就局部更新，不整页重绘 */
 let TALK_CACHE = null
 
+/** 哪些能力参数被 .env 覆盖（B-03）：渲染能力卡时据此禁用开关并提示 */
+let ABILITY_ENV = {}
+
 async function loadTalkRules(force) {
   if (TALK_CACHE && !force) return TALK_CACHE
   const d = await api('/api/talk-rules')
@@ -3302,7 +3305,7 @@ function refreshTalkRequires() {
 }
 
 /** 一个设置项 → 一行控件 */
-function talkRow(field, values) {
+function talkRow(field, values, envOverrides) {
   const wrap = el('div', 'self-field talk-row')
   wrap.setAttribute('data-path', field.path)
   if (field.requires) {
@@ -3387,6 +3390,19 @@ function talkRow(field, values) {
     if (field.unit) right.appendChild(el('span', 'talk-unit', field.unit))
   }
 
+  // 被环境变量覆盖的项：改了不生效，所以标出来并禁用（B-03）。
+  // 以前用户在这里改表情包开关，保存成功、界面也变了，但 .env 里的
+  // EMOJI_ENABLED 优先级更高，实际行为一点没变 —— 控制台等于在骗他。
+  const envKey = envOverrides ? envOverrides[field.path] : ''
+  if (envKey) {
+    wrap.setAttribute('data-env-override', envKey)
+    left.appendChild(
+      el('div', 'talk-requires-tip', '这一项被环境变量 ' + envKey + ' 覆盖，这里改了不生效'),
+    )
+    right.style.opacity = '0.55'
+    for (const c of right.querySelectorAll('button, select, input')) c.disabled = true
+  }
+
   wrap.appendChild(right)
   return wrap
 }
@@ -3411,14 +3427,14 @@ async function renderTalkRulesSection(body) {
 
   for (const [group, buckets] of groups) {
     const c = selfCard(group, '改完立即生效')
-    for (const f of buckets.basic) c.appendChild(talkRow(f, d.values))
+    for (const f of buckets.basic) c.appendChild(talkRow(f, d.values, d.envOverrides))
     if (buckets.advanced.length) {
       const det = document.createElement('details')
       det.className = 'talk-adv'
       const sum = document.createElement('summary')
       sum.textContent = '高级（' + buckets.advanced.length + ' 项）'
       det.appendChild(sum)
-      for (const f of buckets.advanced) det.appendChild(talkRow(f, d.values))
+      for (const f of buckets.advanced) det.appendChild(talkRow(f, d.values, d.envOverrides))
       c.appendChild(det)
     }
     body.appendChild(c)
@@ -4155,6 +4171,8 @@ async function loadAbility() {
 
   try {
     const r = await api('/api/ability')
+    // 哪些能力参数被 .env 覆盖：渲染时据此禁用控件并提示（B-03）
+    ABILITY_ENV = (r && r.envOverrides) || {}
     const cards = r.cards || []
     box.innerHTML = ''
 
@@ -4420,7 +4438,12 @@ function abilityCard(c) {
   spacer.style.cssText = 'flex:1'
   head.appendChild(spacer)
 
-  if (c.toggleKey) {
+  if (c.toggleKey && ABILITY_ENV[c.toggleKey]) {
+    const tag = el('span', 'tag', '被 .env 控制')
+    tag.style.cssText = 'font-size:10px;background:rgba(255,255,255,.06);color:var(--dim)'
+    tag.title = '环境变量 ' + ABILITY_ENV[c.toggleKey] + ' 优先级更高，这里切换不生效'
+    head.appendChild(tag)
+  } else if (c.toggleKey) {
     const sw = el('button', '', c.on ? '开' : '关')
     sw.style.cssText =
       'width:38px;height:20px;border-radius:10px;border:none;font-size:11px;cursor:pointer;flex:none;transition:background .15s;' +
@@ -4508,6 +4531,11 @@ function formatParam(p) {
 }
 
 async function editAbilityParam(p) {
+  // 被 .env 覆盖的参数改了也不生效，先说清楚再让填（B-03）
+  if (p && ABILITY_ENV[p.key]) {
+    alert('这一项被环境变量 ' + ABILITY_ENV[p.key] + ' 覆盖了：在控制台改不会生效，要改请改 .env 里的对应项（或者把那个变量删掉）。')
+    return
+  }
   const cur = formatParam(p)
   const input = await askText(p.label + (p.hint ? '（' + p.hint + '）' : ''), cur === '（没设）' ? '' : cur)
   if (input === null) return
