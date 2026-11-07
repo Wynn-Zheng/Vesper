@@ -22,7 +22,6 @@ function check(name: string, ok: boolean, detail = ''): void {
 /* ================= 关系 ================= */
 console.log('=== 关系：store 的坏数据容错 ===')
 const relStore = await import('../src/relation/store.ts')
-const relTypes = await import('../src/relation/types.ts')
 
 {
   const dir = mkdtempSync(join(tmpdir(), 'qqbot-rel-'))
@@ -93,7 +92,6 @@ console.log('\n=== 学习：plays 往返一致 ===')
 
   const f = plays.playsFile()
   const backup = existsSync(f) ? readFileSync(f, 'utf8') : ''
-  const dir = mkdtempSync(join(tmpdir(), 'qqbot-plays-'))
   console.log(`   （plays 文件固定为 ${f}，测试会备份/恢复）`)
 
   plays.savePlays([])
@@ -119,8 +117,6 @@ console.log('\n=== 学习：plays 往返一致 ===')
 console.log('\n=== 学习：jargon 解析容错 ===')
 {
   const jargon = await import('../src/learn/jargon.ts')
-  const { mkdtemp, writeFile } = await import('node:fs/promises')
-  const d = await mkdtemp(join(tmpdir(), 'qqbot-jargon-'))
   // jargon 的路径是不是可注入的？先看导出
   console.log('   jargon.ts 导出:', Object.keys(jargon).join(', '))
   check('loadJargon 对不存在的群返回空数组', Array.isArray(jargon.loadJargon('不存在')))

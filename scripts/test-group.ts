@@ -25,7 +25,6 @@ const group = await import('../src/people/group.ts')
 const GID = '999999999'
 const FILE = `persona/groups/${GID}/members.json`
 
-const backup = existsSync(FILE) ? readFileSync(FILE, 'utf8') : ''
 
 /* ---------- 1. 落盘 ---------- */
 console.log('=== 1. 落盘 ===')

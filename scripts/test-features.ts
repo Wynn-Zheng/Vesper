@@ -67,7 +67,7 @@ console.log('=== 1. 消息过滤 ===')
 /* ============ 2. 私聊暂停 ============ */
 console.log('\n=== 2. 私聊暂停 ===')
 {
-  const rules = loadRules().rules
+  loadRules()
   // 断言「代码默认值」，不用户 rules.yaml：用户按对话规则页改过配置后，
   // 这里曾经必然失败，看起来像功能坏了，其实只是他改了配置。
   check('代码默认不暂停', DEFAULTS.行为.私聊暂停 === false)
@@ -78,7 +78,7 @@ console.log('\n=== 2. 私聊暂停 ===')
 /* ============ 3. 引用频率 ============ */
 console.log('\n=== 3. 引用频率 ===')
 {
-  const rules = loadRules().rules
+  loadRules()
   check('代码默认 occasionally', DEFAULTS.说话.引用频率 === 'occasionally')
 
   // 三种取值的概率行为

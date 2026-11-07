@@ -1,7 +1,7 @@
 /**
  * bug 扫描：把最近改的地方放在极端条件下跑一遍。
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 
 let bugs = 0
 function bug(name: string, detail = ''): void {
@@ -144,7 +144,6 @@ console.log('\n=== D. facts faint 不写盘 ===')
   const list = facts.loadFacts('qq-1')
   list[0]!.faint = true
   facts.renderFacts(list)
-  const raw = readFileSync(`${root}/people/qq-1/facts.md`, 'utf8')
   // renderFacts 的返回值不该含 faint，但 loadFacts 之后写回文件也不该含
   const rendered = facts.renderFacts(list)
   if (rendered.includes('faint')) bug('renderFacts 输出了 faint', rendered)
@@ -170,7 +169,7 @@ console.log('\n=== E. 核心记忆边界 ===')
 
   // 超长文本
   const long = '啊'.repeat(500)
-  const r = core.requestCore(long, '身份', '')
+  core.requestCore(long, '身份', '')
   // 应该被截断到 200 且能提交
   const reqs = core.loadRequests()
   const hit = reqs.find((x) => x.text.startsWith('啊'))

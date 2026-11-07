@@ -29,11 +29,10 @@ function check(name: string, ok: boolean, detail = ''): void {
 const root = mkdtempSync(join(tmpdir(), 'qqbot-compat-'))
 
 const { DEFAULTS, stageOf } = await import('../src/core/config.ts')
-const { setMemoryRoot, appendRaw } = await import('../src/memory/store.ts')
+const { setMemoryRoot } = await import('../src/memory/store.ts')
 const { setPeopleRoot } = await import('../src/people/store.ts')
 const { setRelationRoot, loadRelation } = await import('../src/relation/store.ts')
 const { buildRelationBlock } = await import('../src/relation/format.ts')
-const { decayRelation } = await import('../src/relation/decay.ts')
 const { proactiveBudgetOf } = await import('../src/scheduler/proactive.ts')
 const { loadFacts, appendFacts } = await import('../src/memory/facts.ts')
 const { loadOpen, appendOpen } = await import('../src/people/open.ts')

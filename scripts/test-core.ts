@@ -1,10 +1,10 @@
-/**
+﻿/**
  * 核心记忆 + 临时记忆的体检。
  *
  * 核心：只有人能改，它只能申请。申请要能批/拒，不能自己写进 core.md。
  * 临时：7 天删，不进 distill，不污染 facts。
  */
-import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 
 let pass = 0
 let fail = 0

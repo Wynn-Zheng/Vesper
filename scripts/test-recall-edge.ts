@@ -35,7 +35,6 @@ people.setPeopleRoot(`${ROOT}/people`)
 
 const W = { 新近: 0.5, 相关: 3, 重要: 2 }
 const PID = 'qq-9001'
-const GID = 'group:555'
 
 people.ensurePerson('qq', '9001', '测试的人')
 

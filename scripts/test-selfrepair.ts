@@ -100,7 +100,7 @@ function check(name: string, ok: boolean, detail = ''): void {
 
 /* ---------- 6. issues.json 增长 ---------- */
 {
-  const { refreshIssues, loadIssueStore } = await import('../src/self/observe.ts')
+  const { refreshIssues } = await import('../src/self/observe.ts')
   const items = refreshIssues()
   const f = 'persona/issues.json'
   const size = existsSync(f) ? statSync(f).size : 0

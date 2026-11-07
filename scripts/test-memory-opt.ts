@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 四处记忆优化的体检。
  *
  * 1. 情绪档（lambdaOfEpisode）
@@ -6,7 +6,7 @@
  * 3. distill 筛选（worthDistilling / pickForDistill）
  * 4. related 链接
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 
 let pass = 0
 let fail = 0

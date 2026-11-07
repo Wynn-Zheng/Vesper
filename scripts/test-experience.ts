@@ -3,9 +3,7 @@
  *
  * P0：情绪序列带强度 + 原因 + 趋势（依据 ZifaMem 论文实测 +39%）
  */
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync, rmSync } from 'node:fs'
 
 let pass = 0
 let fail = 0

@@ -131,7 +131,7 @@ console.log('\n=== 5. 边界 ===')
   mkdirSync(emptyDir, { recursive: true })
   writeFileSync(join(emptyDir, 'members.json'), JSON.stringify({ members: [] }), 'utf8')
   setCurrent(GID, 1)
-  const r3 = gc.restoreGroupsFromSnapshots({ snapshotRoot: `${ROOT}/versions` })
+  gc.restoreGroupsFromSnapshots({ snapshotRoot: `${ROOT}/versions` })
   check('空 members 的快照不当来源', gc.groupMembers(GID).length !== 0, String(gc.groupMembers(GID).length))
 }
 

@@ -1,7 +1,7 @@
-/**
+﻿/**
  * 静态检查：前端引用的 DOM id 是否都存在、后端 API 与前端调用是否对得上。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 

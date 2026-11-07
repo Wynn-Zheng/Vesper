@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 拟人化改动的体检。
  *
  * 这一轮做的：
@@ -9,7 +9,7 @@
  *   8. 自己的偏好（喜欢 + 不喜欢）
  *   9. 成长的痕迹（对比最早和现在的自述）
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 
 let pass = 0
 let fail = 0

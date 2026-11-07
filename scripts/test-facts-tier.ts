@@ -153,7 +153,6 @@ console.log('\n=== 4. 解析失败的保护 ===')
   check(`原文有 ${dashes} 个 '- '，只解析出 ${parsed.length} 条 → 应该拒绝重写`, dashes > parsed.length)
 
   // 调 appendFacts，它应该检测到这种情况并拒绝
-  const beforeContent = readFileSync(`${ROOT}/qq-111/facts.md`, 'utf8')
   facts.appendFacts('qq-111', [
     { text: '新的一条', date: '2026-10-26', confidence: 0.9, visibility: 'public' },
   ])

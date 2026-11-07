@@ -1,3 +1,6 @@
+// 本脚本没有 import，加一行让 Node 当成 module（否则顶层 await 报错）
+export {}
+
 /**
  * 名字同步的体检。
  *
@@ -6,7 +9,6 @@
  *   qq-10002 名字是空的
  *   拉群名单时不回写名字，所以不常说话的人一直挂着旧名字
  */
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 
 let pass = 0
 let fail = 0

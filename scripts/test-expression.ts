@@ -1,9 +1,7 @@
 /**
  * 表达学习升级验证：精选标记、只用精选、审核。
  */
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 
 let pass = 0
 let fail = 0

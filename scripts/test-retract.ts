@@ -113,7 +113,7 @@ console.log('\n=== 7. 实测自评（不触发改口，只看分）===')
 {
   const { loadRules } = await import('../src/core/config.ts')
   const { judgeReply } = await import('../src/loop/judge.ts')
-  const rules = loadRules().rules
+  loadRules()
   const llm = {
     apiKey: process.env['DEEPSEEK_API_KEY']!,
     baseUrl: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com',

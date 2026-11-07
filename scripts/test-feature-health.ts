@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 功能健康度总检。
  *
  * 和 test-*-bugs.ts 的区别：那些查**边界**（坏输入会不会崩），
@@ -6,7 +6,7 @@
  *
  * 一条命令跑完，用来回答"所有功能现在都正常吗"。
  */
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

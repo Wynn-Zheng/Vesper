@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 发布更新包到服务器。
  *
  * 用法：
@@ -18,7 +18,7 @@
  *       DEPLOY_HOST / DEPLOY_USER / DEPLOY_PATH / DEPLOY_PORT（可选，默认 22）
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, renameSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * 插件系统端到端查 bug（第一轮）。
  *
  * 只读 + 少量临时目录，不碰 plugins/demo。跑完自己清理。
  */
-import { mkdirSync, writeFileSync, rmSync, existsSync, cpSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { assertTestPluginId, testPluginId } from './_plugin-test-guard.ts'

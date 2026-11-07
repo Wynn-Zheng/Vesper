@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 打绿色版（免安装目录）。
  *
  * 为什么不用 electron-builder：
@@ -29,7 +29,7 @@ import {
 } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 const ROOT = resolve('.')
 const ELECTRON_DIR = join(ROOT, 'electron')

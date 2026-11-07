@@ -1,8 +1,8 @@
-/**
+﻿/**
  * 外部能力体检：B站接口的纯逻辑 + 刷视频的状态机。
  * 不真调 B站。
  */
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

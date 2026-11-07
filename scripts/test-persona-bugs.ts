@@ -1,9 +1,9 @@
-/**
+﻿/**
  * 人格模块体检：情绪衰减 + 快照回滚。
  *
  * 人格模块以前没有专门的边界回归，这个脚本是补上的。
  */
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

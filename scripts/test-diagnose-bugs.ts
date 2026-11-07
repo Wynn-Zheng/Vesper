@@ -98,7 +98,7 @@ console.log('\n=== 6. diagnose 轮数 ===')
 
   // maxRounds=0 不该死循环
   const t1 = Date.now()
-  const r2 = await d.diagnose(issue, badLlm, { maxRounds: 0 })
+  await d.diagnose(issue, badLlm, { maxRounds: 0 })
   const ms2 = Date.now() - t1
   check(`maxRounds=0 不死循环（${ms2}ms）`, ms2 < 30_000, `${ms2}ms`)
 }
