@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { Rules } from '../core/config.ts'
 import { info, warnAt } from '../core/log.ts'
 import { createEmojiStore } from '../emoji/store.ts'
-import { tagEmoji } from '../emoji/tag.ts'
+import { tagEmoji, type EmojiTags } from '../emoji/tag.ts'
 import type { LlmOptions } from '../llm/types.ts'
 
 /**
@@ -17,7 +17,7 @@ import type { LlmOptions } from '../llm/types.ts'
  * 一口气跑完会连着调几百次模型——既慢又贵，还容易撞限流。
  */
 
-const ROOT = join('persona', 'emoji')
+const DEFAULT_ROOT = join('persona', 'emoji')
 
 export interface EmojiTaggerOptions {
   llm: LlmOptions
@@ -26,6 +26,17 @@ export interface EmojiTaggerOptions {
   batch?: number
   /** 两轮之间隔多久，默认 10 分钟 */
   intervalMs?: number
+  /** 表情包库目录，默认 persona/emoji（测试用来指向临时目录） */
+  root?: string
+  /** 打标实现，默认 tagEmoji（测试可注入，免得真去调模型） */
+  tag?: (image: { buffer: Uint8Array; ext: string }, llm: LlmOptions) => Promise<EmojiTags | null>
+}
+
+export interface EmojiTaggerRunner {
+  /** 跑一轮。返回这一轮成功打了几张。 */
+  runOnce(): Promise<number>
+  /** 当前每张图累计失败了几次（测试用） */
+  failures(): Map<string, number>
 }
 
 /** 没有语义标签的表情包 = mood 空且 tags 空 */
@@ -33,14 +44,20 @@ function untagged(item: { mood: string; tags: string[] }): boolean {
   return !item.mood && (!item.tags || item.tags.length === 0)
 }
 
-export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
+/**
+ * 把打标循环抽出来，不挂定时器。
+ *
+ * 抽出来的原因：`startEmojiTagger` 内部是 `setTimeout` 驱动，
+ * 一轮要等 10 分钟，行为测不了。「坏图会不会堵住队头」这种事只能靠
+ * 连续跑几轮来验证（B-28），所以这里暴露一个能手动 `runOnce()` 的 runner。
+ */
+export function createEmojiTaggerRunner(opts: EmojiTaggerOptions): EmojiTaggerRunner {
   const batch = opts.batch ?? 5
-  const interval = opts.intervalMs ?? 10 * 60_000
-  let timer: NodeJS.Timeout | null = null
-  let stopped = false
+  const root = opts.root ?? DEFAULT_ROOT
+  const tag = opts.tag ?? tagEmoji
   // 打标失败的次数。以前每轮都取 pending 的前 batch 张，只要有几张坏图打不出来，
   // 它们就一直占着队头，后面的永远轮不到 —— 表现为"库存越攒越多，标签一直不长"。
-  const failures = new Map<string, number>()
+  const fails = new Map<string, number>()
   const MAX_FAILS = 3
 
   async function runOnce(): Promise<number> {
@@ -48,10 +65,10 @@ export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
     // 视觉模型没开就不用折腾了：打标用的就是那个模型
     if (!rules.表情包?.开启 || !rules.视觉?.开启) return 0
 
-    const store = createEmojiStore(ROOT, { libraryCap: rules.表情包.库存上限 })
+    const store = createEmojiStore(root, { libraryCap: rules.表情包.库存上限 })
     const pending = (await store.list()).filter(untagged)
     // 连续失败太多次的先让开，别堵着队头
-    const usable = pending.filter((x) => (failures.get(x.id) ?? 0) < MAX_FAILS)
+    const usable = pending.filter((x) => (fails.get(x.id) ?? 0) < MAX_FAILS)
     if (!usable.length) {
       if (pending.length) warnAt('表情包打标：剩下的都反复失败，先搁置', { 数量: pending.length })
       return 0
@@ -65,20 +82,21 @@ export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
     for (const item of usable.slice(0, batch)) {
       let buffer: Buffer
       try {
-        buffer = await readFile(join(ROOT, item.file))
+        buffer = await readFile(join(root, item.file))
       } catch {
         // 文件没了：list() 下次会自己清掉这条，这里直接跳过
         continue
       }
       const ext = item.file.split('.').pop() ?? 'png'
-      const tags = await tagEmoji({ buffer, ext }, llm)
+      const tags = await tag({ buffer, ext }, llm)
       if (!tags) {
-        const n = (failures.get(item.id) ?? 0) + 1
-        failures.set(item.id, n)
+        const n = (fails.get(item.id) ?? 0) + 1
+        fails.set(item.id, n)
         if (n >= MAX_FAILS) warnAt('表情包打标连续失败，这一张先跳过', { id: item.id, 次数: n })
         continue
       }
-      failures.delete(item.id)
+      fails.delete(item.id)
+      // 打标成功也清掉失败记录：这张图能打出来，之前的失败是暂时的
       if (await store.setMeta(item.id, tags)) done++
     }
 
@@ -89,9 +107,18 @@ export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
     return done
   }
 
+  return { runOnce, failures: () => fails }
+}
+
+export function startEmojiTagger(opts: EmojiTaggerOptions): () => void {
+  const interval = opts.intervalMs ?? 10 * 60_000
+  const runner = createEmojiTaggerRunner(opts)
+  let timer: NodeJS.Timeout | null = null
+  let stopped = false
+
   async function tick(): Promise<void> {
     try {
-      await runOnce()
+      await runner.runOnce()
     } catch (err) {
       warnAt('表情包打标出错，下轮再试', { err: String(err).slice(0, 100) })
     }
