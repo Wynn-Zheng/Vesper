@@ -55,11 +55,16 @@ function load(): DraftFile {
  *   正文第二行
  *   ---
  */
-function parseMarkdown(text: string): DraftFile {
+export function parseMarkdown(text: string): DraftFile {
   const out: DraftFile = { drafts: [], published: [] }
   // 旧格式用一行 `---` 分隔；正文里只要有一行 `---`（引用、分隔线）就会被切成两条草稿。
-  // 新格式换成 Markdown 注释，渲染时看不见，正文也不会撞上。旧文件照样能读。
-  const blocks = text.split(/^---$|^<!-- draft -->$/m)
+  // 新格式换成 Markdown 注释，渲染时看不见，正文也不会撞上。
+  //
+  // 两种分隔符必须**分开判断**（B-41 实测暴露）：如果混在一个正则里，
+  // 新格式文件里正文有 `---` 时照样会被切断 —— 实测「第一段\n\n---\n\n第二段」
+  // 存成新格式后读回来只剩「第一段」。所以先看这份文件是不是新格式：
+  // 有 `<!-- draft -->` 就只按它切，没有才退回旧分隔符（老文件兼容）。
+  const blocks = /^<!-- draft -->$/m.test(text) ? text.split(/^<!-- draft -->$/m) : text.split(/^---$/m)
 
   for (const block of blocks) {
     const t = block.trim()
