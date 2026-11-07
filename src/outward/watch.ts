@@ -192,9 +192,28 @@ export async function watchOne(opts: WatchOptions): Promise<WatchResult> {
 }
 
 
+export interface WatchingOptions {
+  /** 启动后先等多久，默认 10 分钟 */
+  firstDelayMs?: number
+  /** 每轮再随机等多久（0 ~ 这个值），默认 20 分钟 */
+  jitterMs?: number
+  /** 随机源（0-1），默认 Math.random。测试用来让抖动变成确定值 */
+  random?: () => number
+  /** 真正执行一次"看视频"，默认 watchOne（测试可注入，免得真联网） */
+  watchOne?: (opts: { llm: LlmOptions; rules: Rules }) => Promise<unknown>
+}
+
 /** 每 N 小时看一个；启动后先等 10 分钟，别一开机就抢网络 */
-export function startWatching(llm: LlmOptions | (() => LlmOptions), rules: () => Rules, intervalMs = 6 * 3600_000): () => void {
+export function startWatching(
+  llm: LlmOptions | (() => LlmOptions),
+  rules: () => Rules,
+  intervalMs = 6 * 3600_000,
+  opts: WatchingOptions = {},
+): () => void {
   const getLlm = typeof llm === 'function' ? llm : () => llm
+  const firstDelay = opts.firstDelayMs ?? 10 * 60_000
+  const maxJitter = opts.jitterMs ?? 20 * 60_000
+  const doWatch = opts.watchOne ?? watchOne
   // 这里有两个一次性 setTimeout（首次延迟、jitter），以前它们的句柄没保存，
   // stop() 只清了 interval —— 停掉调度之后，已经排队的那个仍会到点跑，
   // 表现就是「关掉刷视频，十分钟后它还是发了一条」。
@@ -213,12 +232,12 @@ export function startWatching(llm: LlmOptions | (() => LlmOptions), rules: () =>
     if (!conf?.开启) return
     if (watchedToday() >= conf.每天最多) return
     // 随机再等一下，看起来不像定时任务
-    const jitter = Math.floor(Math.random() * 20 * 60_000)
+    const jitter = Math.floor((opts.random ?? Math.random)() * maxJitter)
     later(() => {
-      void watchOne({ llm: getLlm(), rules: rules() }).catch(() => {})
+      void doWatch({ llm: getLlm(), rules: rules() }).catch(() => {})
     }, jitter)
   }
-  later(run, 10 * 60_000)
+  later(run, firstDelay)
   const timer = setInterval(run, intervalMs)
   timer.unref?.()
   return () => {

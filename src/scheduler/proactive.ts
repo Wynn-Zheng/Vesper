@@ -48,7 +48,7 @@ import { maybeSendEmojiTo } from '../loop/chat.ts'
  * `Record<targetId, {...}>`** —— 否则两个对象的每日额度、`noReply` 刹车
  * 和"上次说了什么"会互相污染，而且到那时再改要迁移已有数据。
  */
-interface ProactiveState {
+export interface ProactiveState {
   date: string
   count: number
   lastAt: number
@@ -382,6 +382,40 @@ export interface GateResult {
 }
 
 /** 该不该主动说话。纯函数，便于测试。 */
+/**
+ * 一次**没发出去**的尝试：只记 `lastAttemptAt`。
+ *
+ * 和 `lastAt` 分开的原因（B-35）：选择不说、和上次太像、通道没连上这三种情况
+ * 以前都写 `lastAt`，于是间隔门把"没发出去"算成"已经主动过一次"——
+ * 连着三次选择不说，接下来一周它就不肯开口了，即使当天真有事想说。
+ */
+export function stateAfterAttempt(state: ProactiveState, now: number, noReply: number): ProactiveState {
+  return { ...state, lastAttemptAt: now, noReply }
+}
+
+/** 真发出去了：日期、额度、lastAt 与 lastSentAt 一起更新，清掉尝试时间 */
+export function stateAfterSent(state: ProactiveState, text: string, now: number, noReply: number): ProactiveState {
+  return {
+    date: todayKey(),
+    count: state.count + 1,
+    lastAt: now,
+    lastSentAt: now,
+    lastAttemptAt: 0,
+    lastText: text,
+    noReply: noReply + 1,
+  }
+}
+
+/**
+ * 间隔门该拿哪个时间算。
+ *
+ * 优先 `lastSentAt`（上一次**真发出去**）；老数据只有 `lastAt`，那时它就是
+ * "上次真发出去"的时间，直接沿用。绝不能退到 `lastAttemptAt`。
+ */
+export function lastProactiveOf(state: ProactiveState): number {
+  return state.lastSentAt || state.lastAt
+}
+
 export function shouldProactive(i: GateInput): GateResult {
   const budget = proactiveBudgetOf(i.rules, i.stageName)
   if (budget.dailyMax === 0) return { ok: false, reason: '主动消息已关闭' }
@@ -508,7 +542,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const lastUserAt = raw.filter((t) => t.role === 'user').reduce((max, t) => Math.max(max, t.ts), 0)
 
   // 上次主动之后他说过话吗？说过就说明互惠成立，连续没回清零
-  const replied = lastUserAt > (state.lastSentAt || state.lastAt)
+  const replied = lastUserAt > lastProactiveOf(state)
 
   /* 停了太久就自动解冻。
    *
@@ -522,7 +556,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
    * "朋友联系中位数 27 天"对得上——停满一周还没动静，值得再试一次。
    */
   const STALE_MS = 7 * 86_400_000
-  const sentAt = state.lastSentAt || state.lastAt
+  const sentAt = lastProactiveOf(state)
   const stale = sentAt > 0 && Date.now() - sentAt > STALE_MS
   const noReply = replied || stale ? 0 : (state.noReply ?? 0)
   if ((replied || stale) && (state.noReply ?? 0) > 0) {
@@ -573,7 +607,7 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
     now,
     stageName: stage.名,
     lastTalkAt,
-    lastProactiveAt: state.lastSentAt || state.lastAt,
+    lastProactiveAt: lastProactiveOf(state),
     todayCount: state.count,
     openCount: open.length,
     urge: urge.score,
@@ -645,13 +679,13 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   const text = res.text.trim()
   if (!text || /^不说/.test(text)) {
     info('主动消息：选择不说')
-    saveState({ ...state, lastAttemptAt: Date.now(), noReply })
+    saveState(stateAfterAttempt(state, Date.now(), noReply))
     return
   }
 
   if (state.lastText && tooSimilar(state.lastText, text, Number(rules.行为.主动消息.去重相似度) || 0.6)) {
     info('主动消息：和上次太像，跳过', { text })
-    saveState({ ...state, lastAttemptAt: Date.now(), noReply })
+    saveState(stateAfterAttempt(state, Date.now(), noReply))
     return
   }
 
@@ -662,12 +696,12 @@ async function attempt(opts: ProactiveOptions): Promise<void> {
   // 还照样补一张表情包，用户什么都没收到，它以为自己说过了。
   if (sent === 0) {
     warnAt('主动消息没发出去（通道没连？），本次不计入额度', { 文本: text.slice(0, 30) })
-    saveState({ ...state, lastAttemptAt: Date.now(), noReply })
+    saveState(stateAfterAttempt(state, Date.now(), noReply))
     return
   }
   // 主动消息也配表情包：和被动回复同一个概率门（心情越强越容易发）
   await maybeSendEmojiTo(opts.target, rules)
-  saveState({ date: todayKey(), count: state.count + 1, lastAt: Date.now(), lastSentAt: Date.now(), lastAttemptAt: 0, lastText: text, noReply: noReply + 1 })
+  saveState(stateAfterSent(state, text, Date.now(), noReply))
   info('主动消息已发送', { text, 由头: urge.reasons.join('、'), 连续没回: noReply + 1 })
 
   // 记进 raw，让它算作一次对话
