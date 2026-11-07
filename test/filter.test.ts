@@ -1,3 +1,11 @@
+/**
+ * ⚠ 这份测试的基础断言已被更完整的一套覆盖：scripts/test-chan-bugs.ts + scripts/test-reject.ts（过滤与拒答的完整分支）
+ *
+ * 为什么还留着：`npm test` 只跑 `test/*.test.ts`，不跑 `scripts/`。
+ * 两边结论不一致时，以 `scripts/` 那套为准（它对边界更细，也是 check-all 的一部分）。
+ * 想删这份之前先确认：删完之后这个模块在 `npm test` 里就没人管了。
+ */
+
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
