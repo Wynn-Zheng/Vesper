@@ -83,18 +83,16 @@ C:/napcat、D:/napcat、...
 %USERPROFILE%/Documents/NapCat
 ```
 
-**在每个位置下找名字带 `shell` 或 `napcat` 的目录**，然后检查它是不是“真 Shell”：
+**在每个位置下找名字带 `shell` 或 `napcat` 的目录**，然后判断它是不是"真 Shell"。下面三条**满足任意一条就算**，不是三条都要：
+- 有 `QQ.exe`（注入型）
+- 有 `versions/`（目录）
+- 有 `napcat.mjs`（Shell 型，官方 zip）
 
-- 有 `QQ.exe` ✅
-- 有 `versions/` ✅
-- 有 `napcat.mjs` ✅
+判据就是这一行（`src/napcat/locate.ts:95`）：
 
-**任意一个满足就算**（`versions/*/resources/app/napcat/napcat.mjs` 存在，间接保证有 `versions/`）。
-
-### 探测不到：手动填
-
-打开控制台 → **日志 → NapCat** → 那个 **「安装目录」** 行 → 点 **「改」** → 填路径。
-
+```ts
+existsSync(d + '/QQ.exe') || existsSync(d + '/versions') || existsSync(d + '/napcat.mjs')
+```
 **要填的是**：
 
 ```
